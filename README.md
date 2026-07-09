@@ -1,5 +1,12 @@
 # Agent Identity Kit
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](node/package.json)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue.svg)](python/pyproject.toml)
+[![Enforcer](https://img.shields.io/badge/enforcer-fail--closed-success.svg)](#how-it-works)
+[![Packages](https://img.shields.io/badge/packages-2%20%28Node%20%2B%20Python%29-orange.svg)](#two-packages-one-standard)
+[![Framework-agnostic](https://img.shields.io/badge/framework-agnostic-9cf.svg)](#supported-frameworks)
+
 **Universal identity enforcement + knowledge + memory for any AI agent framework.**
 
 Agent Identity Kit (AIK) makes sure every tool call your agent makes goes through a
