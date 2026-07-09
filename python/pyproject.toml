@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-identity-kit"
+version = "0.1.0"
+description = "Identity enforcement + knowledge + memory for AI agents (Python companion to the Node.js aik package)"
+requires-python = ">=3.9"
+dependencies = ["PyYAML"]
+
+[project.optional-dependencies]
+vectors = ["numpy", "sentence-transformers"]
+
+[project.scripts]
+aik-py = "agent_identity_kit.__main__:main"
+
+[tool.setuptools]
+packages = ["agent_identity_kit"]

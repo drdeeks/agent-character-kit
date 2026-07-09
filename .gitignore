@@ -1,0 +1,57 @@
+# ===== Dependencies =====
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.pytype/
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ===== Agent Identity Kit runtime / generated =====
+.agent/
+enforcer-audit.jsonl
+*.audit.jsonl
+memory/daily/*.yaml
+memory/weekly/*.yaml
+node/memory/daily/*.yaml
+node/memory/weekly/*.yaml
+knowledge/vectors/vectors.json
+
+# ===== Node =====
+node/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== Env / secrets =====
+.env
+.env.*
+*.local
+*.pem
+*.key
+
+# ===== Archives =====
+*.tar.gz
+*.tgz
+*.zip
+
+# ===== Editors / OS =====
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ===== Misc =====
+.cache/
+.tmp/
+tmp/

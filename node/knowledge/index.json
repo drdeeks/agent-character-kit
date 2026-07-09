@@ -1,0 +1,257 @@
+{
+  "documents": {
+    "..-..-..-..-..-tmp-aiktest-SOUL": {
+      "path": "../../../../../tmp/aiktest/SOUL.md",
+      "title": "SOUL",
+      "category": "identity",
+      "tags": [
+        "soul"
+      ],
+      "contentHash": "1783598198161.6008",
+      "indexedAt": "2026-07-09T11:58:07.816Z",
+      "chunkCount": 1,
+      "links": [],
+      "linkCount": 0,
+      "chunks": [
+        {
+          "id": "..-..-..-..-..-tmp-aiktest-SOUL:chunk-0",
+          "content": "SOUL\n"
+        }
+      ]
+    },
+    "..-..-..-..-..-tmp-aiktest-a": {
+      "path": "../../../../../tmp/aiktest/a.md",
+      "title": "a",
+      "category": "test",
+      "tags": [
+        "a"
+      ],
+      "contentHash": "1783598198160.6008",
+      "indexedAt": "2026-07-09T11:58:07.830Z",
+      "chunkCount": 1,
+      "links": [],
+      "linkCount": 0,
+      "chunks": [
+        {
+          "id": "..-..-..-..-..-tmp-aiktest-a:chunk-0",
+          "content": "# Hi\n"
+        }
+      ]
+    },
+    "..-..-..-..-..-tmp-aiktest-b": {
+      "path": "../../../../../tmp/aiktest/b.py",
+      "title": "b",
+      "category": "test",
+      "tags": [
+        "b"
+      ],
+      "contentHash": "1783598198161.6008",
+      "indexedAt": "2026-07-09T11:58:07.836Z",
+      "chunkCount": 1,
+      "links": [],
+      "linkCount": 0,
+      "chunks": [
+        {
+          "id": "..-..-..-..-..-tmp-aiktest-b:chunk-0",
+          "content": "x=1\n"
+        }
+      ]
+    },
+    "..-..-..-..-..-tmp-aiktest-c": {
+      "path": "../../../../../tmp/aiktest/c.json",
+      "title": "c",
+      "category": "test",
+      "tags": [
+        "c"
+      ],
+      "contentHash": "1783598198161.6008",
+      "indexedAt": "2026-07-09T11:58:07.840Z",
+      "chunkCount": 1,
+      "links": [],
+      "linkCount": 0,
+      "chunks": [
+        {
+          "id": "..-..-..-..-..-tmp-aiktest-c:chunk-0",
+          "content": "{}\n"
+        }
+      ]
+    },
+    "..-..-..-..-..-tmp-aiktest2-docs-arch": {
+      "path": "../../../../../tmp/aiktest2/docs/arch.md",
+      "title": "arch",
+      "category": "documentation",
+      "tags": [
+        "arch"
+      ],
+      "contentHash": "1783598303752.828",
+      "indexedAt": "2026-07-09T11:58:24.790Z",
+      "chunkCount": 1,
+      "links": [
+        "docs/guide.md",
+        "http://example.com/x",
+        "readme"
+      ],
+      "linkCount": 3,
+      "chunks": [
+        {
+          "id": "..-..-..-..-..-tmp-aiktest2-docs-arch:chunk-0",
+          "content": "See [[readme]] and the [guide](docs/guide.md). Also http://example.com/x\n"
+        }
+      ]
+    },
+    "..-..-..-..-..-tmp-aiktest2-docs-guide": {
+      "path": "../../../../../tmp/aiktest2/docs/guide.md",
+      "title": "guide",
+      "category": "skill",
+      "tags": [
+        "guide"
+      ],
+      "contentHash": "1783598303752.828",
+      "indexedAt": "2026-07-09T11:58:24.797Z",
+      "chunkCount": 1,
+      "links": [
+        "arch"
+      ],
+      "linkCount": 1,
+      "chunks": [
+        {
+          "id": "..-..-..-..-..-tmp-aiktest2-docs-guide:chunk-0",
+          "content": "Guide content here. Ref to [[arch]].\n"
+        }
+      ]
+    },
+    "..-..-..-..-..-tmp-aiktest2-docs-readme": {
+      "path": "../../../../../tmp/aiktest2/docs/readme.md",
+      "title": "readme",
+      "category": "documentation",
+      "tags": [
+        "readme"
+      ],
+      "contentHash": "1783598303752.828",
+      "indexedAt": "2026-07-09T11:58:24.804Z",
+      "chunkCount": 1,
+      "links": [
+        "guide"
+      ],
+      "linkCount": 1,
+      "chunks": [
+        {
+          "id": "..-..-..-..-..-tmp-aiktest2-docs-readme:chunk-0",
+          "content": "Readme body links to [[guide]].\n"
+        }
+      ]
+    },
+    "..-..-..-..-..-tmp-aiktest2-llms": {
+      "path": "../../../../../tmp/aiktest2/llms.txt",
+      "title": "llms",
+      "category": "documentation",
+      "tags": [
+        "llms"
+      ],
+      "contentHash": "1783598303750.6714",
+      "indexedAt": "2026-07-09T11:58:24.810Z",
+      "chunkCount": 1,
+      "links": [
+        "docs/readme.md",
+        "docs/arch.md"
+      ],
+      "linkCount": 2,
+      "chunks": [
+        {
+          "id": "..-..-..-..-..-tmp-aiktest2-llms:chunk-0",
+          "content": "# Project\n\n- [README](docs/readme.md) - Main readme\n- [Architecture](docs/arch.md) - System design\n"
+        }
+      ]
+    },
+    "..-..-..-..-..-tmp-aik-ws2-corpus-notes": {
+      "path": "../../../../../tmp/aik-ws2/corpus/notes.md",
+      "title": "notes",
+      "category": "documentation",
+      "tags": [
+        "notes"
+      ],
+      "contentHash": "1783600048938.8638",
+      "indexedAt": "2026-07-09T12:28:07.345Z",
+      "chunkCount": 1,
+      "links": [
+        "auth-flow"
+      ],
+      "linkCount": 1,
+      "chunks": [
+        {
+          "id": "..-..-..-..-..-tmp-aik-ws2-corpus-notes:chunk-0",
+          "content": "User doc about [[auth-flow]].\n"
+        }
+      ]
+    }
+  },
+  "links": {
+    "docs/guide.md": {
+      "type": "markdown",
+      "category": "reference",
+      "external": false,
+      "sourceDoc": "..-..-..-..-..-tmp-aiktest2-docs-arch",
+      "resolvedPath": null,
+      "addedAt": "2026-07-09T11:58:24.791Z"
+    },
+    "http://example.com/x": {
+      "type": "url",
+      "category": "reference",
+      "external": true,
+      "sourceDoc": "..-..-..-..-..-tmp-aiktest2-docs-arch",
+      "resolvedPath": null,
+      "addedAt": "2026-07-09T11:58:24.791Z"
+    },
+    "readme": {
+      "type": "wiki",
+      "category": "reference",
+      "external": false,
+      "sourceDoc": "..-..-..-..-..-tmp-aiktest2-docs-arch",
+      "resolvedPath": null,
+      "addedAt": "2026-07-09T11:58:24.791Z"
+    },
+    "arch": {
+      "type": "wiki",
+      "category": "reference",
+      "external": false,
+      "sourceDoc": "..-..-..-..-..-tmp-aiktest2-docs-guide",
+      "resolvedPath": null,
+      "addedAt": "2026-07-09T11:58:24.798Z"
+    },
+    "guide": {
+      "type": "wiki",
+      "category": "reference",
+      "external": false,
+      "sourceDoc": "..-..-..-..-..-tmp-aiktest2-docs-readme",
+      "resolvedPath": null,
+      "addedAt": "2026-07-09T11:58:24.804Z"
+    },
+    "docs/readme.md": {
+      "title": "README",
+      "category": "reference",
+      "description": "Main readme",
+      "external": false,
+      "sourceDoc": "..-..-..-..-..-tmp-aiktest2-llms",
+      "addedAt": "2026-07-09T11:58:24.810Z"
+    },
+    "docs/arch.md": {
+      "title": "Architecture",
+      "category": "reference",
+      "description": "System design",
+      "external": false,
+      "sourceDoc": "..-..-..-..-..-tmp-aiktest2-llms",
+      "addedAt": "2026-07-09T11:58:24.810Z"
+    },
+    "auth-flow": {
+      "type": "wiki",
+      "category": "reference",
+      "external": false,
+      "sourceDoc": "..-..-..-..-..-tmp-aik-ws2-corpus-notes",
+      "resolvedPath": null,
+      "addedAt": "2026-07-09T12:28:07.345Z"
+    }
+  },
+  "meta": {
+    "lastIndexed": "2026-07-09T13:29:08.094Z"
+  }
+}

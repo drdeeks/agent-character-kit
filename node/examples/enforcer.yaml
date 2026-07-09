@@ -1,0 +1,33 @@
+# Example enforcer policy — copy to <workspace>/.agent/enforcer.yaml
+#
+# Paths are self-resolving: the daemon reads AGENT_WORKSPACE/.agent/enforcer.yaml.
+# ENFORCER_POLICY can override the location.
+
+# Allow-list (strict, high bar). When `allow` is set, ONLY listed tools/commands
+# pass — everything else is denied by default. This is the reliability gate: we
+# ship only what we've deliberately permitted.
+#
+# Patterns are glob-ish: "ls" matches the tool/command `ls`; "git *" matches any
+# git subcommand; "WebFetch" matches the tool name.
+allow:
+  - "ls"
+  - "cat"
+  - "git status"
+  - "git diff"
+  - "git log"
+  - "npm test"
+  - "npm run build"
+  - "Read"
+  - "Write"
+  - "Edit"
+  - "WebFetch"
+  - "Glob"
+  - "Grep"
+
+# Deny-list (always blocked, regardless of allow-list). Use hard constraints from
+# the constitution too — this is the belt-and-suspenders layer.
+deny:
+  - "rm -rf /"
+  - "git push --force"
+  - "curl * | sh"
+  - "sudo *"
