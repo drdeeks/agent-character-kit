@@ -26,12 +26,12 @@ reason + reflection ("this isn't a rule to work around — it's who we are").
 
 ```bash
 # 1. Make the AIK Python package importable
-cd agent-identity-kit/python
+cd agent-character-kit/python
 pip install -e .
 
 # 2. Drop this plugin into Hermes's plugin dir
-mkdir -p ~/.hermes/plugins/agent-identity-kit
-cp -r hermes_plugin/* ~/.hermes/plugins/agent-identity-kit/
+mkdir -p ~/.hermes/plugins/agent-character-kit
+cp -r hermes_plugin/* ~/.hermes/plugins/agent-character-kit/
 
 # 3. Define the agent's character (singular source of truth)
 #    ~/.openclaw/workspace/.agent/constitution.yaml  (or $AGENT_WORKSPACE/.agent/)

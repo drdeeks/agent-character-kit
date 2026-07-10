@@ -1,5 +1,5 @@
 {
-  "name": "agent-identity-kit",
+  "name": "agent-character-kit",
   "version": "1.0.0",
   "description": "Universal agent identity enforcement, knowledge indexing, and memory with YAML frontmatter",
   "main": "src/index.js",

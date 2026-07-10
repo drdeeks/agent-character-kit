@@ -45,8 +45,8 @@ README is only this overview. Another install/customize doc = stale; `AGENTS.md`
 ## Quick start (harness-agnostic)
 
 ```bash
-git clone https://github.com/drdeeks/agent-identity-kit.git
-cd agent-identity-kit && cd node && npm install && cd ..
+git clone https://github.com/drdeeks/agent-character-kit.git
+cd agent-character-kit && cd node && npm install && cd ..
 sudo bash deploy/deploy-agent-enforcer.sh        # Linux systemd, root-owned
 sudo systemctl enable --now agent-enforcer.service
 node node/bin/aik.js enforcer --status           # version + identity hash

@@ -1,6 +1,6 @@
 [Unit]
 Description=Agent Identity Kit Enforcer Daemon (root-owned)
-Documentation=file:///usr/local/lib/agent-identity-kit/README.md
+Documentation=file:///usr/local/lib/agent-character-kit/README.md
 
 # System-owned enforcement. Runs as root so the agent user cannot kill,
 # modify, or replace it. Self-respawning via RestartSec=3.
@@ -30,16 +30,16 @@ RestartSec=3
 NoNewPrivileges=true
 ProtectSystem=strict
 # /run/agent-enforcer holds the socket (root-owned). /var/lib holds workspace + logs.
-ReadWritePaths=/run/agent-enforcer /var/lib/agent-identity-kit /var/log/agent-identity-kit
+ReadWritePaths=/run/agent-enforcer /var/lib/agent-character-kit /var/log/agent-character-kit
 PrivateTmp=true
 
 # ── Configuration (overridable via `systemctl edit`) ────────────────────────────
 Environment=ENFORCER_SOCKET=/run/agent-enforcer/main.sock
-Environment=AGENT_WORKSPACE=/var/lib/agent-identity-kit/workspace
+Environment=AGENT_WORKSPACE=/var/lib/agent-character-kit/workspace
 Environment=HOME=/root
 Environment=NODE_ENV=production
 
-WorkingDirectory=/usr/local/lib/agent-identity-kit
+WorkingDirectory=/usr/local/lib/agent-character-kit
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=agent-enforcer
