@@ -29,12 +29,14 @@ doc, it's stale — `AGENTS.md` wins.
   (merges), never required. Transport auto-selects: Unix socket on POSIX, TCP on
   Windows / cross-host.
 - **COMPANION — thin clients** (hold no policy, ask the daemon, fail-closed):
-  - **Hermes plugin** (`python/hermes_plugin/`) — the singular companion for
-    systems like Hermes (`pre_tool_call` → daemon → allow/deny).
+  - **Hermes plugin** (`python/hermes_plugin/`) — one example companion, for
+    agents that load Python plugins (`pre_tool_call` → daemon → allow/deny).
   - **Generic `aik hook`** (`node/bin/aik.js hook --framework <name>`) — for
     Claude / Cursor / Gemini / OpenCode / generic.
+  - Both are interchangeable thin clients. No harness is "the" way — pick the
+    companion that matches your agent's hook mechanism.
 
-## Quick start
+## Quick start (harness-agnostic)
 
 ```bash
 git clone https://github.com/drdeeks/agent-identity-kit.git
@@ -44,8 +46,7 @@ sudo systemctl enable --now agent-enforcer.service
 node node/bin/aik.js enforcer --status           # version + identity hash
 ```
 
-Hermes: `pip install -e ./python`, copy `python/hermes_plugin/*` to
-`~/.hermes/plugins/agent-identity-kit/`, restart Hermes.
+The daemon is now enforcing. Wire a COMPANION (any harness) per `AGENTS.md`.
 
 Everything else — customization, macOS/Windows install, fail-closed guarantees,
 version tracking, file map — is in **[`AGENTS.md`](AGENTS.md)**.

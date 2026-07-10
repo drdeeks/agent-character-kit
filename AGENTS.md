@@ -54,12 +54,16 @@ Cursor, Codex, a shell wrapper) can use it.
 These are dumb pipes to the CORE. They do not enforce anything; they ask the
 daemon and obey. If the daemon is unreachable, the client **blocks** (fail-closed).
 
-1. **Hermes plugin** (recommended for Hermes) — `python/hermes_plugin/`
-   Python, because Hermes loads Python plugins. It is the *singular* companion
-   for systems like Hermes: `pre_tool_call` → daemon → allow/deny.
-2. **Generic `aik hook`** — `node/bin/aik.js hook --framework <name>`
-   For Claude / Cursor / Gemini / OpenCode / generic. Emits the framework's
+1. **Hermes plugin** (`python/hermes_plugin/`) — an EXAMPLE companion, for
+   agents that load Python plugins (`pre_tool_call` → daemon → allow/deny).
+   It is one of several interchangeable companions, not "the" way.
+2. **Generic `aik hook`** (`node/bin/aik.js hook --framework <name>`) — for
+   Claude / Cursor / Gemini / OpenCode / generic. Emits the framework's
    hook JSON; each call hits the daemon.
+
+> **No harness is definitive.** The CORE (daemon) is harness-agnostic. Pick
+> the companion that matches YOUR agent's hook mechanism — Hermes is shown
+> here only as one worked example among others.
 
 > **One source of truth.** There is exactly one enforcement engine (the daemon).
 > The Python library (`python/agent_identity_kit/`) is a *client*; the Hermes
@@ -69,7 +73,8 @@ daemon and obey. If the daemon is unreachable, the client **blocks** (fail-close
 
 ## Install
 
-Requires Node ≥ 18. (Python only for the Hermes plugin.)
+Requires Node ≥ 18. (Python only needed if you use a Python-plugin
+companion such as the Hermes example — other companions need only Node.)
 
 ```bash
 git clone https://github.com/drdeeks/agent-identity-kit.git
@@ -109,9 +114,14 @@ sudo python3 supervise.py          # restarts daemon on death (3s backoff)
 # equivalent cross-platform logic to systemd RestartSec
 ```
 
-### Wire the COMPANION into your agent
+### Wire a COMPANION into your agent (examples — multiple harnesses shown)
 
-**Hermes (singular plugin):**
+AIK is harness-agnostic: the daemon enforces; the companion is just a thin
+client. Below are TWO worked examples (Hermes and a generic `aik hook`
+framework). Showing several, not one — pick the companion that matches your
+agent. Do not treat any single harness as "the" install path.
+
+**Example A — Hermes (Python-plugin companion):**
 ```bash
 cd python && pip install -e . && cd ..
 mkdir -p ~/.hermes/plugins/agent-identity-kit
@@ -119,10 +129,11 @@ cp -r python/hermes_plugin/* ~/.hermes/plugins/agent-identity-kit/
 # restart Hermes; pre_tool_call is now gated by the CORE daemon
 ```
 
-**Generic `aik hook` (Claude/Cursor/Gemini/OpenCode):**
+**Example B — Claude / Cursor / Gemini / OpenCode (generic `aik hook`):**
 ```bash
 node node/bin/aik.js hook --framework claude --config   # prints the hook JSON
 # add it to the framework's hooks; it calls the daemon per tool call
+# swap `claude` for cursor | gemini | opencode | generic as needed
 ```
 
 ---
@@ -223,7 +234,7 @@ constants together** when enforcement behavior changes.
 | `node/enforcer/agent_enforcer_daemon.js` | **CORE** — the enforcer (single source of truth) |
 | `node/src/enforcer/client.js` | Node thin client |
 | `node/bin/aik.js` | CLI (`enforcer --start/--supervise/--status/--install/--reload`) |
-| `python/hermes_plugin/` | **COMPANION** — Hermes plugin (thin client, singular for Hermes) |
+| `python/hermes_plugin/` | **COMPANION** — example Python-plugin client (one of several) |
 | `python/agent_identity_kit/enforcer.py` | Python client (`EnforcerClient`) to the CORE |
 | `supervise.py` | stdlib-only cross-platform supervisor |
 | `deploy/` | Linux systemd unit + installer |
