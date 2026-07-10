@@ -169,12 +169,12 @@ python3 python/hermes_plugin/test_plugin.py          # ALL PASS expected
 
 Files are **optional overrides** — drop them in and they merge on top of the
 embedded character. Location (relative to `AGENT_WORKSPACE`, default
-`~/.agent-identity-kit/workspace`):
+`~/.agent-character-kit/workspace`):
 
 ```
 <AGENT_WORKSPACE>/
   .agent/
-    constitution.yaml      # who the agent IS (values + hard_constraints)
+    constitution.yaml      # defines the agent's CHARACTER (values + hard_constraints)
     enforcer.yaml          # policy: allow-list / deny-list
     habits/
       <name>.yaml          # behaviors (e.g. secret-leak guard)
