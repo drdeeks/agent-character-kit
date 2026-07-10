@@ -11,7 +11,7 @@ import path from "path";
 test("hook formats Claude allow decision", async () => {
   const { output, exitCode } = await processToolCall(
     { tool_name: "Bash", tool_input: { command: "ls" }, hook_event_name: "PreToolUse" },
-    { framework: "claude" }
+    { framework: "claude", enforcer: { validateTool: async () => ({ allowed: true }) } }
   );
   assert.equal(output.hookSpecificOutput.permissionDecision, "allow");
   assert.equal(exitCode, 0);

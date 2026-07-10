@@ -1,0 +1,16 @@
+# Habit: enterprise-grade-modular
+# Source question: "Would I consider this enterprise-grade? Is it modular, non-duplicated, proper?"
+# Correct action: build modular, non-duplicated, proper — no copy-paste clones of logic.
+# Evidence: one responsibility per module; no two files implementing the same behavior; KISS/DRY hold
+#           on review.
+# Logic: duplication is future drift — when one copy changes, the other rots. Modularity is what lets
+#        the next agent reason about it. You know it's proper because each piece has one reason to exist.
+name: "enterprise_grade_modular"
+prompt: "Is this enterprise-grade: modular, non-duplicated, proper?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Build modular, non-duplicated, proper — no copy-paste clones of logic."
+  evidence: "One responsibility per module; no two files implement the same behavior; KISS/DRY hold on review."
+  logic: "Duplication is future drift — when one copy changes, the other rots. Modularity lets the next agent reason about it."

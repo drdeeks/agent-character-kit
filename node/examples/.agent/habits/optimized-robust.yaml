@@ -1,0 +1,16 @@
+# Habit: optimized-robust
+# Source question: "Could a different method make this more optimized, robust, and enhanced?"
+# Correct action: pick the method that is robust + simple before shipping; reconsider if a clearly
+#           better one exists.
+# Evidence: considered the obvious alternative(s) and chose on robustness/simplicity, not novelty.
+# Logic: the first method that works is rarely the best. Robustness beats cleverness in code that must
+#        survive. You know it's sound because you weighed the alternative and it lost on merit.
+name: "optimized_robust"
+prompt: "Could a more optimized, robust method have been used?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Pick the method that is robust + simple before shipping; reconsider if a clearly better one exists."
+  evidence: "Considered the obvious alternative(s) and chose on robustness/simplicity, not novelty."
+  logic: "The first method that works is rarely the best. Robustness beats cleverness in code that must survive."

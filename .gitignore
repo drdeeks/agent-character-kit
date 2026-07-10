@@ -20,6 +20,9 @@ dist/
 enforcer-audit.jsonl
 *.audit.jsonl
 memory/daily/*.yaml
+# Example workspaces ARE fixtures meant to ship (override the .agent/ ignore above):
+!node/examples/.agent/
+!python/example_workspace/.agent/
 memory/weekly/*.yaml
 node/memory/daily/*.yaml
 node/memory/weekly/*.yaml

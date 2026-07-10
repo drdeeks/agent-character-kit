@@ -1,0 +1,14 @@
+# Habit: validate-against-real-source
+# Correct action: ship only work validated against real source (file/line/test), not README prose.
+# Evidence: every claim traces to code I read or a test I ran; no prose-only assertion survives review.
+# Logic: prose describes intent, source/tests prove function. Trusting docs over code is how broken
+#        demos ship. Knowing it's right = the proof is in the artifact, not the description.
+name: "validate_against_real_source"
+prompt: "Did I validate this against real source, not README prose?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Ship only work validated against real source (file/line/test), not README prose."
+  evidence: "Every claim traces to code I read or a test I ran; no prose-only assertion survives review."
+  logic: "Prose describes intent; source/tests prove function. Trusting docs over code is how broken demos ship."

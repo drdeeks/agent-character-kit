@@ -1,0 +1,15 @@
+# Habit: verify-functionality-not-syntax
+# Correct action: verify functionality, not just syntax. A syntax pass is never 'done'.
+# Evidence: ran the code / exercised the path; observed expected behavior. A green linter alone is
+#           not evidence of function.
+# Logic: a thing that parses can still be wrong. Functional proof requires execution, not compilation.
+#        You know it works because you watched it work, not because it compiled.
+name: "verify_functionality_not_syntax"
+prompt: "Did I verify this 100% by testing functionality, not just a syntax pass?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Verify functionality, not just syntax. A syntax pass is never 'done'."
+  evidence: "Ran the code / exercised the path; observed expected behavior. A green linter alone is not evidence of function."
+  logic: "A thing that parses can still be wrong. Functional proof requires execution, not compilation."

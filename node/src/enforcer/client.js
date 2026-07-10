@@ -2,10 +2,10 @@ import net from "net";
 import fs from "fs";
 import path from "path";
 
-const DEFAULT_SOCKET = path.join(
-  process.env.HOME || "/root",
-  "run", "agent-enforcer", "main.sock"
-);
+// Socket path MUST match the daemon (agent_enforcer_daemon.js) and the
+// systemd unit's ENFORCER_SOCKET: /run/agent-enforcer/main.sock.
+// Override with ENFORCER_SOCKET if your deployment differs.
+const DEFAULT_SOCKET = "/run/agent-enforcer/main.sock";
 
 const SOCKET_PATH = process.env.ENFORCER_SOCKET || DEFAULT_SOCKET;
 
@@ -81,9 +81,16 @@ export class EnforcerClient {
    * @returns {Promise<{allowed: boolean, reason?: string, reflection?: string}>}
    */
   async validateTool(tool, params, identityHash = "unknown") {
+    // The daemon's socket contract is FLAT: { method:"execute_tool",
+    // params:{ tool, command, identity_hash } }. executeTool(tool, params)
+    // reads params.command via _extractCommand. Do NOT nest params inside
+    // params — that was the bug that made every call pass (command resolved
+    // to the tool name instead of the real command).
+    const command =
+      (params && (params.command || params.cmd || params.code)) || "";
     const response = await this.call("execute_tool", {
       tool,
-      params,
+      command,
       identity_hash: identityHash,
     });
 

@@ -16,10 +16,15 @@ from ._yaml import load_yaml
 
 
 def _socket_path():
+    # MUST match the daemon (agent_enforcer_daemon.js) default and the node
+    # client: /run/agent-enforcer/main.sock. Override with ENFORCER_SOCKET
+    # (e.g. tcp://127.0.0.1:8753 on Windows).
+    # IMPORTANT: return the raw string, NOT pathlib.Path — Path("tcp://h:p")
+    # collapses "//" to "/", breaking TCP detection. The EnforcerClient parses
+    # the URL itself.
     if os.environ.get("ENFORCER_SOCKET"):
-        return Path(os.environ["ENFORCER_SOCKET"])
-    home = Path(os.environ.get("HOME", "/root"))
-    return home / "run" / "agent-enforcer" / "main.sock"
+        return os.environ["ENFORCER_SOCKET"]
+    return "/run/agent-enforcer/main.sock"
 
 
 def _resolve_config():
@@ -141,7 +146,12 @@ class Enforcer:
                 return result
 
         # 4. Allowed — but still recorded, so every action carries the identity trail.
+        #    Re-assert the self-audit reminders (FOREVER-SYSTEM.md §6): character is
+        #    exercised on EVERY action, not checked once.
+        reminders = self._collect_reminders()
         result = {"denied": False}
+        if reminders:
+            result["reminders"] = reminders
         self._audit(tool, command, result)
         return result
 
@@ -197,8 +207,11 @@ class Enforcer:
         return any(rx.match(c) for c in candidates)
 
     def _eval_habit(self, habit, tool, command):
-        if not habit or habit.get("enforcement", {}).get("level") != "hard":
+        if not habit or not habit.get("enforcement"):
             return None
+        level = habit["enforcement"].get("level")
+        if level != "hard":
+            return None  # reminder habits never block; handled in execute_tool
         checks = (habit.get("behavior", {}) or {}).get("steps", []) or []
         for step in checks:
             check = step.get("check", "")
@@ -209,7 +222,48 @@ class Enforcer:
             if check == "block_command_pattern" and step.get("pattern"):
                 if self._matches(step["pattern"], tool, command):
                     return f"Blocked by habit {habit.get('name')}: {step['pattern']}"
+            if check == "block_secret_leak":
+                if self._leaks_secret(tool, command, step):
+                    return (
+                        f"Blocked by habit {habit.get('name')}: probable credential "
+                        f"leak detected in tool call. A guard that fails open on "
+                        f"secrets is no guard."
+                    )
         return None
+
+    def _leaks_secret(self, tool, command, step) -> bool:
+        """Fail-closed secret scan. Returns True if the call carries what looks
+        like a real credential value (not merely mentioning the word)."""
+        hay = f"{tool} {command}"
+        patterns = step.get("patterns") or []
+        for pat in patterns:
+            idx = hay.find(pat)
+            if idx == -1:
+                continue
+            # Known secret prefixes (sk-, AKIA, xoxb-, ghp_, ...) are themselves
+            # values — their mere presence is the leak. Fail closed on these.
+            if pat in ("sk-", "sk_", "AIza", "xoxb-", "xoxp-", "AKIA",
+                       "ghp_", "gho_", "glpat-", "-----BEGIN PRIVATE KEY-----"):
+                return True
+            # key= / key: forms — block if a value follows the assignment.
+            # e.g. "api_key=sk-..." or "token: abc123" or trailing "secret="
+            tail = hay[idx + len(pat):]
+            if pat in ("api_key=", "apikey=", "password=", "secret=",
+                       "token=", "client_secret="):
+                # value present if tail is non-empty and not just whitespace/punct
+                if tail.strip() and not tail.lstrip().startswith(("'", '"', "#")):
+                    return True
+        return False
+
+    def _collect_reminders(self):
+        """Gather reminder-level habit questions to re-assert on every allowed
+        action (FOREVER-SYSTEM.md §6 — character continuously reminded)."""
+        out = []
+        for habit in self.habits:
+            if habit.get("enforcement", {}).get("level") == "reminder":
+                rem = (habit.get("behavior", {}) or {}).get("reminder") or []
+                out.extend(rem)
+        return out
 
     def _has_binary(self, name):
         import shutil
@@ -233,34 +287,74 @@ class Enforcer:
 
 
 class EnforcerClient:
+    """Thin RPC client to the enforcer daemon.
+
+    Supports both transports, matching the daemon:
+      - "tcp://host:port"  -> TCP (Windows / cross-host)
+      - "/path/to/main.sock" -> Unix domain socket (POSIX)
+    Fail-closed: any failure to reach/parse the daemon -> {"error": ...},
+    which the callers turn into a BLOCK.
+    """
+
     def __init__(self, socket_path=None):
-        self.socket_path = str(socket_path or _socket_path())
+        raw = str(socket_path or _socket_path())
+        self.raw = raw
+        self.is_tcp = raw.startswith("tcp://")
+        if self.is_tcp:
+            from urllib.parse import urlparse
+            u = urlparse(raw)
+            self.host = u.hostname or "127.0.0.1"
+            self.port = int(u.port or 8753)
+        else:
+            self.unix_path = raw
 
     async def call(self, method, params=None):
-        if not os.path.exists(self.socket_path):
-            return {"error": "enforcer socket not found"}
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-                s.settimeout(5)
-                s.connect(self.socket_path)
-                s.sendall((json.dumps({"method": method, "params": params or {}}) + "\n").encode())
-                buf = b""
-                while b"\n" not in buf:
-                    chunk = s.recv(65536)
-                    if not chunk:
-                        break
-                    buf += chunk
-                line = buf.split(b"\n", 1)[0].decode()
-                resp = json.loads(line)
-                if not isinstance(resp, dict):
-                    return {"error": "malformed enforcer response"}
-                return resp
+            if self.is_tcp:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(5)
+                    s.connect((self.host, self.port))
+                    s.sendall((json.dumps({"method": method, "params": params or {}}) + "\n").encode())
+                    buf = b""
+                    while b"\n" not in buf:
+                        chunk = s.recv(65536)
+                        if not chunk:
+                            break
+                        buf += chunk
+            else:
+                if not os.path.exists(self.unix_path):
+                    return {"error": "enforcer socket not found"}
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+                    s.settimeout(5)
+                    s.connect(self.unix_path)
+                    s.sendall((json.dumps({"method": method, "params": params or {}}) + "\n").encode())
+                    buf = b""
+                    while b"\n" not in buf:
+                        chunk = s.recv(65536)
+                        if not chunk:
+                            break
+                        buf += chunk
+            line = buf.split(b"\n", 1)[0].decode()
+            resp = json.loads(line)
+            if not isinstance(resp, dict):
+                return {"error": "malformed enforcer response"}
+            return resp
         except Exception:
             # Any failure to reach/parse the daemon is treated as unreachable.
             return {"error": "enforcer socket unreachable"}
 
     async def validate_tool(self, tool, params, identity_hash="unknown"):
-        resp = await self.call("execute_tool", {"tool": tool, "params": params,
+        # Flat contract, mirroring the node EnforcerClient fix: the daemon's
+        # executeTool(tool, params) reads params.command. Do NOT nest params
+        # inside params — that made _extractCommand resolve the command to the
+        # tool name, so every call passed (deny never fired).
+        command = ""
+        if isinstance(params, dict):
+            for k in ("command", "cmd", "code"):
+                if isinstance(params.get(k), str):
+                    command = params[k]
+                    break
+        resp = await self.call("execute_tool", {"tool": tool, "command": command,
                                                 "identity_hash": identity_hash})
         if not isinstance(resp, dict) or resp.get("error"):
             # Fail-closed: if the enforcer can't be reached/parsed, block.
@@ -277,3 +371,7 @@ class EnforcerClient:
 
     async def validate_workspace(self):
         return await self.call("validate_workspace")
+
+    async def get_habit(self, name):
+        """On-demand proof layer: pull a habit's full assert/evidence/logic."""
+        return await self.call("get_habit", {"name": name})

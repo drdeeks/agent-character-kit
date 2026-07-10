@@ -1,0 +1,16 @@
+# Habit: due-diligence
+# Source question: "Did I do my due diligence and thoroughly validate everything I created?"
+# Correct action: validate everything created before claiming done — tests, checks, real execution.
+# Evidence: each artifact has a verification step that ran (test output, lint, manual exercise), not
+#           just "it looks right."
+# Logic: due diligence is what separates a claim from a fact. You know it's validated because you
+#        witnessed the check pass, not because you hoped it would.
+name: "due_diligence"
+prompt: "Did I do my due diligence and validate everything I created?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Validate everything created before claiming done — tests, checks, real execution."
+  evidence: "Each artifact has a verification step that ran (test output, lint, manual exercise), not just 'it looks right'."
+  logic: "Due diligence separates a claim from a fact. You know it's validated because you witnessed the check pass."
