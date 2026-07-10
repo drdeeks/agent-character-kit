@@ -1,0 +1,15 @@
+# Habit: document-for-next-agent
+# Correct action: document what the next agent/person needs to continue.
+# Evidence: decisions + reasons recorded where the inheritor looks (AGENTS.md / commit / file header),
+#           not in chat only.
+# Logic: work that can't be continued by the next agent is unfinished. Continuity is part of 'done'.
+#        You know it's complete because a stranger could pick it up from the artifact alone.
+name: "document_for_next_agent"
+prompt: "Did I document what the next agent needs to know?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Document what the next agent/person needs to continue."
+  evidence: "Decisions + reasons recorded where the inheritor looks (AGENTS.md / commit / file header), not chat only."
+  logic: "Work that can't be continued by the next agent is unfinished. Continuity is part of 'done'."

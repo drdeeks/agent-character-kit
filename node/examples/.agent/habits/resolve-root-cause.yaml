@@ -1,0 +1,15 @@
+# Habit: resolve-root-cause
+# Correct action: resolve root cause; never patch a symptom and call it fixed.
+# Evidence: fix note names the traced cause + the test/observation that reproduces it; same failure
+#           cannot recur unmodified.
+# Logic: a patch recurs; a resolved root cause stays fixed under the next agent. Recurring bugs are
+#        proof the cause was never addressed. You know it's resolved because the failure can't reproduce.
+name: "resolve_root_cause"
+prompt: "Did I resolve the root cause, not just patch the symptom?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Resolve root cause; never patch a symptom and call it fixed."
+  evidence: "Fix note names the traced cause + the reproduction (test/observation); same failure cannot recur unmodified."
+  logic: "A patch recurs; a resolved root cause stays fixed under the next agent. Recurring bugs prove the cause was unaddressed."

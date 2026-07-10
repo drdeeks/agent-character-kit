@@ -71,7 +71,7 @@ program
     const client = new EnforcerClient();
 
     if (opts.start) {
-      const { runDaemon } = await import("../enforcer/enforcer_daemon.js");
+      const { runDaemon } = await import("../enforcer/agent_enforcer_daemon.js");
       runDaemon();
       return;
     }
@@ -109,7 +109,7 @@ program
 // ─── Self-healing supervisor ─────────────────────────────────────────────────
 
 async function superviseDaemon() {
-  const daemonScript = path.resolve(import.meta.dirname || path.dirname(fileURLToPath(import.meta.url)), "..", "enforcer", "enforcer_daemon.js");
+  const daemonScript = path.resolve(import.meta.dirname || path.dirname(fileURLToPath(import.meta.url)), "..", "enforcer", "agent_enforcer_daemon.js");
   let child = null;
 
   const start = () => {

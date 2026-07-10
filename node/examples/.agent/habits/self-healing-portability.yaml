@@ -1,0 +1,14 @@
+# Habit: self-healing-portability
+# Correct action: build self-healing — recover regardless of where it runs (USB, host, container).
+# Evidence: paths/config resolve via env -> home -> default; no absolute machine-specific path baked in.
+# Logic: portability fails the moment a path assumes one host. Relative/env resolution is the proof it
+#        travels. You know it's portable because it resolves identically on an unrelated machine.
+name: "self_healing_portability"
+prompt: "Is this self-healing and able to recover wherever it runs?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Build self-healing — recover regardless of where it runs (USB, host, container)."
+  evidence: "Paths/config resolve via env -> home -> default; no absolute machine-specific path baked in."
+  logic: "Portability fails the moment a path assumes one host. Relative/env resolution is the proof it travels."

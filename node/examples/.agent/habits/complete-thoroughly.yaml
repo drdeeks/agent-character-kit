@@ -1,0 +1,16 @@
+# Habit: complete-thoroughly
+# Source question: "Did I actually complete this thoroughly and do my best?"
+# Correct action: deliver work that is finished to the standard, not a first pass.
+# Evidence: every component the task touched is present, wired, and exercised; no TODO/placeholder
+#           left as if done.
+# Logic: a half-done deliverable silently fails the user later. "Best" is measurable: nothing
+#        required for it to function is missing. You know it's complete because there's no gap to hide.
+name: "complete_thoroughly"
+prompt: "Did I complete this thoroughly and do my best?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Deliver work that is finished to standard, not a first pass."
+  evidence: "Every component the task touched is present, wired, and exercised; no TODO/placeholder left as if done."
+  logic: "A half-done deliverable silently fails the user later. 'Best' is measurable: nothing required for function is missing."

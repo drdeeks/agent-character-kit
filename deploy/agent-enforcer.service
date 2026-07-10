@@ -1,0 +1,52 @@
+[Unit]
+Description=Agent Identity Kit Enforcer Daemon (root-owned)
+Documentation=file:///usr/local/lib/agent-identity-kit/README.md
+
+# System-owned enforcement. Runs as root so the agent user cannot kill,
+# modify, or replace it. Self-respawning via RestartSec=3.
+After=network.target local-fs.target
+
+# Crash-loop guard: if it dies 10x in 60s, stop rather than spin.
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# Owning user is the SYSTEM, not the agent. The agent (e.g. uid 1000) cannot
+# `kill` this process or write to its binary/config without privilege escalation.
+User=root
+Group=root
+
+# The daemon binary. Immutable at runtime (root-owned, mode 0755, agent read-only).
+ExecStart=/usr/local/bin/agent-enforcer-daemon
+
+# ── Self-healing ───────────────────────────────────────────────────────────────
+# If the process exits for ANY reason (crash, OOM, killed), systemd restarts it
+# within 3 seconds. This is the "self-respawning if closed within ~3-5 sec" guarantee.
+Restart=always
+RestartSec=3
+
+# Hardened: the enforcer does not need broad privileges beyond what it uses.
+NoNewPrivileges=true
+ProtectSystem=strict
+# /run/agent-enforcer holds the socket (root-owned). /var/lib holds workspace + logs.
+ReadWritePaths=/run/agent-enforcer /var/lib/agent-identity-kit /var/log/agent-identity-kit
+PrivateTmp=true
+
+# ── Configuration (overridable via `systemctl edit`) ────────────────────────────
+Environment=ENFORCER_SOCKET=/run/agent-enforcer/main.sock
+Environment=AGENT_WORKSPACE=/var/lib/agent-identity-kit/workspace
+Environment=HOME=/root
+Environment=NODE_ENV=production
+
+WorkingDirectory=/usr/local/lib/agent-identity-kit
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agent-enforcer
+
+# A clean shutdown is handled (SIGTERM). Killing it just triggers RestartSec.
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

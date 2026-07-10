@@ -1,0 +1,15 @@
+# Habit: verify-against-docs
+# Source question: "Did I verify my work against actual documentation when it was available?"
+# Correct action: when real docs/source exist, verify against THEM, not against memory or README prose.
+# Evidence: claims trace to the actual API/doc/source I read; where docs conflict with prose, docs win.
+# Logic: docs are the contract the system actually honors; prose summarizing them drifts. You know it's
+#        right because it matches the authority, not a secondhand description.
+name: "verify_against_docs"
+prompt: "Did I verify against the actual docs when available?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "When real docs/source exist, verify against THEM, not memory or README prose."
+  evidence: "Claims trace to the actual API/doc/source I read; where docs conflict with prose, docs win."
+  logic: "Docs are the contract the system honors; prose summarizing them drifts. Right = matches the authority, not a description."

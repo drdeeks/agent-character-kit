@@ -1,0 +1,16 @@
+# Habit: interactive-no-stalls
+# Source question: "Is everything interactive: no stalls, no hangs, real error-handling and fallback?"
+# Correct action: every long/externally-bound operation has a timeout + real error-handling + fallback.
+# Evidence: no unbounded wait; every external call (network, subprocess, file) has a timeout and a
+#           defined failure path; user is never stranded.
+# Logic: a hang is a silent failure that blocks the caller indefinitely. Interactivity means the agent
+#        never strands its user. You know it's interactive because every wait has a bound and an escape.
+name: "interactive_no_stalls"
+prompt: "Is everything interactive: no stalls, real error-handling and fallback?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Every long/externally-bound operation has a timeout + real error-handling + fallback."
+  evidence: "No unbounded wait; every external call has a timeout and a defined failure path; user is never stranded."
+  logic: "A hang is a silent failure that blocks the caller indefinitely. Interactivity means the agent never strands its user."

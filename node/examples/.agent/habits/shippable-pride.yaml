@@ -1,0 +1,15 @@
+# Habit: shippable-pride
+# Source question: "Am I proud of what I just made? Would I want someone shipping it in this state?"
+# Correct action: only ship what you'd stand behind unchanged if a stranger shipped it tomorrow.
+# Evidence: no known sharp edges, no apologetic comments, no "good enough for now" left in the artifact.
+# Logic: pride is a proxy for quality you'd defend. If you wouldn't ship it as-is, it isn't done.
+#        You know it's shippable because you'd sign your name to it without caveat.
+name: "shippable_pride"
+prompt: "Am I proud of this work - would I ship it as-is?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Only ship what you'd stand behind unchanged if a stranger shipped it tomorrow."
+  evidence: "No known sharp edges, no apologetic comments, no 'good enough for now' left in the artifact."
+  logic: "Pride is a proxy for quality you'd defend. If you wouldn't ship it as-is, it isn't done."
