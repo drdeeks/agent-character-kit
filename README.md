@@ -11,15 +11,21 @@
 [![Tools: Codex](https://img.shields.io/badge/tools-Codex-ff69b4.svg)](#companion)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Purpose.** Every tool call an AI agent makes is judged by a **separate,
-tamper-proof enforcer** running *outside* the agent's process — so the agent
-cannot disable, patch, or bypass its own guard. It fails **closed**: can't
-verify → block.
+**What it is.** A **character-enforcement layer** for AI agents. Every
+tool call an agent makes is judged by a **separate, tamper-proof enforcer**
+running *outside* the agent's process — so the agent cannot disable, patch, or
+bypass its own guard. It **fails closed**: can't verify → block.
 
-**Single source of truth: [`AGENTS.md`](AGENTS.md).** It is the one file with
-purpose, architecture, install (Linux/macOS/Windows), customize, verify, and
-version. README is only this overview. If you find another install/customize
-doc, it's stale — `AGENTS.md` wins.
+**Character ≠ identity.** This kit governs an agent's *character* — its inner
+compass, its non-negotiable standards (a constitution + habits + policy). That
+is NOT its *identity* (its self: soul.md, system prompt, agent.json). The
+kit never touches who the agent is; it holds the agent to the bar it should
+meet when no one is watching. (Repo name is a legacy label — read it as
+"agent *character* kit.")
+
+**Single source of truth: [`AGENTS.md`](AGENTS.md).** One file with purpose,
+architecture, install (Linux/macOS/Windows), customize, verify, version.
+README is only this overview. Another install/customize doc = stale; `AGENTS.md` wins.
 
 ## Architecture
 
