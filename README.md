@@ -1,4 +1,4 @@
-# Agent Identity Kit (AIK) — v1.0.0
+# Agent Character Kit (ACK) — v1.0.0
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](VERSION)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](node/package.json)
