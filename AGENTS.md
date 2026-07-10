@@ -84,15 +84,15 @@ Requires Node ≥ 18. (Python only needed if you use a Python-plugin
 companion such as the Hermes example — other companions need only Node.)
 
 ```bash
-git clone https://github.com/drdeeks/agent-identity-kit.git
-cd agent-identity-kit && cd node && npm install && cd ..
+git clone https://github.com/drdeeks/agent-character-kit.git
+cd agent-character-kit && cd node && npm install && cd ..
 ```
 
 ### Linux — systemd (root-owned, self-respawning)
 ```bash
 sudo bash deploy/deploy-agent-enforcer.sh
 sudo systemctl enable --now agent-enforcer.service
-# => binary + source root-owned at /usr/local/lib/agent-identity-kit,
+# => binary + source root-owned at /usr/local/lib/agent-character-kit,
 #    agent-enforcer.service dropped, enabled, started (User=root, RestartSec=3)
 sudo systemctl status agent-enforcer.service   # Active: running
 ```
@@ -111,7 +111,7 @@ python3 supervise.py &
 # install node first
 $env:ENFORCER_SOCKET="tcp://127.0.0.1:8753"
 # wrap supervise.py as a Windows Service (e.g. nssm or sc):
-nssm install AgentEnforcer "python.exe" "C:\path\agent-identity-kit\supervise.py"
+nssm install AgentEnforcer "python.exe" "C:\path\agent-character-kit\supervise.py"
 nssm start AgentEnforcer
 ```
 
@@ -131,8 +131,8 @@ agent. Do not treat any single harness as "the" install path.
 **Example A — Hermes (Python-plugin companion):**
 ```bash
 cd python && pip install -e . && cd ..
-mkdir -p ~/.hermes/plugins/agent-identity-kit
-cp -r python/hermes_plugin/* ~/.hermes/plugins/agent-identity-kit/
+mkdir -p ~/.hermes/plugins/agent-character-kit
+cp -r python/hermes_plugin/* ~/.hermes/plugins/agent-character-kit/
 # restart Hermes; pre_tool_call is now gated by the CORE daemon
 ```
 

@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-identity-kit"
+name = "agent-character-kit"
 version = "0.1.0"
 description = "Identity enforcement + knowledge + memory for AI agents (Python companion to the Node.js aik package)"
 requires-python = ">=3.9"
