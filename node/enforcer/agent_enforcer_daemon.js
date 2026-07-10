@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Agent Identity Kit Enforcer Daemon
+ * Agent Character Kit Enforcer Daemon
  *
- * Root-owned, system-level enforcement service for AIK.
+ * Root-owned, system-level enforcement service for ACK.
  * Runs as daemon under systemd with automatic restart (RestartSec=3, self-respawning).
  * Socket-based communication with agent client.
  *
@@ -20,12 +20,12 @@ import { execSync } from "child_process";
 import yaml from "js-yaml";
 
 // Version — kept in sync with /VERSION at repo root. Bump there, not here.
-export const AIK_VERSION = "1.0.0";
+export const ACK_VERSION = "1.0.0";
 
 // ─── Self-resolving paths (root-owned defaults) ──────────────────────────────────
 function resolveConfig() {
   const HOME = process.env.HOME || "/root";
-  const WORKSPACE = process.env.AGENT_WORKSPACE || path.join(HOME, ".agent-identity-kit", "workspace");
+  const WORKSPACE = process.env.AGENT_WORKSPACE || path.join(HOME, ".agent-character-kit", "workspace");
   const SOCKET = process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock";
   const AGENT_DIR = path.join(WORKSPACE, ".agent");
   const CONSTITUTION = path.join(AGENT_DIR, "constitution.yaml");
@@ -55,7 +55,7 @@ function loadYaml(file) {
 // OVERRIDE (merge on top of) them. A user who pulls the daemon gets sane, safe
 // enforcement immediately — zero config, zero "additional bullshit".
 const DEFAULT_CONSTITUTION = {
-  agent: { id: "aik-enforcer", name: "Agent Identity Kit Enforcer" },
+  agent: { id: "ack-enforcer", name: "Agent Character Kit Enforcer" },
   core_values: [
     "Character is exercised on every action, not checked once.",
     "Fail closed — when unsure, deny.",
@@ -117,7 +117,7 @@ export class Enforcer {
     const filePolicy = loadYaml(cfg.POLICY_FILE);
     // policy.allow/deny from file extend (don't clobber embedded intent).
     this.policy = Object.assign({}, filePolicy);
-    this.identityHash = this._hash(JSON.stringify({
+    this.characterHash = this._hash(JSON.stringify({
       c: this.constitution,
       h: this.habits,
       p: this.policy,
@@ -149,7 +149,7 @@ export class Enforcer {
     this.constitution = loadYaml(this.cfg.CONSTITUTION);
     this.habits = this._loadHabits();
     this.policy = loadYaml(this.cfg.POLICY_FILE);
-    this.identityHash = this._hash(JSON.stringify({
+    this.characterHash = this._hash(JSON.stringify({
       c: this.constitution,
       h: this.habits,
       p: this.policy,
@@ -218,7 +218,7 @@ export class Enforcer {
       return result;
     }
 
-    // 4. Allowed — but still recorded, so every action carries the identity trail
+    // 4. Allowed — but still recorded, so every action carries the character trail
     const manifest = this._buildManifest();
     const defects = this._selfVerify();
     const result = { denied: false };
@@ -345,7 +345,7 @@ export class Enforcer {
       fssync.mkdirSync(dir, { recursive: true });
       const entry = {
         ts: new Date().toISOString(),
-        identity_hash: this.identityHash,
+        character_hash: this.characterHash,
         tool,
         command: (command || "").slice(0, 500),
         decision: result.denied ? "deny" : "allow",
@@ -369,8 +369,8 @@ export class Enforcer {
     this.lastHeartbeat = Date.now();
     return {
       status: "ok",
-      version: AIK_VERSION,
-      identity_hash: this.identityHash,
+      version: ACK_VERSION,
+      character_hash: this.characterHash,
       violations: this.validate_workspace(),
       uptime: Date.now() - this.startedAt,
       last_heartbeat: this.lastHeartbeat,
@@ -466,7 +466,7 @@ function startSocketServer(enforcer) {
   }
 
   const onListening = () => {
-    console.log(`AIK Enforcer daemon v${AIK_VERSION} listening on ${raw}`);
+    console.log(`ACK Enforcer daemon v${ACK_VERSION} listening on ${raw}`);
     console.log("System-owned enforcement service started successfully.");
   };
 
@@ -536,7 +536,7 @@ function startSocketServer(enforcer) {
 const enforcer = new Enforcer();
 startSocketServer(enforcer);
 
-console.log("AIK Enforcer daemon v1.0.0 started successfully.");
+console.log("ACK Enforcer daemon v1.0.0 started successfully.");
 console.log("Root-owned system daemon with automatic restart support.");
 console.log(`Workspace: ${enforcer.cfg.WORKSPACE}`);
 console.log(`Config: ${enforcer.cfg.CONSTITUTION}`);

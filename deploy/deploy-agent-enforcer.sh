@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# deploy-agent-enforcer.sh — install the root-owned AIK enforcer as a systemd service.
+# deploy-agent-enforcer.sh — install the root-owned ACK enforcer as a systemd service.
 #
 # Run on the TARGET machine (Hemlock host / container) AS ROOT:
 #   sudo bash deploy-agent-enforcer.sh
@@ -8,7 +8,7 @@
 # What it does:
 #   1. Creates the system-owned directories (root-owned, agent read-only).
 #   2. Installs the daemon binary to /usr/local/bin (root-owned, 0755).
-#   3. Installs source under /usr/local/lib/agent-identity-kit.
+#   3. Installs source under /usr/local/lib/agent-character-kit.
 #   4. Writes the systemd unit to /etc/systemd/system.
 #   5. Enables + starts the service (self-respawning via RestartSec=3).
 #
@@ -16,17 +16,17 @@ set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NODE_BIN="$(command -v node)"
-INSTALL_LIB="/usr/local/lib/agent-identity-kit"
+INSTALL_LIB="/usr/local/lib/agent-character-kit"
 INSTALL_BIN="/usr/local/bin/agent-enforcer-daemon"
 RUN_DIR="/run/agent-enforcer"
-VAR_DIR="/var/lib/agent-identity-kit"
-LOG_DIR="/var/log/agent-identity-kit"
+VAR_DIR="/var/lib/agent-character-kit"
+LOG_DIR="/var/log/agent-character-kit"
 UNIT="/etc/systemd/system/agent-enforcer.service"
 
 [ "$(id -u)" -eq 0 ] || { echo "ERROR: run as root (sudo bash $0)"; exit 1; }
 [ -n "$NODE_BIN" ] || { echo "ERROR: node not found"; exit 1; }
 
-echo ">> Installing AIK enforcer (root-owned, self-respawning)..."
+echo ">> Installing ACK enforcer (root-owned, self-respawning)..."
 
 # 1. System-owned directories — agent (non-root) gets NO write access.
 install -d -o root -g root -m 0755 "$RUN_DIR"
@@ -42,8 +42,8 @@ install -d -o root -g root -m 0755 "$INSTALL_LIB"
 if [ ! -f "$VAR_DIR/workspace/.agent/constitution.yaml" ]; then
   cat > "$VAR_DIR/workspace/.agent/constitution.yaml" <<'YAML'
 agent:
-  id: aik-enforcer
-  name: "AIK Enforcer Workspace"
+  id: ack-enforcer
+  name: "ACK Enforcer Workspace"
   purpose: "System-owned enforcement workspace"
 core_values:
   - "Character is exercised on every action, not checked once"

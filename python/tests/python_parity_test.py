@@ -12,7 +12,7 @@ sys.path.insert(0, str(HERE.parent))
 
 def load(modname):
     spec = importlib.util.spec_from_file_location(
-        f"aik_{modname}", HERE.parent / "agent_identity_kit" / f"{modname}.py")
+        f"aik_{modname}", HERE.parent / "agent_character_kit" / f"{modname}.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -33,7 +33,7 @@ def test_enforcer_allowlist_and_audit():
     prev = os.environ.get("AGENT_WORKSPACE")
     os.environ["AGENT_WORKSPACE"] = str(ws)
     try:
-        from agent_identity_kit.enforcer import Enforcer
+        from agent_character_kit.enforcer import Enforcer
         enf = Enforcer()
         r1 = enf.execute_tool("Bash", {"command": "ls"})
         r2 = enf.execute_tool("Bash", {"command": "rm file"})
@@ -56,7 +56,7 @@ def test_enforcer_allowlist_and_audit():
 
 def test_memory_and_knowledge_modules():
     ws = tmp_ws()
-    from agent_identity_kit.memory import Memory
+    from agent_character_kit.memory import Memory
     mem = Memory(str(ws))
     mem.init()
     mem.daily.log("did X", ["a", "b"], "dev")
@@ -76,8 +76,8 @@ def test_indexer_excludes_agent_internal():
     (ws / ".agent").mkdir()
     (ws / ".agent" / "constitution.yaml").write_text("agent:\n  id: x\n")
     (ws / "userdoc.md").write_text("real corpus doc\n")
-    import agent_identity_kit
-    idx = agent_identity_kit.DocumentIndexer(str(ws))
+    import agent_character_kit
+    idx = agent_character_kit.DocumentIndexer(str(ws))
     idx.init()
     res = idx.index_directory(str(ws), {})
     assert res["indexed"] == 1

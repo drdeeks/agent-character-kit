@@ -1,5 +1,5 @@
 """
-Agent Identity Kit — Python module
+Agent Character Kit — Python module
 
 Provides the same document-indexing capabilities as the Node.js package:
 - Broad file-type discovery (markdown, code, config, agent docs, etc.)

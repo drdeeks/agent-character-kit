@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Agent Identity Kit — Python CLI
+Agent Character Kit — Python CLI
 
 Companion to the Node.js package. Provides:
 - Hook execution for Python-based frameworks (Hermes, OpenCode)
-- Identity validation via enforcer daemon
+- Character validation via enforcer daemon
 - Knowledge/memory operations
 
 Usage:
-  python3 -m agent_identity_kit hook --framework hermes
-  python3 -m agent_identity_kit enforcer --status
-  python3 -m agent_identity_kit index --path ./docs
-  python3 -m agent_identity_kit memory log "entry" --tags "tag1,tag2"
+  python3 -m agent_character_kit hook --framework hermes
+  python3 -m agent_character_kit enforcer --status
+  python3 -m agent_character_kit index --path ./docs
+  python3 -m agent_character_kit memory log "entry" --tags "tag1,tag2"
 """
 
 import asyncio
@@ -29,7 +29,7 @@ import importlib.util
 def _load(modname):
     """Lazily import a sub-module so unused components are never loaded."""
     here = Path(__file__).resolve().parent
-    spec = importlib.util.spec_from_file_location(f"agent_identity_kit.{modname}", here / f"{modname}.py")
+    spec = importlib.util.spec_from_file_location(f"agent_character_kit.{modname}", here / f"{modname}.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -144,13 +144,13 @@ async def cmd_hook(args):
         audit_log("pre_tool_use", normalized["tool"], normalized["params"], response)
 
         # Fail-closed by default: if the enforcer can't be reached, block.
-        # Opt out only in development with AIK_FAIL_OPEN=1.
-        fail_closed = not os.environ.get("AIK_FAIL_OPEN")
+        # Opt out only in development with ACK_FAIL_OPEN=1.
+        fail_closed = not os.environ.get("ACK_FAIL_OPEN")
         if response.get("error") and fail_closed:
             result = {"allow": False,
                       "reason": response.get("reason", "Enforcer unavailable"),
                       "reflection": response.get("reflection",
-                                    "The enforcer could not be reached. Identity cannot be "
+                                    "The enforcer could not be reached. character cannot be "
                                     "verified, so the action is blocked. A guard that fails "
                                     "open is no guard.")}
         elif response.get("denied"):
@@ -263,10 +263,10 @@ def cmd_semantic(args):
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Agent Identity Kit (Python)")
+    parser = argparse.ArgumentParser(description="Agent Character Kit (Python)")
     sub = parser.add_subparsers(dest="command")
 
-    hook_p = sub.add_parser("hook", help="Run identity hook")
+    hook_p = sub.add_parser("hook", help="Run character hook")
     hook_p.add_argument("--framework", default="auto", choices=["claude", "cursor", "gemini", "hermes", "opencode", "generic", "auto"])
 
     enf_p = sub.add_parser("enforcer", help="Enforcer operations")

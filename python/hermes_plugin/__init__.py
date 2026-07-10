@@ -1,7 +1,7 @@
 """
-Agent Identity Kit — Hermes plugin (real, registered, fail-closed).
+Agent Character Kit — Hermes plugin (real, registered, fail-closed).
 
-Bridges Hermes's generic ``pre_tool_call`` hook to the Agent Identity Kit
+Bridges Hermes's generic ``pre_tool_call`` hook to the Agent Character Kit
 enforcer DAEMON over its RPC socket. The daemon is the SINGLE SOURCE OF
 TRUTH for enforcement (FOREVER-SYSTEM.md §1) — it runs as a separate,
 supervised process (systemd/launchd/supervise.py) on Linux, macOS, Windows,
@@ -9,7 +9,7 @@ container, host, or USB free-state. This plugin is a THIN CLIENT: it does NOT
 embed enforcement logic. One policy, one binary, every OS.
 
 Design:
-  * This plugin is a LAYER, not a re-implementation. It imports AIK's
+  * This plugin is a LAYER, not a re-implementation. It imports ACK's
     EnforcerClient and talks to the daemon; it does NOT copy enforcement logic.
   * It never touches Hermes core files. Only the generic pre_tool_call hook.
   * Fail-closed: if the daemon socket is unreachable, the tool call is BLOCKED.
@@ -17,9 +17,9 @@ Design:
     self-heals; the only true failure is the daemon being down — which must
     block, not pass.)
 
-Enable: drop this directory into ~/.hermes/plugins/agent-identity-kit/ and
-ensure the `agent_identity_kit` Python package is importable (pip install -e
-./agent-identity-kit/python). The daemon must be running (see supervise.py /
+Enable: drop this directory into ~/.hermes/plugins/agent-character-kit/ and
+ensure the `agent_character_kit` Python package is importable (pip install -e
+./agent-character-kit/python). The daemon must be running (see supervise.py /
 deploy/).
 """
 
@@ -33,20 +33,20 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 # Version — kept in sync with /VERSION at repo root.
-AIK_VERSION = "1.0.0"
+ACK_VERSION = "1.0.0"
 
-# Optional env escape hatch: set AIK_DISABLE=1 to turn the plugin into a
+# Optional env escape hatch: set ACK_DISABLE=1 to turn the plugin into a
 # no-op (never use in production — it defeats the purpose).
-_DISABLE = os.environ.get("AIK_DISABLE") == "1"
+_DISABLE = os.environ.get("ACK_DISABLE") == "1"
 
 
 def _get_client():
-    """Construct the AIK EnforcerClient (thin RPC client to the daemon).
+    """Construct the ACK EnforcerClient (thin RPC client to the daemon).
 
-    Deferred to call-time so the plugin loads even if AIK isn't importable yet
+    Deferred to call-time so the plugin loads even if ACK isn't importable yet
     (we surface a clear fail-closed error instead of crashing Hermes startup).
     """
-    from agent_identity_kit.enforcer import EnforcerClient
+    from agent_character_kit.enforcer import EnforcerClient
     return EnforcerClient()
 
 
@@ -85,18 +85,18 @@ def _on_pre_tool_call(
         )
     except Exception as exc:
         # Fail-closed: daemon unreachable or client error -> block.
-        logger.error("[agent-identity-kit] enforcement error (failing closed): %s", exc)
+        logger.error("[agent-character-kit] enforcement error (failing closed): %s", exc)
         return {
             "action": "block",
             "message": (
-                "Agent Identity Kit enforcer unavailable — action blocked. "
+                "Agent Character Kit enforcer unavailable — action blocked. "
                 "Character cannot be verified, so the action is denied. "
                 "A guard that fails open is no guard."
             ),
         }
 
     if not result.get("allowed"):
-        reason = result.get("reason") or "Denied by Agent Identity Kit enforcer."
+        reason = result.get("reason") or "Denied by Agent Character Kit enforcer."
         reflection = result.get("reflection") or ""
         msg = f"[character] {reason}"
         if reflection:
@@ -110,4 +110,4 @@ def _on_pre_tool_call(
 def register(ctx) -> None:
     """Hermes plugin entry point."""
     ctx.register_hook("pre_tool_call", _on_pre_tool_call)
-    logger.info("[agent-identity-kit] registered pre_tool_call enforcement hook (daemon client)")
+    logger.info("[agent-character-kit] registered pre_tool_call enforcement hook (daemon client)")

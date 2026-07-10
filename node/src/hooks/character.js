@@ -9,7 +9,7 @@ const AUDIT_DIR = path.join(
 const AUDIT_LOG = path.join(AUDIT_DIR, "tool-audit.jsonl");
 
 /**
- * Identity Hook — Core enforcement for all tool calls.
+ * Character Hook — Core enforcement for all tool calls.
  *
  * This is the gatekeeper. Every tool call from any framework
  * goes through here before execution.
@@ -158,7 +158,7 @@ function auditLog(event, tool, params, result) {
 const ENFORCER = new EnforcerClient();
 
 /**
- * Process a tool call through the identity hook.
+ * Process a tool call through the character hook.
  *
  * @param {object} payload - Raw tool call from framework
  * @param {object} options - { framework: "auto"|"claude"|..., enforcer: EnforcerClient }
@@ -178,8 +178,8 @@ export async function processToolCall(payload, options = {}) {
   }
 
   // Fail-closed by default: if the enforcer can't be reached, block.
-  // Opt out only in development with AIK_FAIL_OPEN=1 (never in production).
-  const failClosed = !process.env.AIK_FAIL_OPEN;
+  // Opt out only in development with ACK_FAIL_OPEN=1 (never in production).
+  const failClosed = !process.env.ACK_FAIL_OPEN;
 
   const isPre = [
     "pre_tool_use", "pretooluse", "beforetool",
@@ -242,7 +242,7 @@ export function generateConfig(framework, hookCommand) {
           BeforeTool: [{
             matcher: ".*",
             hooks: [{
-              name: "identity-enforcer",
+              name: "character-enforcer",
               type: "command",
               command: `${cmd} --framework gemini`,
             }],
@@ -252,7 +252,7 @@ export function generateConfig(framework, hookCommand) {
 
     case "hermes":
       return `# Add to your Hermes plugin:
-const { processToolCall } = require("agent-identity-kit");
+const { processToolCall } = require("agent-character-kit");
 
 ctx.register_hook("pre_tool_call", async (toolName, args, taskId) => {
   const result = await processToolCall(
@@ -265,7 +265,7 @@ ctx.register_hook("pre_tool_call", async (toolName, args, taskId) => {
 
     case "opencode":
       return `// Add to your OpenCode plugin:
-import { processToolCall } from "agent-identity-kit";
+import { processToolCall } from "agent-character-kit";
 
 export default async ({ tool, args }) => {
   const result = await processToolCall(

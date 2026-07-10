@@ -1,17 +1,17 @@
 /**
- * Agent Identity Kit
+ * Agent Character Kit
  *
- * Core: Identity hook enforcement via enforcer daemon
+ * Core: Character hook enforcement via enforcer daemon
  * Secondary: Knowledge indexing + memory with YAML frontmatter
  *
  * Every document gets proper YAML frontmatter for efficient searching.
  * Every tool call gets validated through the enforcer.
  */
 
-// ─── Core: Identity Enforcement ─────────────────────────────────────────────
+// ─── Core: Character Enforcement ─────────────────────────────────────────────
 
 export { EnforcerClient } from "./enforcer/client.js";
-export { processToolCall, generateConfig } from "./hooks/identity.js";
+export { processToolCall, generateConfig } from "./hooks/character.js";
 
 // ─── Secondary: Knowledge & Memory ──────────────────────────────────────────
 
