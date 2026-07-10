@@ -1,5 +1,5 @@
 """
-Test: Agent Identity Kit Hermes plugin (pre_tool_call enforcement, thin client).
+Test: Agent Character Kit Hermes plugin (pre_tool_call enforcement, thin client).
 
 The plugin is a THIN CLIENT to the enforcer daemon (single source of truth).
 These tests prove:
@@ -9,7 +9,7 @@ These tests prove:
                      on-demand get_habit returns full assert/evidence/logic proof,
                      daemon self-verify reports no defects.
 
-Run from the agent-identity-kit dir:
+Run from the agent-character-kit dir:
     python3 -m pytest python/hermes_plugin/test_plugin.py -q
 or directly:
     python3 python/hermes_plugin/test_plugin.py
@@ -26,12 +26,13 @@ import tempfile
 import time
 
 _HERE = pathlib.Path(__file__).resolve().parent
-_ROOT = _HERE.parent.parent  # repo root (agent-identity-kit/)
+_ROOT = _HERE.parent.parent  # repo root (agent-character-kit/)
 sys.path.insert(0, str(_ROOT))
+sys.path.insert(0, str(_ROOT / "python"))
 sys.path.insert(0, str(_HERE))
 
 DAEMON = _ROOT / "node" / "enforcer" / "agent_enforcer_daemon.js"
-NODE = os.environ.get("AIK_NODE", "node")
+NODE = os.environ.get("ACK_NODE", "node")
 
 
 def _load_plugin():
@@ -113,7 +114,7 @@ def _run_manifest_test():
         os.environ["ENFORCER_SOCKET"] = sock
         import sys as _sys
         _sys.path.insert(0, str(_ROOT / "python"))
-        from agent_identity_kit.enforcer import EnforcerClient
+        from agent_character_kit.enforcer import EnforcerClient
         c = EnforcerClient(sock)
 
         async def run():
@@ -158,7 +159,7 @@ def _run_fail_closed_test():
 
 
 if __name__ == "__main__":
-    print("agent-identity-kit hermes plugin (thin client):")
+    print("agent-character-kit hermes plugin (thin client):")
     _run_block_test()
     _run_fail_closed_test()
     _run_manifest_test()

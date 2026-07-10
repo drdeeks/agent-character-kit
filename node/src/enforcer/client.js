@@ -10,7 +10,7 @@ const DEFAULT_SOCKET = "/run/agent-enforcer/main.sock";
 const SOCKET_PATH = process.env.ENFORCER_SOCKET || DEFAULT_SOCKET;
 
 /**
- * Enforcer Client — RPC to the identity enforcer daemon.
+ * Enforcer Client — RPC to the character enforcer daemon.
  *
  * The enforcer daemon runs as a separate systemd service.
  * The agent CANNOT modify, patch, or kill it.
@@ -77,12 +77,12 @@ export class EnforcerClient {
    * Validate a tool call through the enforcer.
    * @param {string} tool - Tool name
    * @param {object} params - Tool parameters
-   * @param {string} identityHash - Agent identity hash
+   * @param {string} characterHash - Agent character hash
    * @returns {Promise<{allowed: boolean, reason?: string, reflection?: string}>}
    */
-  async validateTool(tool, params, identityHash = "unknown") {
+  async validateTool(tool, params, characterHash = "unknown") {
     // The daemon's socket contract is FLAT: { method:"execute_tool",
-    // params:{ tool, command, identity_hash } }. executeTool(tool, params)
+    // params:{ tool, command, character_hash } }. executeTool(tool, params)
     // reads params.command via _extractCommand. Do NOT nest params inside
     // params — that was the bug that made every call pass (command resolved
     // to the tool name instead of the real command).
@@ -91,7 +91,7 @@ export class EnforcerClient {
     const response = await this.call("execute_tool", {
       tool,
       command,
-      identity_hash: identityHash,
+      character_hash: characterHash,
     });
 
     // Enforcer unreachable → fail closed by default (see processToolCall).
@@ -101,7 +101,7 @@ export class EnforcerClient {
         error: true,
         reason: `Enforcer unavailable: ${response.error}`,
         reflection:
-          "The enforcer could not be reached. Identity cannot be verified, " +
+          "The enforcer could not be reached. character cannot be verified, " +
           "so the action is blocked. A guard that fails open is no guard.",
       };
     }

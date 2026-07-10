@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Agent Identity Kit — cross-platform supervisor.
+Agent Character Kit — cross-platform supervisor.
 
 Runs the enforcement daemon as a supervised child and restarts it on death
 (3s backoff, matching the systemd RestartSec). This is the platform-agnostic
@@ -24,8 +24,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.join(HERE, "node", "enforcer", "agent_enforcer_daemon.js")
-NODE = os.environ.get("AIK_NODE", "node")
-RESTART_SEC = float(os.environ.get("AIK_RESTART_SEC", "3"))
+NODE = os.environ.get("ACK_NODE", "node")
+RESTART_SEC = float(os.environ.get("ACK_RESTART_SEC", "3"))
 
 
 def main() -> int:
@@ -34,7 +34,7 @@ def main() -> int:
         print(f"[supervise] daemon not found at {DAEMON}", file=sys.stderr)
         return 1
 
-    print(f"[supervise] starting AIK enforcer (socket={os.environ.get('ENFORCER_SOCKET', '/run/agent-enforcer/main.sock')})")
+    print(f"[supervise] starting ACK enforcer (socket={os.environ.get('ENFORCER_SOCKET', '/run/agent-enforcer/main.sock')})")
     while True:
         proc = subprocess.Popen([NODE, DAEMON], env=os.environ)
         try:

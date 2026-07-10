@@ -1,6 +1,6 @@
-name: "agent-identity-kit"
+name: "agent-character-kit"
 version: "1.0.0"
-description: "Enforce agent character (constitution, habits, policy) on every tool call via the Agent Identity Kit enforcer. Fail-closed: blocks when the enforcer is unreachable or misconfigured."
+description: "Enforce agent character (constitution, habits, policy) on every tool call via the Agent Character Kit enforcer. Fail-closed: blocks when the enforcer is unreachable or misconfigured."
 author: "drdeeks"
 entry_point: "__init__.py"
 hooks:

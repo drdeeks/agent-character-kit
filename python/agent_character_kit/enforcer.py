@@ -1,5 +1,5 @@
 """
-Enforcer client — RPC to the identity enforcer daemon over a Unix socket.
+Enforcer client — RPC to the character enforcer daemon over a Unix socket.
 
 Mirrors the Node `src/enforcer/client.js`. The agent uses this to validate every
 tool call. The daemon runs as a separate, tamper-proof process; this client only
@@ -64,7 +64,7 @@ class Enforcer:
         self.constitution = load_yaml(self.cfg["constitution"])
         self.habits = self._load_habits()
         self.policy = load_yaml(self.cfg["policy_file"])
-        self.identity_hash = self._hash({
+        self.character_hash = self._hash({
             "c": self.constitution, "h": self.habits, "p": self.policy,
         })
         self.started_at = self._now()
@@ -95,7 +95,7 @@ class Enforcer:
         self.constitution = load_yaml(self.cfg["constitution"])
         self.habits = self._load_habits()
         self.policy = load_yaml(self.cfg["policy_file"])
-        self.identity_hash = self._hash({
+        self.character_hash = self._hash({
             "c": self.constitution, "h": self.habits, "p": self.policy,
         })
 
@@ -145,7 +145,7 @@ class Enforcer:
                 self._audit(tool, command, result)
                 return result
 
-        # 4. Allowed — but still recorded, so every action carries the identity trail.
+        # 4. Allowed — but still recorded, so every action carries the character trail.
         #    Re-assert the self-audit reminders (FOREVER-SYSTEM.md §6): character is
         #    exercised on EVERY action, not checked once.
         reminders = self._collect_reminders()
@@ -165,7 +165,7 @@ class Enforcer:
             log.parent.mkdir(parents=True, exist_ok=True)
             entry = {
                 "ts": self._now(),
-                "identity_hash": self.identity_hash,
+                "character_hash": self.character_hash,
                 "tool": tool,
                 "command": (command or "")[:500],
                 "decision": "deny" if result.get("denied") else "allow",
@@ -281,7 +281,7 @@ class Enforcer:
         self.last_heartbeat = self._now()
         return {
             "status": "ok",
-            "identity_hash": self.identity_hash,
+            "character_hash": self.character_hash,
             "violations": self.validate_workspace(),
         }
 
@@ -343,7 +343,7 @@ class EnforcerClient:
             # Any failure to reach/parse the daemon is treated as unreachable.
             return {"error": "enforcer socket unreachable"}
 
-    async def validate_tool(self, tool, params, identity_hash="unknown"):
+    async def validate_tool(self, tool, params, character_hash="unknown"):
         # Flat contract, mirroring the node EnforcerClient fix: the daemon's
         # executeTool(tool, params) reads params.command. Do NOT nest params
         # inside params — that made _extractCommand resolve the command to the
@@ -355,11 +355,11 @@ class EnforcerClient:
                     command = params[k]
                     break
         resp = await self.call("execute_tool", {"tool": tool, "command": command,
-                                                "identity_hash": identity_hash})
+                                                "character_hash": character_hash})
         if not isinstance(resp, dict) or resp.get("error"):
             # Fail-closed: if the enforcer can't be reached/parsed, block.
             return {"allowed": False, "error": True,
-                    "reason": "Enforcer unavailable: identity cannot be verified, "
+                    "reason": "Enforcer unavailable: character cannot be verified, "
                               "so the action is blocked. A guard that fails open is no guard."}
         if resp.get("denied"):
             return {"allowed": False, "reason": resp.get("reason", "Denied by enforcer"),

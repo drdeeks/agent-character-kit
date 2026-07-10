@@ -7,7 +7,7 @@ import os from "os";
 import path from "path";
 
 // Components are loaded lazily inside their commands so you can use ONLY the
-// identity layer (hook + enforcer) without pulling in indexer / memory /
+// character layer (hook + enforcer) without pulling in indexer / memory /
 // semantic. Nothing is forced.
 const getIndexer = async () => (await import("../src/knowledge/indexer.js")).DocumentIndexer;
 const getSemantic = async () => (await import("../src/knowledge/semantic.js")).SemanticSearch;
@@ -19,14 +19,14 @@ const program = new Command();
 
 program
   .name("aik")
-  .description("Agent Identity Kit — Identity enforcement + knowledge + memory")
+  .description("Agent Character Kit — Character enforcement + knowledge + memory")
   .version("1.0.0");
 
 // ─── Hook Command (Core) ────────────────────────────────────────────────────
 
 program
   .command("hook")
-  .description("Run identity hook for tool validation (core enforcement)")
+  .description("Run character hook for tool validation (core enforcement)")
   .option("-f, --framework <fw>", "Framework (claude|cursor|gemini|hermes|opencode|generic|auto)", "auto")
   .option("-c, --config", "Generate hook configuration for a framework")
   .option("--framework-config <fw>", "Framework to generate config for")
@@ -152,7 +152,7 @@ function installService(createUser) {
 
   if (platform === "linux" || platform === "freebsd") {
     const unit = `[Unit]
-Description=Agent Identity Enforcer (self-healing)
+Description=Agent Character Enforcer (self-healing)
 After=network.target
 
 [Service]
@@ -185,7 +185,7 @@ WantedBy=default.target
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.agentidentitykit.enforcer</string>
+  <key>Label</key><string>com.agentcharacterkit.enforcer</string>
   <key>ProgramArguments</key>
   <array><string>node</string><string>${aikBin}</string><string>enforcer</string><string>--supervise</string></array>
   <key>RunAtLoad</key><true/>
@@ -199,13 +199,13 @@ WantedBy=default.target
 </dict>
 </plist>
 `;
-    const plistPath = path.join(HOME, "Library", "LaunchAgents", "com.agentidentitykit.enforcer.plist");
+    const plistPath = path.join(HOME, "Library", "LaunchAgents", "com.agentcharacterkit.enforcer.plist");
     fs.mkdirSync(path.dirname(plistPath), { recursive: true });
     fs.writeFileSync(plistPath, plist);
     console.log(`Wrote ${plistPath}`);
     console.log("Load + start:");
     console.log(`  launchctl load ${plistPath}`);
-    console.log(`  launchctl start com.agentidentitykit.enforcer`);
+    console.log(`  launchctl start com.agentcharacterkit.enforcer`);
   } else {
     console.log("No native service manager for this platform.");
     console.log("Run the self-healing supervisor directly:");

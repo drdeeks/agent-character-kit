@@ -16,7 +16,7 @@ trap cleanup EXIT
 
 echo ">> Installing user unit..."
 mkdir -p "$HOME/.config/systemd/user"
-cp /home/ubuntu/qwen-cloud-2026/agent-identity-kit/deploy/agent-enforcer-proof.service "$HOME/.config/systemd/user/"
+cp /home/ubuntu/qwen-cloud-2026/agent-character-kit/deploy/agent-enforcer-proof.service "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 
 echo ">> Starting daemon..."
