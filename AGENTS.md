@@ -9,11 +9,18 @@
 
 ## Purpose
 
-Make sure **every tool call an AI agent makes** is judged by a **separate,
-tamper-proof enforcer** running *outside* the agent's own process — so the agent
-cannot disable, patch, or bypass its own guard. The enforcer validates each
-action against an identity (constitution + habits + policy) and **fails closed**:
-if it can't verify, it blocks.
+A **character-enforcement layer** for AI agents. **Every tool call an agent
+makes** is judged by a **separate, tamper-proof enforcer** running
+*outside* the agent's own process — so the agent cannot disable, patch, or
+bypass its own guard. The enforcer validates each action against the agent's
+**character** (a constitution + habits + policy) and **fails closed**: if it
+can't verify, it blocks.
+
+**Character is not identity.** *Character* is the agent's inner compass — its
+non-negotiable standards, the bar it holds itself to when no one is watching.
+*Identity* is the agent's self (soul.md, system prompt, agent.json) — who it
+IS. This kit enforces character only; it never manages or touches identity.
+(Repo name is a legacy label — it is an *agent-character* kit.)
 
 Framework-agnostic. Any agent that can fire a pre-tool-call hook (Hermes, Claude,
 Cursor, Codex, a shell wrapper) can use it.
