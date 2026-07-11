@@ -55,14 +55,43 @@ strictly the habit-enforcement layer. Do not fold the rest into it.
 
 ## 4. Acknowledgment is reflection, not ritual
 
-When held, you state two habits and WHY they resonate. This is not a toll to
-pay — it is the moment you re-ground action in character. Each habit named must
-be RATED against the situation at hand. Naming a habit you are not actually
-weighing is the exact failure the hold exists to prevent. A habit reused without
-thought is worse than no habit: it simulates character while bypassing it.
+When held, you state two habits and WHY they apply. This is not a toll to pay —
+it is the moment you re-ground action in character. Each habit named must be
+RATED against the situation at hand. A habit reused without thought, or a reason
+that is filler, is worse than no habit: it simulates character while bypassing it.
+
+### Format (enforced by the daemon)
+
+```
+Habit: <habit-name> <closer> <engaged, situation-tied reason>
+```
+
+- `<closer>` is VARIABLE — any of these (the daemon accepts all):
+  `resonates true`, `why:`, `because`, `matters because`, `applies because`,
+  or any equivalent first-person grounding. The closer is NOT hardwired; the
+  structure is.
+- `<engaged reason>` MUST use a real connector and tie to the current work:
+  - it's important because / validated ______ / applies to _____ /
+    makes sense because / reminded me / establishes / ensures proper /
+    has me thinking / clearly accurate because
+  - and reference the actual task: current work environment, a to-do being
+    created, why it applies now, or what you'll maintain going forward.
+
+Filler ("resonates true because x", "why: yes") is REJECTED by the daemon. The
+reason must be specific enough that a reader sees WHY that habit governs THIS
+action.
+
+### Rolling window
 
 The daemon enforces a rolling window: you cannot reuse either of the two habits
-you most recently acknowledged. This forces genuine variety — you must actually
+you most recently acknowledged, and you cannot reuse a prior ack's exact reason
+for the same session. This forces genuine variety and genuine engagement — you
+must reach for different principles AND different reasoning, not the same
+comfortable pair.
+
+Habit: document_for_next_agent resonates true — it applies to this correction,
+because the variable-closer grammar belongs in this file so the next agent gets
+the rule as doctrine, not as a scolding it can ignore.
 reach for different principles, not the same comfortable pair.
 
 ## 5. Enforcement is fail-closed

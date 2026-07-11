@@ -75,20 +75,24 @@ test("daemon: reuse-window rejects the previous two habits", { timeout: 15000 },
     }
     assert.ok(fs.existsSync(sock), "daemon socket should be up before RPCs");
 
-    const a = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak resonates true because x" });
-    const b = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: complete_thoroughly resonates true because y" });
+    const a = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak why: it applies because this test spawns a real daemon and must not leak its socket path in logs" });
+    const b = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: complete_thoroughly resonates true — it ensures proper scope because the window test must exercise three distinct embedded-backed habits, not a lucky pair" });
     assert.equal(a.ok, true);
     assert.equal(b.ok, true);
 
-    const reuseA = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak resonates true because z" });
-    const reuseB = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: complete_thoroughly resonates true because w" });
+    const reuseA = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak why: it applies because this test spawns a real daemon and must not leak its socket path in logs" });
+    const reuseB = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: complete_thoroughly resonates true — it ensures proper scope because the window test must exercise three distinct embedded-backed habits, not a lucky pair" });
     assert.equal(reuseA.ok, false, "reusing no_credential_leak (in previous two) must be rejected");
     assert.equal(reuseB.ok, false, "reusing complete_thoroughly (in previous two) must be rejected");
 
-    const c = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: rigorous_commits_no_push resonates true because q" });
+    const c = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: rigorous_commits_no_push because it matters that this third ack uses a different closer and a genuinely different reason than the first two" });
     assert.equal(c.ok, true);
-    const aAgain = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak resonates true because r" });
+    const aAgain = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak applies because the window has shifted and the daemon now accepts this habit again with fresh reasoning" });
     assert.equal(aAgain.ok, true, "no_credential_leak freed after window shifted");
+
+    // filler must be rejected under the new grammar
+    const filler = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak why: yes" });
+    assert.equal(filler.ok, false, "filler reason (too short) must be rejected");
   } finally {
     try { process.kill(-child.pid, "SIGKILL"); } catch {}
     try { child.kill("SIGKILL"); } catch {}

@@ -442,7 +442,7 @@ export class Enforcer {
   // The agent cannot bypass: state lives here (root-owned), not in the plugin.
   _holdState(session) {
     if (!this.HOLD_STATE.has(session)) {
-      this.HOLD_STATE.set(session, { count: 0, acked: 0, lastTwo: [] });
+      this.HOLD_STATE.set(session, { count: 0, acked: 0, lastTwo: [], reasons: [] });
     }
     return this.HOLD_STATE.get(session);
   }
@@ -495,23 +495,36 @@ export class Enforcer {
     if (!statement || typeof statement !== "string") {
       return { ok: false, error: "no statement" };
     }
-    const m = statement.match(/habit:\s*(\S+)\s+resonates\s+true\s+because\s+(.+)/i);
-    if (!m) return { ok: false, error: "bad format" };
+    // Variable closer — NOT hardwired to "resonates true". Accepted closers:
+    //   resonates true | why: | because | matters because | applies because
+    // (case-insensitive; tolerant of em-dash/hyphen around the closer).
+    const m = statement.match(
+      /^habit:\s*(\S+)\s*(?:resonates\s+true|why:|because|matters\s+because|applies\s+because)\s*[-–:]?\s*(.+)$/i
+    );
+    if (!m) return { ok: false, error: "bad format — use: Habit: <name> <closer: resonates true | why: | because | …> <engaged reason>" };
     const name = m[1];
     const reason = m[2].trim();
     const norm = this._normName(name);
     if (!this._habitNamesNorm().has(norm)) {
       return { ok: false, error: `unknown habit: ${name}` };
     }
-    if (!reason) return { ok: false, error: "empty reason" };
+    // Require a substantive, engaged reason — not filler.
+    if (reason.length < 12) return { ok: false, error: "reason too short — state WHY this habit governs this action (specific, situation-tied)" };
     const st = this._holdState(session);
+    // No reuse of either of the two most-recent habits (rolling window).
     if (st.lastTwo.includes(norm)) {
       return { ok: false, error: "already acknowledged recently — state a DIFFERENT habit (not one of the previous two)" };
     }
-    // Every accepted acknowledgment shifts the rolling window — including
-    // ones that arrive after the hold is already satisfied — so the agent can
-    // never freeze the "previous two" and keep reusing everything else.
+    // No reuse of a prior ack's exact reason for this session (forces real engagement).
+    if (st.reasons.includes(reason.toLowerCase())) {
+      return { ok: false, error: "reason reused — state a genuinely different reason, not one you already gave" };
+    }
+    // Every accepted acknowledgment shifts the rolling window — including ones
+    // that arrive after the hold is already satisfied — so the agent can never
+    // freeze the "previous two" and keep reusing everything else.
     st.lastTwo = [...st.lastTwo, norm].slice(-2);
+    st.reasons.push(reason.toLowerCase());
+    if (st.reasons.length > 8) st.reasons.shift();
     if (st.acked >= 2) return { ok: true, already_satisfied: true, acked: st.acked };
     st.acked += 1;
     return { ok: true, acked: st.acked };
@@ -522,13 +535,19 @@ export class Enforcer {
 function startSocketServer(enforcer) {
   const server = net.createServer((socket) => {
     socket.setEncoding("utf8");
-
+    let buf = "";
     socket.on("data", (data) => {
-      try {
-        const request = JSON.parse(data.trim());
-        let response;
-
-        switch (request.method) {
+      buf += data;
+      let idx;
+      // Process complete newline-delimited requests; buffer partial ones.
+      while ((idx = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line) continue;
+        try {
+          const request = JSON.parse(line);
+          let response;
+          switch (request.method) {
           case "execute_tool":
             response = enforcer.executeTool(request.params.tool, request.params);
             break;
@@ -561,7 +580,8 @@ function startSocketServer(enforcer) {
       } catch (err) {
         socket.write(JSON.stringify({ error: "invalid request" }) + "\n");
       }
-    });
+    }
+  });
 
     socket.on("error", (err) => {
       console.error("Socket error:", err);
