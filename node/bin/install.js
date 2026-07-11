@@ -2,188 +2,252 @@
 /**
  * @character-kit interactive installer.
  *
- * One command deploys the whole kit:
- *   npm i -g @character-kit        (postinstall runs this)
- *   npx @character-kit install     (or: ack install)
+ * One command deploys the WHOLE kit and wires every component:
+ *   - the enforcement daemon (CORE, out-of-process)
+ *   - the harness companion (thin client: Hermes plugin OR aik hook)
+ *   - the acknowledgment monitor (credits the daemon from the ack log)
+ *   - the monitor watchdog (revives the monitor)
  *
- * Non-interactive (CI / tests / scripting):
- *   ack install --workspace ~/myagent --socket unix --user --yes
+ * Everything resolves via env (AGENT_WORKSPACE / ENFORCER_SOCKET / ACK_ACK_LOG)
+ * written to a single .env. No hardcoded paths, no stalls, no force-closes:
+ * prompts wait for a response, child processes are spawned detached+unref so
+ * the installer always exits cleanly.
  *
- * Interactive (TTY): prompts for where the agent + habit system live, the
- * socket mode, and root vs user install. Writes a single .env that EVERY
- * component reads (daemon, monitor, watchdog, python plugin, node client).
- * No hardcoded paths — references self-resolve from AGENT_WORKSPACE + ENFORCER_SOCKET.
- *
- * Cross-platform: Node only, supports Linux/macOS/Windows.
+ * Usage:
+ *   node bin/install.js                 # interactive, asks about each component
+ *   node bin/install.js --yes           # non-interactive, all components on
+ *   node bin/install.js --workspace X --socket unix --harness hermes --user --yes
  */
+
 import fs from "fs";
-import path from "path";
 import os from "os";
+import path from "path";
 import readline from "readline";
 import { spawn } from "child_process";
 import { fileURLToPath, pathToFileURL } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root
-const HOME = os.homedir();
+const DAEMON = path.join(REPO, "node", "enforcer", "agent_enforcer_daemon.js");
+const MONITOR = path.join(REPO, "deploy", "ack_monitor.py");
+const WATCHDOG = path.join(REPO, "deploy", "ack_watchdog.py");
+const HERMES_PLUGIN = path.join(REPO, "python", "hermes_plugin");
+const PY_CLIENT = path.join(REPO, "python", "agent_character_kit");
 
+// ─── arg parsing (non-interactive) ────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { workspace: null, socket: null, root: null, yes: false };
+  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--workspace") out.workspace = argv[++i];
     else if (a === "--socket") out.socket = argv[++i];
+    else if (a === "--harness") out.harness = argv[++i];
+    else if (a === "--agent-dir") out.agentDir = argv[++i];
     else if (a === "--root") out.root = true;
     else if (a === "--user") out.root = false;
+    else if (a === "--no-monitor") out.monitor = false;
+    else if (a === "--no-watchdog") out.watchdog = false;
+    else if (a === "--no-companion") out.companion = false;
     else if (a === "--yes" || a === "-y") out.yes = true;
   }
   return out;
 }
 
-// Resolve socket: --socket may be a MODE ("unix"/"tcp"/"1"/"2") or a literal
-// path. "unix" -> workspace-relative; "tcp" -> loopback TCP. Exported for tests.
-export function resolveSocket(socketArg, absWs) {
-  const s = String(socketArg || "unix").toLowerCase();
+// ─── prompt helper (safe: always resolves; never hangs) ───────────────────────
+function ask(rl, q, def) {
+  const suffix = def !== undefined ? ` (default: ${def})` : "";
+  return new Promise((resolve) => {
+    rl.question(`${q}${suffix}\n> `, (ans) => {
+      const v = (ans || "").trim();
+      resolve(v === "" && def !== undefined ? def : v);
+    });
+  });
+}
+function yesNo(rl, q, def = true) {
+  return ask(rl, `${q} [y/n]`, def ? "y" : "n").then((a) => /^(y|yes)$/i.test(a || (def ? "y" : "n")));
+}
+
+// ─── socket resolution (shared by daemon, companion, monitor, watchdog) ───────
+function resolveSocket(mode, ws) {
+  const s = String(mode || "unix").toLowerCase();
   if (s === "tcp" || s === "2") return "tcp://127.0.0.1:8753";
-  if (s.startsWith("tcp://")) return s;
-  return path.join(absWs, ".agent", "enforcer.sock");
+  if (s.startsWith("tcp://")) return s;            // literal tcp url
+  if (s === "unix" || s === "1" || s === "") return path.join(ws, ".agent", "enforcer.sock");
+  return s;                                          // literal unix path
 }
 
-function writeEnv(destDir, vars) {
+// ─── component setup ───────────────────────────────────────────────────────────
+function writeEnvFile(envPath, vars) {
   const lines = Object.entries(vars).map(([k, v]) => `${k}=${v}`);
-  fs.writeFileSync(path.join(destDir, ".env"), lines.join("\n") + "\n");
+  fs.writeFileSync(envPath, lines.join("\n") + "\n");
 }
 
-function seedHabits(wsDir) {
-  const agentDir = path.join(wsDir, ".agent");
-  const habitsDir = path.join(agentDir, "habits");
-  fs.mkdirSync(habitsDir, { recursive: true });
+function seedHabits(ws) {
   const src = path.join(REPO, "python", "example_workspace", ".agent", "habits");
+  const dst = path.join(ws, ".agent", "habits");
+  fs.mkdirSync(dst, { recursive: true });
   if (fs.existsSync(src)) {
     for (const f of fs.readdirSync(src)) {
-      if (f.endsWith(".yaml") && !fs.existsSync(path.join(habitsDir, f))) {
-        fs.copyFileSync(path.join(src, f), path.join(habitsDir, f));
+      if (f.endsWith(".yaml") && !fs.existsSync(path.join(dst, f))) {
+        fs.copyFileSync(path.join(src, f), path.join(dst, f));
       }
     }
   }
-  if (!fs.existsSync(path.join(agentDir, "constitution.yaml"))) {
-    fs.writeFileSync(
-      path.join(agentDir, "constitution.yaml"),
-      "# Agent constitution — define your character's non-negotiables here.\n"
-    );
+}
+
+function writeConstitution(ws) {
+  const dst = path.join(ws, ".agent", "constitution.yaml");
+  if (!fs.existsSync(dst)) {
+    fs.writeFileSync(dst, [
+      "# Agent Character Kit — constitution (hard constraints).",
+      "# The daemon embeds safe defaults; this file OVERRIDES/extends them.",
+      "hard_constraints:",
+      "  - no_credential_leak: block any tool call that would expose a secret",
+      "  - no_destructive_without_confirm: block rm -rf /, mkfs, dd on disks, etc. unless confirmed",
+    ].join("\n") + "\n");
   }
 }
 
-function generateService(wsDir, sock, root) {
-  const unitName = "agent-character-kit.service";
-  const svc = `[Unit]
-Description=Agent Character Kit enforcer (${root ? "system" : "user"})
-After=network.target
-
-[Service]
-Environment=AGENT_WORKSPACE=${wsDir}
-Environment=ENFORCER_SOCKET=${sock}
-Environment=HOME=${HOME}
-WorkingDirectory=${path.join(REPO, "node", "enforcer")}
-ExecStart=${process.execPath} ${path.join(REPO, "node", "enforcer", "agent_enforcer_daemon.js")}
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=${root ? "multi-user.target" : "default.target"}
-`;
-  return { unitName, svc };
+function setupHermesCompanion(agentDir) {
+  const dest = path.join(agentDir, "plugins", "agent-character-kit");
+  fs.mkdirSync(dest, { recursive: true });
+  for (const f of fs.readdirSync(HERMES_PLUGIN)) {
+    const fp = path.join(HERMES_PLUGIN, f);
+    if (fs.statSync(fp).isFile()) fs.copyFileSync(fp, path.join(dest, f));
+  }
+  return dest;
 }
 
-async function prompt(opts) {
+function launchDaemon(vars) {
+  const child = spawn(process.execPath, [DAEMON], {
+    env: { ...process.env, ...vars },
+    detached: !vars.__root,
+    stdio: "ignore",
+  });
+  child.unref();
+  return child.pid;
+}
+
+function launchMonitorWatchdog(vars, asRoot) {
+  // Launch monitor + watchdog as detached background processes (user-mode).
+  // For root mode they are typically started via systemd by deploy-agent-enforcer.sh.
+  const m = spawn("/usr/bin/env", ["python3", MONITOR], {
+    env: { ...process.env, ...vars }, detached: true, stdio: "ignore",
+  });
+  m.unref();
+  const w = spawn("/usr/bin/env", ["python3", WATCHDOG], {
+    env: { ...process.env, ...vars }, detached: true, stdio: "ignore",
+  });
+  w.unref();
+  return { monitorPid: m.pid, watchdogPid: w.pid };
+}
+
+// ─── main flow ─────────────────────────────────────────────────────────────────
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (q, def) =>
-    new Promise((res) => rl.question(`${q}${def ? ` [${def}]` : ""}: `, (a) => res((a || "").trim() || def || "")));
-  const defaultWs = path.join(HOME, ".agent-character-kit", "workspace");
-  opts.workspace = await ask("Where should your agent + habit system live?", opts.workspace || defaultWs);
-  const sm = await ask("Socket: (1) unix under workspace  (2) tcp://127.0.0.1:8753", opts.socket || "1");
-  opts.socket = sm === "2" ? "tcp://127.0.0.1:8753" : path.join(opts.workspace, ".agent", "enforcer.sock");
-  const ra = await ask("Install as root service? (y/N — user-scoped is default)", "N");
-  opts.root = ra.toLowerCase() === "y";
+
+  let ws, socketMode, harness, agentDir, asRoot, doMonitor, doWatchdog, doCompanion;
+
+  if (opts.yes) {
+    ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
+    socketMode = opts.socket || "unix";
+    harness = opts.harness || "hermes";
+    agentDir = opts.agentDir || path.join(os.homedir(), ".hermes");
+    asRoot = opts.root ?? false;
+    doMonitor = opts.monitor;
+    doWatchdog = opts.watchdog;
+    doCompanion = opts.companion;
+  } else {
+    console.log("\n=== Agent Character Kit — interactive install ===\n");
+    console.log("This sets up the enforcement daemon, your harness companion,");
+    console.log("and the acknowledgment monitor/watchdog. Every step is optional");
+    console.log("to skip; press Enter to accept the default.\n");
+
+    ws = await ask(rl, "Where should the agent workspace live? (habits, socket, constitution)",
+      path.join(os.homedir(), ".agent-character-kit", "workspace"));
+    socketMode = await ask(rl, "Socket mode? [unix | tcp]", "unix");
+    harness = (await ask(rl, "Which harness? [hermes | claude | cursor | opencode | generic]", "hermes")).toLowerCase();
+    agentDir = await ask(rl, "Where is your agent's config/home directory? (companion gets dropped here)",
+      harness === "hermes" ? path.join(os.homedir(), ".hermes") : path.join(os.homedir()));
+    asRoot = await yesNo(rl, "Install as ROOT (system-wide, self-respawning)?", false);
+    doCompanion = await yesNo(rl, "Set up the harness companion (thin client)?", true);
+    doMonitor = await yesNo(rl, "Set up the acknowledgment monitor (credits daemon from ack log)?", true);
+    doWatchdog = await yesNo(rl, "Set up the monitor watchdog (revives monitor if it dies)?", true);
+  }
+
   rl.close();
-  return opts;
-}
 
-function deploy(opts) {
-  const absWs = path.resolve(opts.workspace);
-  fs.mkdirSync(path.join(absWs, ".agent"), { recursive: true });
-  seedHabits(absWs);
-
-  // Resolve socket via the shared helper (also unit-tested).
-  const sock = resolveSocket(opts.socket, absWs);
+  const absWs = path.resolve(ws);
+  const sock = resolveSocket(socketMode, absWs);
+  const ackLog = path.join(absWs, ".agent", "ack.jsonl");
   const vars = {
     AGENT_WORKSPACE: absWs,
     ENFORCER_SOCKET: sock,
-    ACK_ACK_LOG: path.join(absWs, ".agent", "ack.jsonl"),
-    ACK_INJECT_LOG: path.join(absWs, ".agent", "inject.jsonl"),
-    ACK_HABITS_DIR: path.join(absWs, ".agent", "habits"),
+    ACK_ACK_LOG: ackLog,
+    ACK_MONITOR_PID: path.join(absWs, ".agent", "ack-monitor.pid"),
+    ACK_MONITOR_STATE: path.join(absWs, ".agent", "ack-monitor.pos"),
+    ACK_WATCHDOG_PID: path.join(absWs, ".agent", "ack-watchdog.pid"),
+    ACK_MONITOR_BIN: MONITOR,
+    __root: asRoot,
   };
-  writeEnv(REPO, vars);
-  writeEnv(absWs, vars);
 
-  const { unitName, svc } = generateService(absWs, sock, opts.root);
-  const unitPath = opts.root
-    ? path.join("/etc", "systemd", "system", unitName)
-    : path.join(HOME, ".config", "systemd", "user", unitName);
+  // 1. workspace scaffold
+  fs.mkdirSync(path.join(absWs, ".agent", "habits"), { recursive: true });
+  seedHabits(absWs);
+  writeConstitution(absWs);
 
-  console.log("\n--- Install summary ---");
+  // 2. single .env every component reads
+  const repoEnv = path.join(REPO, ".env");
+  const wsEnv = path.join(absWs, ".env");
+  const envLines = {
+    AGENT_WORKSPACE: absWs,
+    ENFORCER_SOCKET: sock,
+    ACK_ACK_LOG: ackLog,
+    ACK_MONITOR_PID: vars.ACK_MONITOR_PID,
+    ACK_MONITOR_STATE: vars.ACK_MONITOR_STATE,
+    ACK_WATCHDOG_PID: vars.ACK_WATCHDOG_PID,
+    ACK_MONITOR_BIN: MONITOR,
+  };
+  writeEnvFile(repoEnv, envLines);
+  writeEnvFile(wsEnv, envLines);
+
+  // 3. daemon
+  const daemonPid = launchDaemon(vars);
+
+  // 4. companion
+  let companionMsg = "skipped";
+  if (doCompanion) {
+    if (harness === "hermes") {
+      const dest = setupHermesCompanion(agentDir);
+      companionMsg = `Hermes plugin -> ${dest} (restart Hermes to load it)`;
+    } else {
+      companionMsg = `Use: node node/bin/aik.js hook --framework ${harness} --config`;
+    }
+  }
+
+  // 5. monitor + watchdog
+  let monitorMsg = "skipped";
+  if (doMonitor || doWatchdog) {
+    const procs = launchMonitorWatchdog(vars, asRoot);
+    monitorMsg = `monitor pid ${procs.monitorPid}, watchdog pid ${procs.watchdogPid}`;
+  }
+
+  // 6. summary (informative, no force-close)
+  console.log("\n=== Install summary ===");
   console.log("Workspace:     ", absWs);
   console.log("Socket:        ", sock);
+  console.log("Ack log:       ", ackLog);
   console.log("Habits seeded: ", path.join(absWs, ".agent", "habits"));
-  console.log(".env written:  ", path.join(REPO, ".env"), "+", path.join(absWs, ".env"));
-  console.log("Service unit:  ", unitPath, opts.root ? "(root)" : "(user)");
-
-  try {
-    fs.mkdirSync(path.dirname(unitPath), { recursive: true });
-    fs.writeFileSync(unitPath, svc);
-    console.log("Unit written. Enable with:");
-    console.log(opts.root
-      ? `  sudo systemctl enable --now ${unitName}`
-      : `  systemctl --user enable --now ${unitName}`);
-  } catch (e) {
-    console.log(`Could not write ${unitPath} (permission). Run with sudo for root, or copy manually.`);
-  }
-
-  // Start the daemon (persistent) — use spawn+unref so the installer can exit.
-  // spawnSync would block forever waiting for the daemon to terminate.
-  const child = spawn(
-    process.execPath,
-    [path.join(REPO, "node", "enforcer", "agent_enforcer_daemon.js")],
-    { env: { ...process.env, ...vars }, detached: !opts.root, stdio: "ignore" }
-  );
-  child.unref();
-  if (child.pid) {
-    console.log("\n@character-kit enforcer started. Enforcement is now live.");
-  } else {
-    console.log("\nDaemon did not start automatically — start manually or via the unit above.");
-  }
-  console.log("\nDone. Reference @character-kit in your harness config to activate enforcement.\n");
+  console.log(".env written:  ", `${repoEnv} + ${wsEnv}`);
+  console.log("Daemon pid:    ", daemonPid);
+  console.log("Companion:     ", companionMsg);
+  console.log("Monitor/Watch: ", monitorMsg);
+  console.log("\nDone. Reference your harness's companion to activate enforcement.");
+  console.log("The daemon holds every 5th call until you acknowledge 2 habits");
+  console.log("with a real, situation-tied reason. No filler, no reuse.\n");
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const interactive = process.stdin.isTTY && !args.yes;
-  let opts = { workspace: args.workspace, socket: args.socket, root: args.root };
-
-  if (interactive) {
-    opts = await prompt(opts);
-  } else {
-    opts.workspace = opts.workspace || path.join(HOME, ".agent-character-kit", "workspace");
-    opts.socket = opts.socket === "tcp"
-      ? "tcp://127.0.0.1:8753"
-      : (opts.socket || path.join(opts.workspace, ".agent", "enforcer.sock"));
-    if (opts.root === null) opts.root = false;
-  }
-  deploy(opts);
-}
-
-// Run only when invoked as the CLI (node bin/install.js), NOT when imported
-// by tests. Guard prevents side effects (writing .env, spawning daemon) on import.
 const __isCLI = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (__isCLI) {
   main().catch((e) => {
@@ -191,3 +255,5 @@ if (__isCLI) {
     process.exit(1);
   });
 }
+
+export { parseArgs, resolveSocket };
