@@ -79,12 +79,21 @@ when no one is watching. (Repo name is a legacy label — read it as
 ```bash
 git clone https://github.com/drdeeks/agent-character-kit.git
 cd agent-character-kit && cd node && npm install && cd ..
-sudo bash deploy/deploy-agent-enforcer.sh        # Linux systemd, root-owned
-sudo systemctl enable --now agent-enforcer.service
-node node/bin/aik.js enforcer --status           # version + character hash
+
+# Interactive installer — wires daemon + companion + monitor + watchdog in one
+# flow, prompts for workspace/socket/harness, and can create habits. Or:
+node node/bin/install.js            # interactive
+node node/bin/install.js --yes      # non-interactive, all components on
+
+# (Optional) root-owned, system-wide, self-respawning:
+#   sudo bash deploy/deploy-agent-enforcer.sh
+#   sudo bash deploy/deploy-ack-services.sh
+node node/bin/aik.js enforcer --status   # version + character hash
 ```
 
-The daemon is now enforcing. Wire a COMPANION (any harness) below.
+The daemon is now enforcing. Wire a COMPANION (any harness) below — the
+installer already dropped the Hermes plugin (or printed the `aik hook` command
+for your harness) into place.
 
 ---
 

@@ -1,10 +1,11 @@
 """
-Agent Character Kit — Hermes plugin (real, registered, fail-closed).
+Agent Character Kit — Hermes companion plugin (real, registered, fail-closed).
 
-Bridges Hermes's generic ``pre_tool_call`` + ``pre_llm_call`` hooks to the Agent
-Character Kit ENFORCER DAEMON over its RPC socket. The daemon is the SINGLE
-SOURCE OF TRUTH for enforcement. This plugin is a THIN CLIENT: it does NOT
-embed enforcement logic.
+Bridges any harness's generic ``pre_tool_call`` + ``pre_llm_call`` hooks to the
+Agent Character Kit ENFORCER DAEMON over its RPC socket. The daemon is the
+SINGLE SOURCE OF TRUTH for enforcement. This plugin is one of several thin
+clients (Hermes is the harness it is packaged for); the kit itself is
+harness-agnostic.
 
 Fail-closed: if the daemon socket is unreachable or any error occurs, the
 tool call is BLOCKED. A guard that fails open is no guard.
@@ -12,8 +13,8 @@ tool call is BLOCKED. A guard that fails open is no guard.
 Architecture (3 layers, all root-owned where they must be):
   1. DAEMON   — owns the hold state + acknowledgment ledger; decides allow/hold.
   2. PLUGIN   — thin client: asks daemon ``tool_tick``, blocks on hold; records
-                any ``Habit: <name> resonates true because <reason>`` the agent
-                states into the external ACK LOG (does NOT self-credit).
+                any ``Habit: <name> <resonates true | why: | because | ...> <reason>``
+                the agent states into the external ACK LOG (does NOT self-credit).
   3. MONITOR  — root-owned, separate process: reads the ACK LOG, validates each
                 statement, and credits the daemon via ``submit_ack``. The agent
                 cannot forge acknowledgments (it can only append to the log;
@@ -120,8 +121,8 @@ def _on_pre_tool_call(
             habits = tick.get("habits", [])
             msg = (
                 f"[character] {tick.get('reason', 'TOOL ACCESS HELD')}\n\n"
-                "State TWO habits in this format (any message or tool call counts):\n"
-                "  Habit: <habit-file-name> resonates true because <reason>\n\n"
+                "State TWO habits (any message or tool call counts), each as:\n"
+                "  Habit: <habit-name> <resonates true | why: | because | ...> <engaged reason>\n\n"
                 "Available habits (search/read tools still work if you can't recall):\n"
                 + "\n".join(f"  - {n}" for n in habits)
                 + "\n\nOnce 2 are acknowledged, tool access resumes."
@@ -170,9 +171,10 @@ def _daemon_rpc(method: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]
 
 
 def _detect_ack(session_id: str, text: str) -> None:
-    """Append any `Habit: <name> resonates true because <reason>` statements the
-    agent makes to the external ACK LOG. The root-owned MONITOR reads this log,
-    validates each statement, and credits the daemon's hold ledger via submit_ack.
+    """Append any `Habit: <name> <resonates true | why: | because | ...> <reason>`
+    statements the agent makes to the external ACK LOG. The root-owned MONITOR
+    reads this log, validates each statement, and credits the daemon's hold
+    ledger via submit_ack.
 
     The plugin does NOT credit the daemon directly: that would let the agent's
     own process forge acknowledgments. Only the independent monitor (root-owned,
