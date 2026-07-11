@@ -1,0 +1,18 @@
+# Habit: rigorous-commits-no-push
+# Source question: "Is this commit message robust, and did I push without being asked?"
+# Correct action: commit with a message that states WHAT changed and WHY, in one line the
+#               next agent can act on; NEVER push to remote unless the user clearly required
+#               it AND said so. Pushing is a privileged, irreversible action — default to local.
+# Evidence: commit messages are specific (not "fixes", "updates", "wip"); no `git push`
+#           runs unless the user explicitly asked for a push in that request.
+# Logic: a vague commit buries the history the next agent needs; an unrequested push ships
+#        work the user didn't authorize. Local commit is cheap and reversible; push is not.
+name: "rigorous_commits_no_push"
+prompt: "Is the commit message robust, and did I push without being asked?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Commit with a specific what+why message; NEVER push unless the user clearly required it AND stated so."
+  evidence: "Messages are specific (not 'fixes'/'updates'/'wip'); no git push runs unless the user explicitly asked for a push this request."
+  logic: "Vague commits bury history; unrequested pushes ship unauthorized work. Commit is cheap+reversible; push is not."
