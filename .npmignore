@@ -1,0 +1,31 @@
+# Node dependencies - never publish
+node/node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Test/validation files
+/tmp/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment files
+.env
+.env.local
+
+# Python test cache
+python/tests/__pycache__/
+python/hermes_plugin/__pycache__/

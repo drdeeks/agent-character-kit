@@ -12,7 +12,7 @@
     "start": "node bin/aik.js"
   },
   "keywords": [
-    "agent", "identity", "enforcement", "knowledge", "memory",
+    "agent", "character", "agent-character", "enforcement", "knowledge", "memory",
     "semantic-search", "hooks", "yaml", "frontmatter",
     "claude", "cursor", "gemini", "hermes", "opencode"
   ],

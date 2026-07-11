@@ -15,9 +15,21 @@
     "ack-install": "node bin/install.js"
   },
   "keywords": [
-    "agent", "identity", "enforcement", "knowledge", "memory",
-    "semantic-search", "hooks", "yaml", "frontmatter",
-    "claude", "cursor", "gemini", "hermes", "opencode"
+    "agent",
+    "character",
+    "agent-character",
+    "enforcement",
+    "knowledge",
+    "memory",
+    "semantic-search",
+    "hooks",
+    "yaml",
+    "frontmatter",
+    "claude",
+    "cursor",
+    "gemini",
+    "hermes",
+    "opencode"
   ],
   "author": "drdeeks",
   "license": "MIT",
@@ -34,7 +46,12 @@
     "node": ">=18.0.0"
   },
   "files": [
-    "node/",
+    "node/bin/",
+    "node/src/",
+    "node/enforcer/",
+    "node/examples/",
+    "node/tests/",
+    "node/package.json",
     "python/",
     "deploy/",
     "README.md",
