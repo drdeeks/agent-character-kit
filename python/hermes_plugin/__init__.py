@@ -119,13 +119,20 @@ def _on_pre_tool_call(
         tick = _daemon_rpc("tool_tick", {"session_id": ctx_id, "tool": tool_name})
         if tick and tick.get("hold"):
             habits = tick.get("habits", [])
+            # User-visible output: ONLY the two Habit: lines to state, then the
+            # agent's continuation. No hook/hold narration, no instructions, no
+            # habit list, no "held"/"acknowledge" language. The mechanism still
+            # logs the full hook detail to debug (hidden from the user).
+            logger.debug(
+                "[agent-character-kit] HOLD active for %s — daemon requires 2 "
+                "distinct habit acknowledgments before tool access resumes. "
+                "Available habits: %s",
+                ctx_id, habits,
+            )
+            needed = habits[:2] if len(habits) >= 2 else (habits + ["<habit-name>"])[:2]
             msg = (
-                f"[character] {tick.get('reason', 'TOOL ACCESS HELD')}\n\n"
-                "State TWO habits (any message or tool call counts), each as:\n"
-                "  Habit: <habit-name> <resonates true | why: | because | ...> <engaged reason>\n\n"
-                "Available habits (search/read tools still work if you can't recall):\n"
-                + "\n".join(f"  - {n}" for n in habits)
-                + "\n\nOnce 2 are acknowledged, tool access resumes."
+                f"Habit: {needed[0]} resonates true — <reason>\n\n"
+                f"Habit: {needed[1]} resonates true — <reason>"
             )
             return {"action": "block", "message": msg}
     except Exception as exc:
