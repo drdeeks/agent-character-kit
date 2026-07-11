@@ -114,17 +114,20 @@ EOF
 chown root:root "$INSTALL_BIN"
 chmod 0755 "$INSTALL_BIN"
 
-# 4. Systemd unit
-cp "$SRC_DIR/deploy/agent-enforcer.service" "$UNIT"
-chown root:root "$UNIT"
-chmod 0644 "$UNIT"
+# 4. Systemd units (enforcer + monitor + watchdog — all root-owned, self-respawning)
+for unit in agent-enforcer.service agent-character-monitor.service agent-character-watchdog.service; do
+  cp "$SRC_DIR/deploy/$unit" "/etc/systemd/system/$unit"
+  chown root:root "/etc/systemd/system/$unit"
+  chmod 0644 "/etc/systemd/system/$unit"
+done
 
-# 5. Enable + start
+# 5. Enable + start all three
 systemctl daemon-reload
-systemctl enable --now agent-enforcer.service
+systemctl enable --now agent-enforcer.service agent-character-monitor.service agent-character-watchdog.service
 
 echo ">> Done. Status:"
-systemctl status agent-enforcer.service --no-pager || true
+systemctl status agent-enforcer.service agent-character-monitor.service agent-character-watchdog.service --no-pager || true
 echo
 echo "Verify self-respawn:  sudo systemctl kill -s KILL agent-enforcer.service"
 echo "                         -> it should return within ~3s (RestartSec=3)"
+echo "Monitor and watchdog will auto-restart on failure (Restart=always, RestartSec=3)"

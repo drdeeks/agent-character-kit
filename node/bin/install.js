@@ -4,7 +4,7 @@
  *
  * One command deploys the WHOLE kit and wires every component:
  *   - the enforcement daemon (CORE, out-of-process)
- *   - the harness companion (thin client: Hermes plugin OR aik hook)
+ *   - the harness companion (thin client: hook config for any framework)
  *   - the acknowledgment monitor (credits the daemon from the ack log)
  *   - the monitor watchdog (revives the monitor)
  *
@@ -16,7 +16,8 @@
  * Usage:
  *   node bin/install.js                 # interactive, asks about each component
  *   node bin/install.js --yes           # non-interactive, all components on
- *   node bin/install.js --workspace X --socket unix --harness hermes --user --yes
+ *   node bin/install.js --all           # everything, root mode, generic harness
+ *   node bin/install.js --workspace X --socket unix --harness claude --user --yes
  */
 
 import fs from "fs";
@@ -31,12 +32,10 @@ const REPO = path.resolve(__dirname, "..", ".."); // package root
 const DAEMON = path.join(REPO, "node", "enforcer", "agent_enforcer_daemon.js");
 const MONITOR = path.join(REPO, "deploy", "ack_monitor.py");
 const WATCHDOG = path.join(REPO, "deploy", "ack_watchdog.py");
-const HERMES_PLUGIN = path.join(REPO, "python", "hermes_plugin");
-const PY_CLIENT = path.join(REPO, "python", "agent_character_kit");
 
 // ─── arg parsing (non-interactive) ────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null };
+  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null, all: false, hookCommand: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--workspace") out.workspace = argv[++i];
@@ -53,6 +52,8 @@ function parseArgs(argv) {
     else if (a === "--habit-prompt") out.habitPrompt = argv[++i];
     else if (a === "--habit-logic") out.habitLogic = argv[++i];
     else if (a === "--yes" || a === "-y") out.yes = true;
+    else if (a === "--all") out.all = true;
+    else if (a === "--hook-command") out.hookCommand = argv[++i];
   }
   return out;
 }
@@ -110,16 +111,6 @@ function writeConstitution(ws) {
       "  - no_destructive_without_confirm: block rm -rf /, mkfs, dd on disks, etc. unless confirmed",
     ].join("\n") + "\n");
   }
-}
-
-function setupHermesCompanion(agentDir) {
-  const dest = path.join(agentDir, "plugins", "agent-character-kit");
-  fs.mkdirSync(dest, { recursive: true });
-  for (const f of fs.readdirSync(HERMES_PLUGIN)) {
-    const fp = path.join(HERMES_PLUGIN, f);
-    if (fs.statSync(fp).isFile()) fs.copyFileSync(fp, path.join(dest, f));
-  }
-  return dest;
 }
 
 function launchDaemon(vars) {
@@ -264,11 +255,16 @@ async function main() {
 
   let ws, socketMode, harness, agentDir, asRoot, doMonitor, doWatchdog, doCompanion;
 
+  // --all implies --yes (non-interactive) and enables everything
+  if (opts.all) {
+    opts.yes = true;
+  }
+
   if (opts.yes) {
     ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
     socketMode = opts.socket || "unix";
-    harness = opts.harness || "hermes";
-    agentDir = opts.agentDir || path.join(os.homedir(), ".hermes");
+    harness = opts.harness || "generic";
+    agentDir = opts.agentDir || path.join(os.homedir(), ".config", "agent-character-kit");
     asRoot = opts.root ?? false;
     doMonitor = opts.monitor;
     doWatchdog = opts.watchdog;
@@ -283,11 +279,11 @@ async function main() {
       path.join(os.homedir(), ".agent-character-kit", "workspace"));
     const absWs = path.resolve(ws);
     socketMode = await ask(rl, "Socket mode? [unix | tcp]", "unix");
-    harness = (await ask(rl, "Which harness? [hermes | claude | cursor | opencode | generic]", "hermes")).toLowerCase();
-    agentDir = await ask(rl, "Where is your agent's config/home directory? (companion gets dropped here)",
-      harness === "hermes" ? path.join(os.homedir(), ".hermes") : path.join(os.homedir()));
+    harness = (await ask(rl, "Which harness? [claude | cursor | gemini | opencode | generic]", "generic")).toLowerCase();
+    agentDir = await ask(rl, "Where is your agent's config/home directory? (companion config gets dropped here)",
+      path.join(os.homedir(), ".config", "agent-character-kit"));
     asRoot = await yesNo(rl, "Install as ROOT (system-wide, self-respawning)?", false);
-    doCompanion = await yesNo(rl, "Set up the harness companion (thin client)?", true);
+    doCompanion = await yesNo(rl, "Set up the harness companion (thin client hook config)?", true);
     doMonitor = await yesNo(rl, "Set up the acknowledgment monitor (credits daemon from ack log)?", true);
     doWatchdog = await yesNo(rl, "Set up the monitor watchdog (revives monitor if it dies)?", true);
 
@@ -317,6 +313,16 @@ async function main() {
     __root: asRoot,
   };
 
+  // Handle --all flag: everything on, companion for generic harness, root mode
+  if (opts.all) {
+    asRoot = true;
+    doMonitor = true;
+    doWatchdog = true;
+    doCompanion = true;
+    harness = opts.harness || "generic";
+    agentDir = opts.agentDir || path.join(os.homedir(), ".config", "agent-character-kit");
+  }
+
   // 1. workspace scaffold
   fs.mkdirSync(path.join(absWs, ".agent", "habits"), { recursive: true });
   seedHabits(absWs);
@@ -340,15 +346,13 @@ async function main() {
   // 3. daemon
   const daemonPid = launchDaemon(vars);
 
-  // 4. companion
+  // 4. companion (thin client hook config for any harness)
   let companionMsg = "skipped";
   if (doCompanion) {
-    if (harness === "hermes") {
-      const dest = setupHermesCompanion(agentDir);
-      companionMsg = `Hermes plugin -> ${dest} (restart Hermes to load it)`;
-    } else {
-      companionMsg = `Use: node node/bin/aik.js hook --framework ${harness} --config`;
-    }
+    const { generateConfig } = await import("../src/index.js");
+    const hookCmd = opts.hookCommand || "npx aik hook";
+    const config = generateConfig(harness, hookCmd);
+    companionMsg = `Hook config for ${harness}:\n${JSON.stringify(config, null, 2)}`;
   }
 
   // 5. monitor + watchdog
@@ -368,7 +372,7 @@ async function main() {
   console.log("Daemon pid:    ", daemonPid);
   console.log("Companion:     ", companionMsg);
   console.log("Monitor/Watch: ", monitorMsg);
-  console.log("\nDone. Reference your harness's companion to activate enforcement.");
+  console.log("\nDone. Add the companion hook config to your harness to activate enforcement.");
   console.log("The daemon holds every 5th call until you acknowledge 2 habits");
   console.log("with a real, situation-tied reason. No filler, no reuse.\n");
 }

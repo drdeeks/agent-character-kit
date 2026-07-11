@@ -23,18 +23,22 @@ import logging
 from pathlib import Path
 
 def _default_sock():
+    # First priority: explicit ENFORCER_SOCKET (set by systemd)
+    sock = os.environ.get("ENFORCER_SOCKET")
+    if sock:
+        return sock
+    # Second: AGENT_WORKSPACE-based
     ws = os.environ.get("AGENT_WORKSPACE")
     if ws:
         return os.path.join(ws, ".agent", "enforcer.sock")
+    # Fallback: legacy path
     return os.path.join(os.environ.get("HOME", "/root"), ".agent-character-kit",
                          "workspace", ".agent", "enforcer.sock")
 
-SOCK = os.environ.get("ACK_ENFORCER_SOCKET") or _default_sock()
+SOCK = _default_sock()
 ACK_LOG = os.environ.get("ACK_ACK_LOG", "/tmp/agent-character-kit-ack.jsonl")
-PIDFILE = os.environ.get("ACK_MONITOR_PID", os.path.join(
-    os.environ.get("HOME", "/root"), ".agent-character-kit", "ack-monitor.pid"))
-STATE = os.environ.get("ACK_MONITOR_STATE", os.path.join(
-    os.environ.get("HOME", "/root"), ".agent-character-kit", "ack-monitor.pos"))
+PIDFILE = os.environ.get("ACK_MONITOR_PID", "/var/lib/agent-character-kit/ack-monitor.pid")
+STATE = os.environ.get("ACK_MONITOR_STATE", "/var/lib/agent-character-kit/ack-monitor.pos")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [ack-monitor] %(message)s")
 log = logging.getLogger("ack-monitor")

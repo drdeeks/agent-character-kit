@@ -11,6 +11,11 @@ RestartSec=3
 User=root
 StandardOutput=journal
 StandardError=journal
+Environment=ENFORCER_SOCKET=${ENFORCER_SOCKET:-/run/agent-enforcer/main.sock}
+Environment=AGENT_WORKSPACE=${AGENT_WORKSPACE:-/var/lib/agent-character-kit/workspace}
+Environment=ACK_MONITOR_PID=${ACK_MONITOR_PID:-/var/lib/agent-character-kit/ack-monitor.pid}
+Environment=ACK_WATCHDOG_PID=${ACK_WATCHDOG_PID:-/var/lib/agent-character-kit/ack-watchdog.pid}
+Environment=ACK_MONITOR_BIN=/usr/local/lib/agent-character-kit/ack_monitor.py
 
 [Install]
 WantedBy=multi-user.target
