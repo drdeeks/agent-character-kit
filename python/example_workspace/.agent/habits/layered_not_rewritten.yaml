@@ -1,9 +1,9 @@
 name: layered_not_rewritten
-prompt: When I update shared truth, am I ADDING a versioned layer with an ID — or mutating the existing file in place (a rewrite)?
+prompt: When I update shared truth, do I stack a NEW layer with an ID and a supersedes pointer — or mutate the base file in place (a rewrite disguised as an update)?
 enforcement:
   level: must
 behavior:
   kind: assertion
-  assert: Updates add versioned layers with IDs. Rollback = pop a layer. A reload that mutates the source of truth (in-place rewrite) is forbidden.
-  evidence: New behavior lives in a new layer/file with a version ID; the original truth is preserved beneath it, not overwritten.
-  logic: Rewriting the singular source of truth destroys history and makes rollback impossible. Layering keeps the past recoverable and the present additive.
+  assert: Updates stack ON TOP. The base never changes. New behavior = a new layer carrying an ID, a timestamp, what it adds, and what it supersedes. Rollback = pop the layer (O(1)); the core is intact.
+  evidence: New behavior lives in a versioned layer with an ID + supersedes pointer; removing the top layer restores the prior state exactly; no in-place overwrite of the singular source of truth.
+  logic: A layer without an ID and a supersedes pointer is a rewrite disguised as an update. Reload that mutates truth is rewrite, not layer — forbidden. Layering is the forever guarantee.

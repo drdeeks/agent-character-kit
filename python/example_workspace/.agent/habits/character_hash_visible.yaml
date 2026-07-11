@@ -1,0 +1,9 @@
+name: character_hash_visible
+prompt: Does any change to "who I am" (foundations + constitution + habits) change a published hash that is logged and VISIBLE — so tampering with character is evident, not hidden?
+enforcement:
+  level: should
+behavior:
+  kind: assertion
+  assert: A character_hash (foundations + constitution + habits together) is published and changes on any edit to "who I am," making the change visible. We say evident and mean evident.
+  evidence: Editing a foundational file produces a new hash that is logged; the diff is observable without reading code; no claim of tamper-PROOF is made.
+  logic: If changing character is invisible, drift and sabotage go unnoticed. A visible hash makes any change to identity/character observable — the honest, evident claim. (Per FOREVER-SYSTEM §6.)

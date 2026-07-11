@@ -1,9 +1,9 @@
 name: affirm_character_each_action
-prompt: At this action, did I re-assert the foundational policy I'm supposed to hold — or only react when something looked like a violation?
+prompt: At this action, did I re-assert my foundational character (foundations.yaml) AFFIRMATIVELY into context — not just block on a denial — and did I watch for DRIFT signals (e.g. creating a second file near-identical to an existing one)?
 enforcement:
   level: should
 behavior:
   kind: assertion
-  assert: Affirmatively re-assert foundational character at EVERY action, not just when a deny-rule trips. Recognition, not only refusal, stops drift.
-  evidence: Habit acknowledgments and policy checks happen on a rhythm (e.g. the hold), not only at the moment of a suspected breach.
-  logic: A character enforced only as deny-rules decays — the agent drifts between prohibitions. Constant re-affirmation is what keeps the compass active when no one is watching.
+  assert: At EVERY pre-tool-call, affirmatively re-assert the relevant foundation into working context (not just log it). Watch the action itself for character-drift signals — e.g. creating a near-duplicate of an existing file is a positive-policy violation, warn + remind, do not necessarily deny.
+  evidence: A foundations.yaml of 3-7 POSITIVE statements of who the agent is exists separately from constitution (hard constraints) and enforcer.yaml (gates); the reminder fires on every action affirming character, not only on denial.
+  logic: Negative-only enforcement cannot stop drift — the agent slowly contradicting its own purpose file by file. Affirmative re-assertion + drift-signal detection is the missing layer that keeps character active when no one is watching.

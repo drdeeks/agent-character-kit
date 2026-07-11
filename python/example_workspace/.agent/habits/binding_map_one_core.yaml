@@ -1,0 +1,9 @@
+name: binding_map_one_core
+prompt: Is this artifact a CONSUMER that plugs INTO the one core as a layer — or am I rebuilding enforcement/truth from scratch instead of routing through the singular runtime?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: One core (the enforcement runtime), many consumers that plug in as layers, zero duplicated truth. A new project/agent declares what it enforces and routes through the one runtime; it does not each rebuild a half-built foundation.
+  evidence: Shared capability is imported/routed from the one core module; no second enforcement engine exists; consumers are layers, not re-implementations.
+  logic: The waste to eliminate is N agents each re-implementing a half-built foundation instead of plugging into the one forever-system. One core, many consumers, zero duplicated truth. (Per FOREVER-SYSTEM §8.)

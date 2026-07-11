@@ -10,14 +10,21 @@ const REPO = path.resolve(process.cwd());
 const DAEMON = path.join(REPO, "node", "enforcer", "agent_enforcer_daemon.js");
 const SRC = path.join(REPO, "python", "example_workspace", ".agent", "habits");
 
-// The 15 decision-logic habits extracted from forever-system.md + skill-creator
-// standards.md. They are part of the DEFAULT bundled set (seeded by install.js).
+// The decision-logic habits extracted from the user's named sources:
+//   /home/ubuntu/qwen-cloud-2026/FOREVER-SYSTEM.md  (full 10-section protocol)
+//   /home/ubuntu/qwen-cloud-2026/drdeeks-skills/skill-creator/references/standards.md
+// These are part of the DEFAULT bundled set (seeded by install.js).
 const EXTRACTED = [
+  // FOREVER-SYSTEM.md (faithful to the full protocol, not a summary)
   "single_source_of_truth", "layered_not_rewritten", "fail_closed_tamper_evident",
   "affirm_character_each_action", "track_defects_openly", "test_of_forever",
-  "rename_as_layer_op", "check_duplication_before_debug", "idempotent_operations",
-  "documented_rollback", "graceful_degradation", "timeout_and_retry",
-  "lossless_consolidation", "safe_file_permissions", "one_concern_per_file",
+  "rename_as_layer_op", "check_duplication_before_debug",
+  "drift_signal_detection", "registered_plugin_not_string", "audit_not_silent",
+  "binding_map_one_core", "character_hash_visible", "forever_one_idea",
+  // skill-creator standards.md (§5/§6/§10/§4)
+  "idempotent_operations", "documented_rollback", "graceful_degradation",
+  "timeout_and_retry", "lossless_consolidation", "safe_file_permissions",
+  "one_concern_per_file",
 ];
 
 function rpc(sock, method, params) {
