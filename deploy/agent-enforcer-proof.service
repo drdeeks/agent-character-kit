@@ -4,9 +4,13 @@ After=network.target
 StartLimitIntervalSec=60
 StartLimitBurst=10
 
+# NOTE: set ACK_DAEMON_BIN to the absolute path of the daemon binary before
+# starting this unit (e.g. ACK_DAEMON_BIN=$PWD/node/enforcer/agent_enforcer_daemon.js).
+# No hardcoded path is embedded — the unit is portable across hosts.
+
 [Service]
 Type=simple
-ExecStart=/usr/bin/env ENFORCER_SOCKET=%t/agent-enforcer/main.sock AGENT_WORKSPACE=%t/agent-enforcer/ws /usr/bin/node /home/ubuntu/qwen-cloud-2026/agent-character-kit/node/enforcer/agent_enforcer_daemon.js
+ExecStart=/usr/bin/env ENFORCER_SOCKET=%t/agent-enforcer/main.sock AGENT_WORKSPACE=%t/agent-enforcer/ws /usr/bin/node ${ACK_DAEMON_BIN}
 Restart=always
 RestartSec=3
 

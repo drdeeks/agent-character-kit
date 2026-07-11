@@ -2,10 +2,12 @@ import net from "net";
 import fs from "fs";
 import path from "path";
 
-// Socket path MUST match the daemon (agent_enforcer_daemon.js) and the
-// systemd unit's ENFORCER_SOCKET: /run/agent-enforcer/main.sock.
+// Socket default MUST match the daemon (agent_enforcer_daemon.js): it lives
+// under AGENT_WORKSPACE/.agent/enforcer.sock so the kit is portable (no /run).
 // Override with ENFORCER_SOCKET if your deployment differs.
-const DEFAULT_SOCKET = "/run/agent-enforcer/main.sock";
+const DEFAULT_SOCKET = process.env.AGENT_WORKSPACE
+  ? path.join(process.env.AGENT_WORKSPACE, ".agent", "enforcer.sock")
+  : path.join(process.env.HOME || "/root", ".agent-character-kit", "workspace", ".agent", "enforcer.sock");
 
 const SOCKET_PATH = process.env.ENFORCER_SOCKET || DEFAULT_SOCKET;
 

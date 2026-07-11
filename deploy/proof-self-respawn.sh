@@ -7,16 +7,19 @@
 # apply identically under the root-owned /etc/systemd/system unit.
 set -uo pipefail
 
+# Self-resolving: repo root comes from $ACK_REPO (default: current dir), not a
+# hardcoded path. The proof service reads $ACK_DAEMON_BIN for the daemon binary.
+REPO="${ACK_REPO:-$PWD}"
+SVC_SRC="$REPO/deploy/agent-enforcer-proof.service"
+export ACK_DAEMON_BIN="${ACK_DAEMON_BIN:-$REPO/node/enforcer/agent_enforcer_daemon.js}"
+
 UNIT="agent-enforcer-proof.service"
 XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export XDG_RUNTIME_DIR
 
-cleanup() { systemctl --user stop "$UNIT" 2>/dev/null || true; }
-trap cleanup EXIT
-
 echo ">> Installing user unit..."
 mkdir -p "$HOME/.config/systemd/user"
-cp /home/ubuntu/qwen-cloud-2026/agent-character-kit/deploy/agent-enforcer-proof.service "$HOME/.config/systemd/user/"
+cp "$SVC_SRC" "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 
 echo ">> Starting daemon..."

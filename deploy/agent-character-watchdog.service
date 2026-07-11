@@ -1,0 +1,16 @@
+[Unit]
+Description=ACK Monitor Watchdog (root-owned)
+After=agent-character-monitor.service
+Requires=agent-character-monitor.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/agent-character-kit/ack_watchdog.py
+Restart=always
+RestartSec=3
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

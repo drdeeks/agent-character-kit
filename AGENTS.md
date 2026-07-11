@@ -1,4 +1,4 @@
-# AGENTS.md — Agent Identity Kit (AIK) v1.0.0
+# AGENTS.md — Agent Character Kit (ACK) v1.0.0
 
 > **This is the single source of truth for AIK.** README.md is a short overview
 > that points here. There is no other install/customize doc — if you're reading
@@ -60,10 +60,15 @@ Cursor, Codex, a shell wrapper) can use it.
 - **Embeds a default character** (safe hard constraints + secret-leak guard), so
   it works with **zero config files**. Config on disk *overrides* (merges on top
   of) the embedded default — never mandatory.
-- **Transport auto-selects:**
-  - POSIX default → Unix socket `/run/agent-enforcer/main.sock`
-  - Windows / cross-host → `ENFORCER_SOCKET=tcp://127.0.0.1:8753`
-  - Clients read the same `ENFORCER_SOCKET`, so they follow automatically.
+- **Transport auto-selects (all self-resolving, no hardcoded host path):**
+  - Default → Unix socket under `AGENT_WORKSPACE/.agent/enforcer.sock`
+    (falls back to `$HOME/.agent-character-kit/workspace/.agent/enforcer.sock`)
+  - Windows / cross-host / explicit → `ENFORCER_SOCKET=tcp://127.0.0.1:8753`
+  - `/run/agent-enforcer/main.sock` remains only as the deepest fallback for a
+    root-owned systemd install that sets it explicitly.
+  - Clients read the same `ENFORCER_SOCKET` / `AGENT_WORKSPACE`, so they follow
+    automatically. The interactive `ack install` writes one `.env` that every
+    component reads — no path is assumed.
 - **Out-of-process = tamper-resistant (NOT tamper-proof).** The daemon runs
   outside the agent, so the agent cannot trivially `kill` or modify it, and if
   the daemon dies the supervisor (systemd / launchd / `supervise.py` / Windows
@@ -88,7 +93,7 @@ daemon and obey. If the daemon is unreachable, the client **blocks** (fail-close
 > here only as one worked example among others.
 
 > **One source of truth.** There is exactly one enforcement engine (the daemon).
-> The Python library (`python/agent_identity_kit/`) is a *client*; the Hermes
+> The Python library (`python/agent_character_kit/`) is a *client*; the Hermes
 > plugin talks to the daemon, not to its own engine. Do not add a second engine.
 
 ---
@@ -157,6 +162,51 @@ node node/bin/aik.js hook --framework claude --config   # prints the hook JSON
 # add it to the framework's hooks; it calls the daemon per tool call
 # swap `claude` for cursor | gemini | opencode | generic as needed
 ```
+
+## Daemon-owned hold pipeline (acknowledgment gate)
+
+The daemon enforces a periodic **acknowledgment HOLD** so the agent cannot run
+forever on autopilot without re-grounding in its character. The hold is
+**daemon-owned** — its state lives in the root-owned daemon, not the plugin, so
+the agent cannot reset or bypass it by editing/disabling the plugin.
+
+**Behavior:**
+- Every 5th non-search tool call is **held** until the agent has acknowledged
+  **2** habits in the form:
+  `Habit: <habit-file-name> resonates true because <reason>`
+- Search/read tools (`search_files`, `read_file`, `web_search`, `web_extract`,
+  `glob`, `grep`) are **never held** — the agent can always look up a habit it
+  can't recall.
+- After 2 valid acknowledgments the hold lifts for the session.
+
+**Three-layer architecture (why it's not bypassable):**
+1. **Daemon** (`node/enforcer/agent_enforcer_daemon.js`) — owns the per-session
+   tool-call counter + ack ledger via `tool_tick` / `submit_ack` RPCs. Decides
+   allow/hold. Name normalization (hyphen ↔ underscore) lets the agent state
+   `rigorous-commits-no-push` and match the file `name: rigorous_commits_no_push`.
+2. **Plugin** (`python/hermes_plugin/`, thin client) — on each tool call asks the
+   daemon `tool_tick` and obeys the hold; records any `Habit: … resonates true
+   because …` the agent states into the **external ACK LOG**
+   (`/tmp/agent-character-kit-ack.jsonl`). The plugin does **not** self-credit —
+   it cannot forge acknowledgments.
+3. **Monitor** (`deploy/ack_monitor.py`, root-owned systemd
+   `agent-character-monitor.service`) — tails the ACK LOG, validates each
+   statement against the daemon's real habit list, and credits the daemon via
+   `submit_ack`. The agent cannot kill it without root.
+4. **Watchdog** (`deploy/ack_watchdog.py`, root-owned systemd
+   `agent-character-watchdog.service`) — revives the monitor if it dies
+   (self-healing).
+
+**Install the monitor + watchdog (after the daemon is deployed):**
+```bash
+sudo bash deploy/deploy-ack-services.sh
+# => copies ack_monitor.py + ack_watchdog.py to /usr/local/lib/agent-character-kit,
+#    installs + starts both systemd units (Restart=always).
+```
+
+> The hold is a **deterrent and constant reminder, NOT a security boundary** —
+> same caveat as the rest of the kit. The agent can still obfuscate a command or
+> use an un-gated tool; the hold raises the bar, it does not cage.
 
 ---
 
@@ -257,7 +307,7 @@ constants together** when enforcement behavior changes.
 | `node/src/enforcer/client.js` | Node thin client |
 | `node/bin/aik.js` | CLI (`enforcer --start/--supervise/--status/--install/--reload`) |
 | `python/hermes_plugin/` | **COMPANION** — example Python-plugin client (one of several) |
-| `python/agent_identity_kit/enforcer.py` | Python client (`EnforcerClient`) to the CORE |
+| `python/agent_character_kit/enforcer.py` | Python client (`EnforcerClient`) to the CORE |
 | `supervise.py` | stdlib-only cross-platform supervisor |
 | `deploy/` | Linux systemd unit + installer |
 | `VERSION` | version stamp |

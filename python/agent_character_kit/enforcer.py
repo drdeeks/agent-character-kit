@@ -16,15 +16,17 @@ from ._yaml import load_yaml
 
 
 def _socket_path():
-    # MUST match the daemon (agent_enforcer_daemon.js) default and the node
-    # client: /run/agent-enforcer/main.sock. Override with ENFORCER_SOCKET
-    # (e.g. tcp://127.0.0.1:8753 on Windows).
-    # IMPORTANT: return the raw string, NOT pathlib.Path — Path("tcp://h:p")
-    # collapses "//" to "/", breaking TCP detection. The EnforcerClient parses
-    # the URL itself.
+    # Self-resolving: ENFORCER_SOCKET wins; else the socket lives UNDER the
+    # user-chosen workspace (AGENT_WORKSPACE/.agent/enforcer.sock) so the kit
+    # runs portably on any host (no /run, no harness-specific path). The Node
+    # daemon uses the same default — they stay in sync without hardcoding.
     if os.environ.get("ENFORCER_SOCKET"):
         return os.environ["ENFORCER_SOCKET"]
-    return "/run/agent-enforcer/main.sock"
+    ws = os.environ.get("AGENT_WORKSPACE")
+    if ws:
+        return os.path.join(ws, ".agent", "enforcer.sock")
+    home = os.environ.get("HOME", "/root")
+    return os.path.join(home, ".agent-character-kit", "workspace", ".agent", "enforcer.sock")
 
 
 def _resolve_config():
@@ -34,7 +36,7 @@ def _resolve_config():
     package stays platform/path-agnostic.
     """
     home = Path(os.environ.get("HOME", "/root"))
-    workspace = Path(os.environ.get("AGENT_WORKSPACE", home / ".openclaw" / "workspace"))
+    workspace = Path(os.environ.get("AGENT_WORKSPACE", home / ".agent-character-kit" / "workspace"))
     socket_path = _socket_path()
     agent_dir = workspace / ".agent"
     constitution = agent_dir / "constitution.yaml"

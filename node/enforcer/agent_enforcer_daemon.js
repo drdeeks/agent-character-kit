@@ -12,6 +12,19 @@
  *  - The socket lives in a root-owned dir; only root + the enforced client may connect.
  */
 
+// Minimal .env autoload (no external dep). Package root = ../../ from node/enforcer/.
+// install.js writes one .env here; every component reads it. Env vars win over .env.
+import { fileURLToPath } from "url";
+const __daemonDir = path.dirname(fileURLToPath(import.meta.url));
+const __pkgRoot = path.resolve(__daemonDir, "..", "..");
+const __envFile = path.join(__pkgRoot, ".env");
+if (fs.existsSync(__envFile)) {
+  for (const line of fs.readFileSync(__envFile, "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
+  }
+}
+
 import net from "net";
 import fs from "fs";
 import fssync from "fs";
@@ -26,15 +39,24 @@ export const ACK_VERSION = "1.0.0";
 function resolveConfig() {
   const HOME = process.env.HOME || "/root";
   const WORKSPACE = process.env.AGENT_WORKSPACE || path.join(HOME, ".agent-character-kit", "workspace");
-  const SOCKET = process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock";
+  const SOCKET = process.env.ENFORCER_SOCKET
+    || (WORKSPACE && path.join(WORKSPACE, ".agent", "enforcer.sock"))
+    || "/run/agent-enforcer/main.sock";
   const AGENT_DIR = path.join(WORKSPACE, ".agent");
   const CONSTITUTION = path.join(AGENT_DIR, "constitution.yaml");
-  const HABITS_DIR = path.join(AGENT_DIR, "habits");
+  // Habits dir: ACK_HABITS_DIR overrides (so the plugin + daemon agree on the
+  // exact same dir regardless of where the repo lives); else WORKSPACE/.agent/habits.
+  const HABITS_DIR = process.env.ACK_HABITS_DIR || path.join(AGENT_DIR, "habits");
   const POLICY_FILE = process.env.ENFORCER_POLICY || path.join(AGENT_DIR, "enforcer.yaml");
 
-  // Ensure directories exist (root-owned)
+  // Ensure directories exist (root-owned). The socket dir is derived from the
+  // resolved SOCKET path itself — never from HOME — so a POSIX /run path stays
+  // a /run path and a user %t path stays a user path (self-resolving, portable).
   const ensure = (p) => { try { fssync.mkdirSync(p, { recursive: true }); } catch {} };
-  ensure(HOME + "/run/agent-enforcer");
+  if (!SOCKET.startsWith("tcp://")) {
+    const sockDir = path.dirname(SOCKET);
+    if (sockDir) ensure(sockDir);
+  }
   ensure(WORKSPACE);
 
   return { HOME, WORKSPACE, SOCKET, AGENT_DIR, CONSTITUTION, HABITS_DIR, POLICY_FILE };
@@ -125,6 +147,11 @@ export class Enforcer {
     }));
     this.startedAt = Date.now();
     this.lastHeartbeat = Date.now();
+    // Daemon-owned acknowledgment HOLD ledger (per session). The agent cannot
+    // reset or bypass this — it lives in the root-owned daemon, not the plugin.
+    // Every 5th tool call is held until 2 valid `Habit: <name> resonates true
+    // because <reason>` statements are credited for the session.
+    this.HOLD_STATE = new Map();
   }
 
   _loadHabits() {
@@ -410,6 +437,85 @@ export class Enforcer {
       enforcement: habit.enforcement,
     };
   }
+
+  // ─── Daemon-owned acknowledgment HOLD ──────────────────────────────────────
+  // The agent cannot bypass: state lives here (root-owned), not in the plugin.
+  _holdState(session) {
+    if (!this.HOLD_STATE.has(session)) {
+      this.HOLD_STATE.set(session, { count: 0, acked: 0, lastTwo: [] });
+    }
+    return this.HOLD_STATE.get(session);
+  }
+
+  _habitNames() {
+    return this.habits.map((h) => h.name).filter(Boolean);
+  }
+
+  // Canonicalize a habit identifier so filename style (hyphens) and YAML name
+  // style (underscores) match: lowercase, non-alphanumerics collapsed to "-".
+  _normName(n) {
+    return String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+
+  _habitNamesNorm() {
+    return new Set(this._habitNames().map((n) => this._normName(n)));
+  }
+
+  // Called by the plugin on every (non-search) tool call. Returns hold decision.
+  toolTick(session, tool) {
+    const SEARCH_TOOLS = new Set([
+      "search_files", "read_file", "web_search", "web_extract",
+      "glob", "grep", "read",
+    ]);
+    if (SEARCH_TOOLS.has(tool)) {
+      return { hold: false }; // search/read always allowed during a hold
+    }
+    const st = this._holdState(session);
+    st.count += 1;
+    if (st.acked >= 2) return { hold: false };
+    if (st.count % 5 === 0) {
+      return {
+        hold: true,
+        reason: "TOOL ACCESS HELD — acknowledge 2 habits before tooling resumes.",
+        format: "Habit: <habit-file-name> resonates true because <reason>",
+        habits: this._habitNames(),
+      };
+    }
+    return { hold: false };
+  }
+
+  // Called by the monitor (root-owned) after it validates an acknowledgment
+  // statement the agent made. Credits the ledger (max 2 per hold cycle).
+  //
+  // Reuse guard: the two MOST RECENT acknowledged habit names are remembered
+  // (rolling window). The next acknowledgment that names either of them is
+  // rejected — so the agent cannot satisfy the hold by repeating the same two
+  // habits it just used. It must pick from the rest of the set.
+  submitAck(session, statement) {
+    if (!statement || typeof statement !== "string") {
+      return { ok: false, error: "no statement" };
+    }
+    const m = statement.match(/habit:\s*(\S+)\s+resonates\s+true\s+because\s+(.+)/i);
+    if (!m) return { ok: false, error: "bad format" };
+    const name = m[1];
+    const reason = m[2].trim();
+    const norm = this._normName(name);
+    if (!this._habitNamesNorm().has(norm)) {
+      return { ok: false, error: `unknown habit: ${name}` };
+    }
+    if (!reason) return { ok: false, error: "empty reason" };
+    const st = this._holdState(session);
+    if (st.lastTwo.includes(norm)) {
+      return { ok: false, error: "already acknowledged recently — state a DIFFERENT habit (not one of the previous two)" };
+    }
+    // Every accepted acknowledgment shifts the rolling window — including
+    // ones that arrive after the hold is already satisfied — so the agent can
+    // never freeze the "previous two" and keep reusing everything else.
+    st.lastTwo = [...st.lastTwo, norm].slice(-2);
+    if (st.acked >= 2) return { ok: true, already_satisfied: true, acked: st.acked };
+    st.acked += 1;
+    return { ok: true, acked: st.acked };
+  }
 }
 
 // ─── Socket Server ─────────────────────────────────────────────────────────────
@@ -435,6 +541,18 @@ function startSocketServer(enforcer) {
           case "get_habit":
             response = enforcer.getHabit(request.params?.name);
             break;
+          case "tool_tick":
+            response = enforcer.toolTick(
+              request.params?.session_id || "default",
+              request.params?.tool || ""
+            );
+            break;
+          case "submit_ack":
+            response = enforcer.submitAck(
+              request.params?.session_id || "default",
+              request.params?.statement || ""
+            );
+            break;
           default:
             response = { error: "unknown method" };
         }
@@ -452,11 +570,14 @@ function startSocketServer(enforcer) {
 
   // Cross-platform transport:
   //   - ENFORCER_SOCKET="tcp://127.0.0.1:8753"  -> TCP (Windows, or any host)
-  //   - ENFORCER_SOCKET="/run/agent-enforcer/main.sock" -> Unix (POSIX default)
+  //   - ENFORCER_SOCKET unset -> Unix socket under AGENT_WORKSPACE/.agent/
+  //     (portable: works on Linux, macOS, Windows-Subsystem, no /run needed)
   // Same enforcement core, same wire protocol, on every OS.
   // NOTE: Node's net.Server.listen() takes a string as a UNIX path; it does
   // NOT parse "tcp://". So we split TCP into {host, port} explicitly.
-  const raw = process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock";
+  const raw = process.env.ENFORCER_SOCKET
+    || (enforcer.cfg.WORKSPACE && path.join(enforcer.cfg.WORKSPACE, ".agent", "enforcer.sock"))
+    || "/run/agent-enforcer/main.sock";
   const isTcp = typeof raw === "string" && raw.startsWith("tcp://");
   let tcpHost = "127.0.0.1", tcpPort = 8753;
 

@@ -19,7 +19,7 @@ const AGENT_INTERNAL_FILES = new Set([
 
 const AGENT_INTERNAL_DIRS = new Set([
   ".agent", "habits", "memory", "knowledge", ".secrets",
-  "node_modules", ".git", ".openclaw",
+  "node_modules", ".git", ".agent-character-kit",
 ]);
 
 function isAgentInternal(name) {
