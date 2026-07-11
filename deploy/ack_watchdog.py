@@ -17,11 +17,11 @@ import subprocess
 from pathlib import Path
 
 _HOME = os.environ.get("HOME", "/root")
-_ACK_HOME = os.path.join(_HOME, ".agent-character-kit")
 
-PIDFILE = os.environ.get("ACK_MONITOR_PID", os.path.join(_ACK_HOME, "ack-monitor.pid"))
-WATCHDOG_PID = os.environ.get("ACK_WATCHDOG_PID", os.path.join(_ACK_HOME, "ack-watchdog.pid"))
-MONITOR_BIN = os.environ.get("ACK_MONITOR_BIN", os.path.join(_ACK_HOME, "ack_monitor.py"))
+# Use system paths for root-owned services
+PIDFILE = os.environ.get("ACK_MONITOR_PID", "/var/lib/agent-character-kit/ack-monitor.pid")
+WATCHDOG_PID = os.environ.get("ACK_WATCHDOG_PID", "/var/lib/agent-character-kit/ack-watchdog.pid")
+MONITOR_BIN = os.environ.get("ACK_MONITOR_BIN", "/usr/local/lib/agent-character-kit/ack_monitor.py")
 MONITOR_UNIT = "agent-character-monitor.service"
 INTERVAL = int(os.environ.get("ACK_WATCHDOG_INTERVAL", "5"))
 
