@@ -64,13 +64,14 @@ const DEFAULT_CONSTITUTION = {
   operational_standards: [
     "Every tool call passes through the gatekeeper FIRST.",
   ],
+  // Minimal safety floor ONLY. Opinionated rules (sudo, git push --force,
+  // chmod 777, chown -R, su) are NOT baked in here — they live as HABIT prompts
+  // so they guide rather than hard-block, and stay editable without touching
+  // the daemon. rm -rf / is the one non-negotiable floor: a catastrophic delete
+  // must never rely on a reminder. The constructive alternative (mv to .trash/)
+  // is carried by the safe_deletion_via_trash habit.
   hard_constraints: [
     "rm -rf /",
-    "git push --force",
-    "sudo",
-    "su",
-    "chmod 777",
-    "chown -R",
   ],
   aspiration: "Behave with integrity under no observation.",
 };

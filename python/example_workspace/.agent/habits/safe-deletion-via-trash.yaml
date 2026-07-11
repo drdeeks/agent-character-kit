@@ -1,0 +1,20 @@
+# Habit: safe-deletion-via-trash
+# Source question: "Am I about to delete something instead of archiving it?"
+# Correct action: before removing anything, move it to .trash/ at the project
+#               root (mv <file> .trash/) — never rm -rf. Deletion is irreversible;
+#               archival is free and reversible.
+# Evidence: the target goes to .trash/ (project root), not /dev/null or a bare rm;
+#           .trash/ is the single, known recovery location.
+# Logic: rm -rf destroys evidence and work with no undo. A misclick or a wrong
+#        path (rm -rf /, rm -rf ., rm -rf ~) is catastrophic and unrecoverable.
+#        mv to .trash/ costs nothing and keeps a recovery path. The daemon still
+#        hard-blocks rm -rf / as a floor; this habit makes the safe path the default.
+name: "safe_deletion_via_trash"
+prompt: "Before deleting anything, move it to .trash/ at project root (mv <file> .trash/) — never rm -rf."
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Before removing anything, mv it to .trash/ at the project root — never rm -rf."
+  evidence: "The target lands in .trash/ (project root), not deleted; .trash/ is the single known recovery location."
+  logic: "rm -rf is irreversible and a wrong path is catastrophic. mv to .trash/ is free, reversible, and keeps a recovery path. Safe path is the default."
