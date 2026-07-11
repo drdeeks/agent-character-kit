@@ -36,7 +36,7 @@ const PY_CLIENT = path.join(REPO, "python", "agent_character_kit");
 
 // ─── arg parsing (non-interactive) ────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true };
+  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--workspace") out.workspace = argv[++i];
@@ -48,6 +48,10 @@ function parseArgs(argv) {
     else if (a === "--no-monitor") out.monitor = false;
     else if (a === "--no-watchdog") out.watchdog = false;
     else if (a === "--no-companion") out.companion = false;
+    else if (a === "--create-habit") out.createHabit = true;
+    else if (a === "--habit-name") out.habitName = argv[++i];
+    else if (a === "--habit-prompt") out.habitPrompt = argv[++i];
+    else if (a === "--habit-logic") out.habitLogic = argv[++i];
     else if (a === "--yes" || a === "-y") out.yes = true;
   }
   return out;
@@ -142,10 +146,121 @@ function launchMonitorWatchdog(vars, asRoot) {
   return { monitorPid: m.pid, watchdogPid: w.pid };
 }
 
+function createHabitDirect(ws, rawName, prompt, logic) {
+  const name = normalizeHabitName(rawName);
+  if (!name) throw new Error("habit name required");
+  if (!prompt || !prompt.trim()) throw new Error("prompt required");
+  if (!logic || !logic.trim()) throw new Error("reasoning required");
+  const habitsDir = path.join(ws, ".agent", "habits");
+  fs.mkdirSync(habitsDir, { recursive: true });
+  const file = path.join(habitsDir, `${name}.yaml`);
+  if (fs.existsSync(file)) {
+    throw new Error(`habit '${name}' already exists at ${file}`);
+  }
+  const yaml = [
+    `# Habit: ${name}`,
+    `# Source question: ${prompt.trim()}`,
+    `# Logic: ${logic.trim()}`,
+    `name: "${name}"`,
+    `prompt: ${JSON.stringify(prompt.trim())}`,
+    `enforcement:`,
+    `  level: "reminder"`,
+    `behavior:`,
+    `  kind: "standard"`,
+    `  assert: ${JSON.stringify(logic.trim())}`,
+    `  evidence: "The agent applies this habit consistently and can state WHY when held."`,
+    `  logic: ${JSON.stringify(logic.trim())}`,
+    "",
+  ].join("\n");
+  fs.writeFileSync(file, yaml);
+  return name;
+}
+
+function normalizeHabitName(raw) {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function createHabit(rl, ws) {
+  console.log("\n--- Create a new habit ---");
+  console.log("A habit is a principle you hold yourself to. The character kit");
+  console.log("enforces it on every hold. Created habits are indexed immediately");
+  console.log("into the habit database (the workspace habits dir) and take effect");
+  console.log("on the next triggering cycle.\n");
+
+  return ask(rl, "Habit name (becomes the file name, e.g. always-verify-before-ship)")
+    .then((rawName) => {
+      const name = normalizeHabitName(rawName);
+      if (!name) throw new Error("habit name required");
+
+      console.log("\nThe PROMPT is typically a question you ask YOURSELF to trigger");
+      console.log("recognition of the logic behind this habit (e.g. \"Did I verify");
+      console.log("this actually runs before claiming done?\"). It is what the");
+      console.log("enforcer shows you when this habit is up for acknowledgment.\n");
+
+      return ask(rl, "Prompt (the self-question that triggers recognition)").then((prompt) => {
+        if (!prompt.trim()) throw new Error("prompt required");
+        return ask(rl, "Reasoning / logic behind this habit (why it governs your actions)").then((logic) => {
+          if (!logic.trim()) throw new Error("reasoning required");
+
+          const habitsDir = path.join(ws, ".agent", "habits");
+          fs.mkdirSync(habitsDir, { recursive: true });
+          const file = path.join(habitsDir, `${name}.yaml`);
+          if (fs.existsSync(file)) {
+            console.log(`\nHabit '${name}' already exists at ${file} — not overwriting.`);
+            return name;
+          }
+          const yaml = [
+            `# Habit: ${name}`,
+            `# Source question: ${prompt.trim()}`,
+            `# Logic: ${logic.trim()}`,
+            `name: "${name}"`,
+            `prompt: ${JSON.stringify(prompt.trim())}`,
+            `enforcement:`,
+            `  level: "reminder"`,
+            `behavior:`,
+            `  kind: "standard"`,
+            `  assert: ${JSON.stringify(logic.trim())}`,
+            `  evidence: "The agent applies this habit consistently and can state WHY when held."`,
+            `  logic: ${JSON.stringify(logic.trim())}`,
+            "",
+          ].join("\n");
+          fs.writeFileSync(file, yaml);
+          console.log(`\nCreated habit: ${file}`);
+          console.log("Indexed into the habit database. It will be offered on the next");
+          console.log("acknowledgment cycle (the daemon loads habits from this dir).");
+          return name;
+        });
+      });
+    });
+}
+
 // ─── main flow ─────────────────────────────────────────────────────────────────
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  // Non-interactive habit creation: write the file and exit (no daemon needed).
+  if (opts.createHabit) {
+    const ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
+    const absWs = path.resolve(ws);
+    if (!opts.habitName || !opts.habitPrompt || !opts.habitLogic) {
+      console.error("ERROR: --create-habit needs --habit-name, --habit-prompt, --habit-logic");
+      process.exit(1);
+    }
+    try {
+      const name = createHabitDirect(absWs, opts.habitName, opts.habitPrompt, opts.habitLogic);
+      console.log(`Created habit: ${name}`);
+      rl.close();
+      return;
+    } catch (e) {
+      console.error("Habit creation failed:", e.message);
+      process.exit(1);
+    }
+  }
 
   let ws, socketMode, harness, agentDir, asRoot, doMonitor, doWatchdog, doCompanion;
 
@@ -166,6 +281,7 @@ async function main() {
 
     ws = await ask(rl, "Where should the agent workspace live? (habits, socket, constitution)",
       path.join(os.homedir(), ".agent-character-kit", "workspace"));
+    const absWs = path.resolve(ws);
     socketMode = await ask(rl, "Socket mode? [unix | tcp]", "unix");
     harness = (await ask(rl, "Which harness? [hermes | claude | cursor | opencode | generic]", "hermes")).toLowerCase();
     agentDir = await ask(rl, "Where is your agent's config/home directory? (companion gets dropped here)",
@@ -174,6 +290,15 @@ async function main() {
     doCompanion = await yesNo(rl, "Set up the harness companion (thin client)?", true);
     doMonitor = await yesNo(rl, "Set up the acknowledgment monitor (credits daemon from ack log)?", true);
     doWatchdog = await yesNo(rl, "Set up the monitor watchdog (revives monitor if it dies)?", true);
+
+    // Habit creator — create as many as wanted, then continue the install.
+    while (await yesNo(rl, "Create a habit now (interactive)?", false)) {
+      try {
+        await createHabit(rl, absWs);
+      } catch (e) {
+        console.log("Habit not created:", e.message);
+      }
+    }
   }
 
   rl.close();
