@@ -16,11 +16,15 @@ set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NODE_BIN="$(command -v node)"
-INSTALL_LIB="/usr/local/lib/agent-character-kit"
-INSTALL_BIN="/usr/local/bin/agent-enforcer-daemon"
-RUN_DIR="/run/agent-enforcer"
-VAR_DIR="/var/lib/agent-character-kit"
-LOG_DIR="/var/log/agent-character-kit"
+# All paths are self-resolving via env (no hardcoded host assumptions).
+# Defaults shown; override with ACK_INSTALL_LIB / AGENT_WORKSPACE / ENFORCER_SOCKET.
+INSTALL_LIB="${ACK_INSTALL_LIB:-/usr/local/lib/agent-character-kit}"
+AGENT_WORKSPACE="${AGENT_WORKSPACE:-/var/lib/agent-character-kit/workspace}"
+ENFORCER_SOCKET="${ENFORCER_SOCKET:-/run/agent-enforcer/main.sock}"
+INSTALL_BIN="${ACK_INSTALL_BIN:-/usr/local/bin/agent-enforcer-daemon}"
+RUN_DIR="$(dirname "$ENFORCER_SOCKET")"
+VAR_DIR="$(dirname "$AGENT_WORKSPACE")"
+LOG_DIR="${ACK_LOG_DIR:-/var/log/agent-character-kit}"
 UNIT="/etc/systemd/system/agent-enforcer.service"
 
 [ "$(id -u)" -eq 0 ] || { echo "ERROR: run as root (sudo bash $0)"; exit 1; }
@@ -90,7 +94,14 @@ if [ -d "$SRC_HABITS" ]; then
 fi
 
 # 2. Install source (root-owned, agent read-only)
-cp -r "$SRC_DIR/node" "$INSTALL_LIB/node"
+# Copy the CONTENTS of SRC/node into INSTALL_LIB/node (trailing-slash
+# semantics) so a re-deploy always refreshes the real binary at
+# $INSTALL_LIB/node/enforcer/agent_enforcer_daemon.js. Using `cp -r
+# "$SRC/node" "$INSTALL_LIB/node"` would NEST under node/node/ on a second
+# run (because the dest dir already exists) and silently leave the live
+# binary stale — a footgun that bites exactly when you redeploy.
+install -d -o root -g root -m 0755 "$INSTALL_LIB/node"
+cp -r "$SRC_DIR/node/." "$INSTALL_LIB/node/"
 chown -R root:root "$INSTALL_LIB"
 chmod -R go-w "$INSTALL_LIB"        # writable only by root
 chmod -R a+rX "$INSTALL_LIB"         # agent may READ (to load habits), not write

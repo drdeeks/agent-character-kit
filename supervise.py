@@ -34,7 +34,10 @@ def main() -> int:
         print(f"[supervise] daemon not found at {DAEMON}", file=sys.stderr)
         return 1
 
-    print(f"[supervise] starting ACK enforcer (socket={os.environ.get('ENFORCER_SOCKET', '/run/agent-enforcer/main.sock')})")
+    # Resolve the same default the daemon uses (workspace-relative, not /run).
+    ws = os.environ.get("AGENT_WORKSPACE") or os.path.join(os.environ.get("HOME", "/root"), ".agent-character-kit", "workspace")
+    sock = os.environ.get("ENFORCER_SOCKET") or os.path.join(ws, ".agent", "enforcer.sock")
+    print(f"[supervise] starting ACK enforcer (socket={sock})")
     while True:
         proc = subprocess.Popen([NODE, DAEMON], env=os.environ)
         try:

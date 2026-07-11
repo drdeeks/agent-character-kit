@@ -40,8 +40,11 @@ def _load_indexer():
     return DocumentIndexer
 
 HOME = Path(os.environ.get("HOME", "/root"))
-WORKSPACE = Path(os.environ.get("AGENT_WORKSPACE", HOME / ".openclaw" / "workspace"))
-AUDIT_DIR = HOME / "var" / "log" / "agent-enforcer"
+# Harness-neutral default: the kit lives under the user's home, not a specific
+# agent harness's directory. Override with AGENT_WORKSPACE (the user designates
+# where their agent + habits reside).
+WORKSPACE = Path(os.environ.get("AGENT_WORKSPACE", HOME / ".agent-character-kit" / "workspace"))
+AUDIT_DIR = WORKSPACE / ".agent" / "audit"
 
 # ─── Enforcer Client ─────────────────────────────────────────────────────────
 

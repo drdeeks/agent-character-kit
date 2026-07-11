@@ -1,5 +1,5 @@
 [Unit]
-Description=Agent Identity Kit Enforcer Daemon (root-owned)
+Description=Agent Character Kit Enforcer Daemon (root-owned)
 Documentation=file:///usr/local/lib/agent-character-kit/README.md
 
 # System-owned enforcement. Runs as root so the agent user cannot kill,

@@ -1,12 +1,15 @@
-# Agent Identity Kit — Hermes Plugin
+# Agent Character Kit — Companion Plugin (Hermes)
 
-A **real, registered** Hermes plugin that enforces agent *character* (your word,
-not "identity") on every tool call. This replaces the old `hooks/identity.js`
-string-suggestion that was never actually wired in.
+A **real, registered** companion plugin that enforces agent *character* (your word,
+not "identity") on every tool call, via any harness's `pre_tool_call` hook. This
+replaces the old `hooks/identity.js` string-suggestion that was never actually wired in.
+
+One of several companion clients — the kit itself is harness-agnostic (Hermes,
+OpenCode, Claude, Cursor, Gemini all supported).
 
 ## What it does
 
-Bridges Hermes's generic `pre_tool_call` hook to the Agent Identity Kit
+Bridges any harness's `pre_tool_call` hook to the Agent Character Kit
 enforcer. The enforcer runs the **same** policy the Node daemon enforces:
 
 - `constitution.yaml` → `hard_constraints` (deny patterns)

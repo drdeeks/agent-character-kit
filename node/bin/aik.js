@@ -162,7 +162,7 @@ Restart=always
 RestartSec=5
 # Self-healing: if killed, systemd brings it back within 5s.
 Environment=HOME=${HOME}
-Environment=AGENT_WORKSPACE=${process.env.AGENT_WORKSPACE || path.join(HOME, ".openclaw", "workspace")}
+Environment=AGENT_WORKSPACE=${process.env.AGENT_WORKSPACE || path.join(HOME, ".agent-character-kit", "workspace")}
 ${createUser ? "User=aienforcer\n" : ""}WorkingDirectory=${process.cwd()}
 
 [Install]
@@ -194,7 +194,7 @@ WantedBy=default.target
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key><string>${HOME}</string>
-    <key>AGENT_WORKSPACE</key><string>${process.env.AGENT_WORKSPACE || path.join(HOME, ".openclaw", "workspace")}</string>
+    <key>AGENT_WORKSPACE</key><string>${process.env.AGENT_WORKSPACE || path.join(HOME, ".agent-character-kit", "workspace")}</string>
   </dict>
 </dict>
 </plist>

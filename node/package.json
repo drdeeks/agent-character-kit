@@ -1,7 +1,7 @@
 {
   "name": "agent-character-kit",
   "version": "1.0.0",
-  "description": "Universal agent identity enforcement, knowledge indexing, and memory with YAML frontmatter",
+  "description": "Universal agent character enforcement, knowledge indexing, and memory with YAML frontmatter",
   "main": "src/index.js",
   "bin": {
     "aik": "./bin/aik.js"

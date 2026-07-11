@@ -1,0 +1,16 @@
+[Unit]
+Description=ACK Acknowledgment Monitor (root-owned)
+After=agent-enforcer.service
+Requires=agent-enforcer.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/agent-character-kit/ack_monitor.py
+Restart=always
+RestartSec=3
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

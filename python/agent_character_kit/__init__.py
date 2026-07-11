@@ -9,7 +9,7 @@ Provides the same document-indexing capabilities as the Node.js package:
 - Optional link-following to also index referenced local files
 
 Usage:
-    from agent_identity_kit import DocumentIndexer
+    from agent_character_kit import DocumentIndexer
     idx = DocumentIndexer("/path/to/workspace")
     idx.index_directory("./docs")
 """
@@ -53,7 +53,7 @@ AGENT_INTERNAL_FILES = {
 }
 AGENT_INTERNAL_DIRS = {
     ".agent", "habits", "memory", "knowledge", ".secrets",
-    "node_modules", ".git", ".openclaw",
+    "node_modules", ".git", ".agent-character-kit",
 }
 
 ALL_EXTENSIONS = sorted(
