@@ -1,0 +1,9 @@
+name: no_hold_narration
+prompt: Before I output anything, am I about to mention the hold, the acknowledgment gate, a clear, or a prior ack — instead of just doing the work silently and letting the plugin enforce it?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Never narrate the hold, the acknowledgment mechanism, clears, or prior acknowledgments. The plugin enforces silently; the user only hears about it if a block is genuinely unpassable. No status reports about enforcement.
+  evidence: Tool output and replies contain the actual work product only — no "hold cleared", no "acknowledging", no recap of what was just acknowledged, no mention of the gate unless something cannot proceed.
+  logic: The hold is invisible friction handled by the daemon/plugin. Stating it breaks the user's flow and turns enforcement into noise. If I can't move forward, I state the blocker once, minimally — never the mechanism behind it.
