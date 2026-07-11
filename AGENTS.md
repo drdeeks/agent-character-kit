@@ -112,7 +112,8 @@ cd agent-character-kit && cd node && npm install && cd ..
 ```bash
 sudo bash deploy/deploy-agent-enforcer.sh
 sudo systemctl enable --now agent-enforcer.service
-# => binary + source root-owned at /usr/local/lib/agent-character-kit,
+# => binary + source root-owned (default /usr/local/lib/agent-character-kit,
+#    override via ACK_INSTALL_LIB; socket/workspace via ENFORCER_SOCKET/AGENT_WORKSPACE)
 #    agent-enforcer.service dropped, enabled, started (User=root, RestartSec=3)
 sudo systemctl status agent-enforcer.service   # Active: running
 ```
@@ -173,7 +174,9 @@ the agent cannot reset or bypass it by editing/disabling the plugin.
 **Behavior:**
 - Every 5th non-search tool call is **held** until the agent has acknowledged
   **2** habits in the form:
-  `Habit: <habit-file-name> resonates true because <reason>`
+  `Habit: <habit-file-name> <resonates true | why: | because | …> <engaged reason>`
+  (the close is variable — see `HABIT_POLICY.md` §4; the reason must be specific
+  and situation-tied, not filler).
 - Search/read tools (`search_files`, `read_file`, `web_search`, `web_extract`,
   `glob`, `grep`) are **never held** — the agent can always look up a habit it
   can't recall.
@@ -185,8 +188,8 @@ the agent cannot reset or bypass it by editing/disabling the plugin.
    allow/hold. Name normalization (hyphen ↔ underscore) lets the agent state
    `rigorous-commits-no-push` and match the file `name: rigorous_commits_no_push`.
 2. **Plugin** (`python/hermes_plugin/`, thin client) — on each tool call asks the
-   daemon `tool_tick` and obeys the hold; records any `Habit: … resonates true
-   because …` the agent states into the **external ACK LOG**
+   daemon `tool_tick` and obeys the hold; records any `Habit: <name> <resonates
+   true | why: | because | …> <reason>` the agent states into the **external ACK LOG**
    (`/tmp/agent-character-kit-ack.jsonl`). The plugin does **not** self-credit —
    it cannot forge acknowledgments.
 3. **Monitor** (`deploy/ack_monitor.py`, root-owned systemd
@@ -197,11 +200,22 @@ the agent cannot reset or bypass it by editing/disabling the plugin.
    `agent-character-watchdog.service`) — revives the monitor if it dies
    (self-healing).
 
-**Install the monitor + watchdog (after the daemon is deployed):**
+**Wiring:** the interactive installer (`node node/bin/install.js`, or
+`npm i -g @character-kit && ack install`) sets up ALL FOUR components — daemon,
+companion, monitor, watchdog — in one flow and writes a single `.env`
+(`AGENT_WORKSPACE` / `ENFORCER_SOCKET` / `ACK_ACK_LOG`) every component reads.
+For a root-owned system-wide deploy, `deploy/deploy-ack-services.sh` installs
+and starts the monitor + watchdog as systemd units instead.
+
 ```bash
+# user-mode, interactive (prompts for workspace, socket, harness, habit creation):
+node node/bin/install.js
+# or non-interactive, all components on:
+node node/bin/install.js --yes
+
+# root-mode (system-wide, self-respawning):
+sudo bash deploy/deploy-agent-enforcer.sh
 sudo bash deploy/deploy-ack-services.sh
-# => copies ack_monitor.py + ack_watchdog.py to /usr/local/lib/agent-character-kit,
-#    installs + starts both systemd units (Restart=always).
 ```
 
 > The hold is a **deterrent and constant reminder, NOT a security boundary** —
