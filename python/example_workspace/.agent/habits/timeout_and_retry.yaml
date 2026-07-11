@@ -1,0 +1,9 @@
+name: timeout_and_retry
+prompt: For any long-running or network operation, did I set a timeout and a bounded retry — or am I letting it hang or fail once and die?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Long or network operations have a timeout and retry-with-backoff behavior, bounded so they can't hang or fail permanently on a single blip.
+  evidence: Calls use explicit timeouts and a retry loop with cap (e.g. 3 attempts, exponential backoff); the loop exits cleanly on exhaustion.
+  logic: Unbounded waits hang the system; single-attempt network calls fail on the first transient error. Timeout + bounded retry is basic robustness.

@@ -1,0 +1,9 @@
+name: documented_rollback
+prompt: For every state change I'm about to make, is there a documented way to reverse it — or am I mutating without an escape hatch?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Every state change has a documented reversal. No irreversible mutation ships without a named undo path.
+  evidence: The change is paired with a rollback step (restore from backup, inverse command, layer pop) described alongside the forward action.
+  logic: Unreversible changes are the difference between an incident and a disaster. If you can't undo it, you shouldn't ship it blind.

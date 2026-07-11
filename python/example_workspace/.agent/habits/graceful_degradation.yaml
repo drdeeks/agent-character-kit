@@ -1,0 +1,9 @@
+name: graceful_degradation
+prompt: If a dependency or external service is unavailable right now, does my system fall back to a safe reduced mode — or hard-fail the whole operation?
+enforcement:
+  level: should
+behavior:
+  kind: assertion
+  assert: "When a dependency is unavailable, degrade gracefully to a fallback rather than crashing the whole operation."
+  evidence: "Missing optional deps trigger a defined fallback path (cached data, reduced feature set, clear 'running degraded' signal) instead of an unhandled exception."
+  logic: "Hard failure on a missing optional piece turns a minor outage into a full stop. Graceful degradation keeps the core alive and signals the gap."

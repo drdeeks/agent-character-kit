@@ -1,0 +1,9 @@
+name: track_defects_openly
+prompt: Did I just notice a crack, limitation, or known-defect — and am I recording it openly rather than quietly working around it and hiding it?
+enforcement:
+  level: should
+behavior:
+  kind: assertion
+  assert: Known defects are tracked openly in a list. Do not hide cracks; name them so they can be fixed or accepted deliberately.
+  evidence: Limitations appear in a documented defects/known-issues list, not buried in a comment or papered over by silent workaround.
+  logic: Hidden defects compound. An openly-listed crack is a managed risk; a concealed one is a future outage nobody saw coming.

@@ -1,0 +1,9 @@
+name: safe_file_permissions
+prompt: Are the files/dirs I just created using 755 (dirs) / 644 (files) — and did I avoid 700 (locks out collaborators) and 777 (world-writable)?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: "Directories 755, files 644. Forbidden - 700 on dirs (locks out co-devs), 777 on anything (world-writable), 600 on non-secrets (blocks group needlessly)."
+  evidence: "Created artifacts carry 755/644; a permissions check confirms no 700/777/600 leaks; secrets dirs stay 755 (group-accessible), not 700."
+  logic: "Wrong permissions either lock out the team or expose the system. The standard 755/644 default is safe and collaborative; the extremes are failures."

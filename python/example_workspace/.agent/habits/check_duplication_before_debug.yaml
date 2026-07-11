@@ -1,0 +1,9 @@
+name: check_duplication_before_debug
+prompt: Before I go deep debugging a rot/divergence, did I first check whether the cause is DUPLICATED truth (two copies of the same concern that drifted apart)?
+enforcement:
+  level: should
+behavior:
+  kind: assertion
+  assert: Rot almost always = duplicated truth. Check for duplicate sources FIRST, before deep debugging. Fix = collapse to one core; consumers declare, core enforces.
+  evidence: A duplication check (grep for the concern's name/variants) is the first diagnostic step; if two implementations exist, merging them precedes behavioral debugging.
+  logic: Debugging the symptom of a divergence between two copies wastes effort — the real fix is collapsing to one owner. Duplication is the most common root cause, so check it first.

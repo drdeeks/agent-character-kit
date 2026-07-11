@@ -1,0 +1,9 @@
+name: rename_as_layer_op
+prompt: If I'm renaming something across the codebase, am I doing ONE pass plus ONE guard grep that fails if any old string remains — or hand-editing files ad hoc?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: A rename is ONE pass + ONE guard (a grep that fails if any old string survives). Ad-hoc edits across files spawn duplicate remnants. The vendored runtime/dependency is a LAYER and is NOT renamed — only YOUR files.
+  evidence: After a rename, a guard grep for the old token returns zero; vendored/third-party code still carries its original names untouched.
+  logic: Ad-hoc find-replace scatters near-duplicate remnants that diverge later. One pass + one guard collapses the surface; leaving dependencies alone avoids breaking the layer you don't own.

@@ -1,0 +1,9 @@
+name: single_source_of_truth
+prompt: Before creating or editing, is there already ONE file/service/port/skill that owns this concern — or am I about to spawn a second copy with a similar name?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: One file, one service, one port, one skill per concern. No second copy with a near-identical name.
+  evidence: grep the repo for the concern before adding a new module; if a near-duplicate exists, extend it instead of forking.
+  logic: Duplication is the primary disease of a system. A second copy with a similar name diverges silently and rot sets in. Collapse to one core; consumers declare, the core enforces.
