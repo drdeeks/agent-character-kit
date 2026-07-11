@@ -1,9 +1,9 @@
 name: one_concern_per_file
-prompt: Does each reference/script file cover ONE concern — or have I mixed unrelated topics into one file that no one can navigate or reuse?
+prompt: Does each file cover one concern, not mixed topics?
 enforcement:
   level: should
 behavior:
   kind: assertion
-  assert: Each file covers one concern, not mixed topics. References are procedure/schema/example, not vague description; files over 100 lines carry a table of contents.
-  evidence: Files are single-purpose and navigable; cross-references point to related concerns instead of cramming them into one blob.
-  logic: Mixed-topic files become unmaintainable and un-reusable. One concern per file is what makes a skill's references actually referenceable.
+  assert: Each reference/script file covers one concern. Mixed topics get split; no grab-bag file nobody can navigate or reuse.
+  evidence: Files have a single clear purpose; related-but-distinct topics live in separate files.
+  logic: One concern per file keeps things navigable and reusable. A file that does five things does none of them well (standards.md §4).
