@@ -1,9 +1,9 @@
 name: track_defects_openly
-prompt: Did I just notice a crack, limitation, or known-defect — and am I recording it openly rather than quietly working around it and hiding it?
+prompt: Did I just hit or notice a crack (a known defect, a violation of a forever rule) — and am I recording it OPENLY in the defects list, not hiding it or working around it silently?
 enforcement:
   level: should
 behavior:
   kind: assertion
-  assert: Known defects are tracked openly in a list. Do not hide cracks; name them so they can be fixed or accepted deliberately.
-  evidence: Limitations appear in a documented defects/known-issues list, not buried in a comment or papered over by silent workaround.
-  logic: Hidden defects compound. An openly-listed crack is a managed risk; a concealed one is a future outage nobody saw coming.
+  assert: Known defects are tracked openly as a named list (e.g. audit swallows errors, false tamper-proof claim, hook is a string not a registered plugin, no CI). List the cracks; do not hide them.
+  evidence: Limitations appear in a documented known-defects/known-issues list with the specific rule they violate; they are slated to be CLOSED, not concealed.
+  logic: Hidden defects compound into outages nobody saw coming. An openly-listed crack is a managed, closable risk; a concealed one is future failure. (Per FOREVER-SYSTEM §9.)

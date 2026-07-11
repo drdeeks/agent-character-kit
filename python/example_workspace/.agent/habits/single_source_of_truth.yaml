@@ -1,9 +1,9 @@
 name: single_source_of_truth
-prompt: Before creating or editing, is there already ONE file/service/port/skill that owns this concern — or am I about to spawn a second copy with a similar name?
+prompt: For this concern, is there EXACTLY ONE module/file/service/port that owns it — and if two things both need it, do they DECLARE and ROUTE through that one, rather than each re-implementing it?
 enforcement:
   level: must
 behavior:
   kind: assertion
-  assert: One file, one service, one port, one skill per concern. No second copy with a near-identical name.
-  evidence: grep the repo for the concern before adding a new module; if a near-duplicate exists, extend it instead of forking.
-  logic: Duplication is the primary disease of a system. A second copy with a similar name diverges silently and rot sets in. Collapse to one core; consumers declare, the core enforces.
+  assert: One canonical location per concern. If two skills/agents both need a capability, they declare what they enforce and route through the one runtime that implements it — they do not each contain their own copy.
+  evidence: A concept implemented in code exists in exactly one module; no second copy with a similar name; docs that describe behavior point at the one file that implements it.
+  logic: Duplication is the primary disease — it rots into two truths that disagree. One core, many consumers, zero duplicated truth. Collapse to one owner; the rest declare and route.
