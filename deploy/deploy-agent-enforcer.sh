@@ -70,39 +70,23 @@ fi
 chown -R root:root "$VAR_DIR/workspace/.agent"
 chmod 0644 "$VAR_DIR/workspace/.agent/constitution.yaml" "$VAR_DIR/workspace/.agent/enforcer.yaml"
 
-# Seed the non-negotiable credential-leak habit (hard enforcement, always on).
+# Seed habits from the repo's example workspace (single source of habit files).
+# Copies every *.yaml that isn't already present, so a redeploy never clobbers
+# habits the agent/user has since customized. The credential-leak guard lives
+# here too (hard enforcement) — no longer hardcoded inline.
 HABITS_DIR="$VAR_DIR/workspace/.agent/habits"
 install -d -o root -g root -m 0755 "$HABITS_DIR"
-if [ ! -f "$HABITS_DIR/no_credential_leak.yaml" ]; then
-  cat > "$HABITS_DIR/no_credential_leak.yaml" <<'YAML'
-name: no_credential_leak
-enforcement:
-  level: hard
-behavior:
-  kind: guard
-  steps:
-    - check: block_secret_leak
-      patterns:
-        - "sk-"
-        - "sk_"
-        - "AIza"
-        - "xoxb-"
-        - "xoxp-"
-        - "AKIA"
-        - "ghp_"
-        - "gho_"
-        - "glpat-"
-        - "-----BEGIN PRIVATE KEY-----"
-        - "api_key="
-        - "apikey="
-        - "password="
-        - "secret="
-        - "token="
-        - "client_secret="
-      require_assignment: true
-YAML
-  chown root:root "$HABITS_DIR/no_credential_leak.yaml"
-  chmod 0644 "$HABITS_DIR/no_credential_leak.yaml"
+SRC_HABITS="$SRC_DIR/python/example_workspace/.agent/habits"
+if [ -d "$SRC_HABITS" ]; then
+  for hf in "$SRC_HABITS"/*.yaml; do
+    [ -e "$hf" ] || continue
+    bn="$(basename "$hf")"
+    if [ ! -f "$HABITS_DIR/$bn" ]; then
+      cp "$hf" "$HABITS_DIR/$bn"
+      chown root:root "$HABITS_DIR/$bn"
+      chmod 0644 "$HABITS_DIR/$bn"
+    fi
+  done
 fi
 
 # 2. Install source (root-owned, agent read-only)

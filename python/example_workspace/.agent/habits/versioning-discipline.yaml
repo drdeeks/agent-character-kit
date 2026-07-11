@@ -1,0 +1,18 @@
+# Habit: versioning-discipline
+# Source question: "Is the version accurate, present, and self-identifying?"
+# Correct action: stamp a VERSION file and an AIK_VERSION (or equivalent) constant so the
+#               artifact identifies its own version; bump it on every meaningful change;
+#               never ship a dir that can't state what it is.
+# Evidence: a VERSION file exists at repo root, the runtime constant matches it, and the
+#           two are updated together whenever behavior changes.
+# Logic: an artifact that can't name its own version can't be debugged, diffed, or trusted.
+#        Self-identifying = the dir tells you what it is without external context.
+name: "versioning_discipline"
+prompt: "Is the version stamped, matching, and bumped on change?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "Stamp VERSION file + runtime version constant; they match; bump both on any meaningful change."
+  evidence: "VERSION file at repo root; runtime constant equals it; both updated together when behavior changes."
+  logic: "An artifact that can't name its own version can't be debugged or trusted. Self-identifying is non-negotiable."
