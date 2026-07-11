@@ -1,0 +1,9 @@
+name: layered_not_rewritten
+prompt: When I update shared truth, am I ADDING a versioned layer with an ID — or mutating the existing file in place (a rewrite)?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Updates add versioned layers with IDs. Rollback = pop a layer. A reload that mutates the source of truth (in-place rewrite) is forbidden.
+  evidence: New behavior lives in a new layer/file with a version ID; the original truth is preserved beneath it, not overwritten.
+  logic: Rewriting the singular source of truth destroys history and makes rollback impossible. Layering keeps the past recoverable and the present additive.

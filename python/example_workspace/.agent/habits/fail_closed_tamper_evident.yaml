@@ -1,0 +1,9 @@
+name: fail_closed_tamper_evident
+prompt: When uncertain about a state or permission, do I BLOCK by default — and do I treat any hash/checksum as a visible signal, not as proof of protection?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Block when unsure (fail-closed). A hash that changes is a VISIBLE event, not protection. "Tamper-proof with a 32-bit hash" is a lie.
+  evidence: Guard rails fail closed on missing/unverifiable input; integrity checks report changes, they do not claim to prevent them.
+  logic: A guard that fails open is no guard. And tamper-EVIDENT (you can SEE it changed) is honest; tamper-PROOF is a marketing claim that breaks.

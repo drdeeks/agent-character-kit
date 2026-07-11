@@ -1,0 +1,9 @@
+name: test_of_forever
+prompt: Before I call this artifact done, does it YES all of — one truth / self-resolving / layered / fail-closed / agnostic / reminded / verifiable?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Every artifact must answer YES to all — singular source of truth, self-resolving paths, layered not rewritten, fail-closed, platform-agnostic, continuously reminded, verifiable without reading code.
+  evidence: The artifact passes a checklist covering each of the seven forever criteria; gaps are named, not assumed away.
+  logic: Any single NO means the artifact will rot, diverge, or fail silently under time, relocation, or scale. The test of forever is the bar, not a style guide.

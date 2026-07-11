@@ -1,0 +1,9 @@
+name: lossless_consolidation
+prompt: When merging files/skills/code, did I read ALL sources first, map sections, dedupe, and preserve every unique feature — or did I just append and drop things?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: "Consolidation is lossless - read every source completely, map content to sections, dedupe, and preserve each unique feature. No information lost from any source."
+  evidence: "The merged output accounts for every section of every input; a checklist confirms no source content was dropped; internal links resolve to the new structure."
+  logic: "Ad-hoc appends lose features and duplicate content. Lossless merge (read-all to map to dedupe to preserve) is the only way consolidation improves rather than rots."
