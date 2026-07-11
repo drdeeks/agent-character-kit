@@ -1,9 +1,9 @@
 name: audit_not_silent
-prompt: If the audit/enforcement log itself fails to write, do I SURFACE that loudly — or swallow it in a bare catch that hides the moment of maximum need to know?
+prompt: If the audit log itself fails to write, do I surface it — or swallow it?
 enforcement:
   level: must
 behavior:
   kind: assertion
-  assert: The audit trail must NOT silently swallow failures. If the enforcer cannot write its audit log, that is the moment of maximum need to know — surface it, do not catch {} it into the void.
-  evidence: Audit-write failures are reported (logged to an alternate sink, raised, or flagged), never absorbed by an empty catch; two known bare-catch swallow points are eradicated.
-  logic: The instant the audit log can't be written is exactly when you most need to know the system is blind. Silently eating that failure is the worst possible time to be quiet. (Per FOREVER-SYSTEM §4.)
+  assert: The audit trail must not silently swallow failures. If the enforcer can't write its audit log, that's the moment of maximum need to know — surface it, don't catch it into the void.
+  evidence: Audit-write failures are reported (alternate sink, raised, or flagged), never absorbed by an empty catch.
+  logic: The instant the audit log can't write is exactly when you most need to know the system is blind. Silence there is the worst possible time to be quiet (§4).

@@ -1,9 +1,9 @@
 name: affirm_character_each_action
-prompt: At this action, did I re-assert my foundational character (foundations.yaml) AFFIRMATIVELY into context — not just block on a denial — and did I watch for DRIFT signals (e.g. creating a second file near-identical to an existing one)?
+prompt: Did I re-assert my foundational character affirmatively — and watch for drift signals like a near-duplicate file?
 enforcement:
   level: should
 behavior:
   kind: assertion
-  assert: At EVERY pre-tool-call, affirmatively re-assert the relevant foundation into working context (not just log it). Watch the action itself for character-drift signals — e.g. creating a near-duplicate of an existing file is a positive-policy violation, warn + remind, do not necessarily deny.
-  evidence: A foundations.yaml of 3-7 POSITIVE statements of who the agent is exists separately from constitution (hard constraints) and enforcer.yaml (gates); the reminder fires on every action affirming character, not only on denial.
-  logic: Negative-only enforcement cannot stop drift — the agent slowly contradicting its own purpose file by file. Affirmative re-assertion + drift-signal detection is the missing layer that keeps character active when no one is watching.
+  assert: At every pre-tool-call, affirmatively re-assert the relevant foundation into context. Watch the action for drift signals — a near-duplicate file is a positive-policy violation; warn + remind, don't necessarily deny.
+  evidence: A foundations.yaml of 3-7 positive statements exists separately from constitution and enforcer.yaml; the reminder fires on every action, not only on denial.
+  logic: Negative-only enforcement can't stop drift — the agent slowly contradicting its own purpose file by file. Affirmative re-assertion + drift detection is the missing layer (§6).

@@ -1,9 +1,9 @@
 name: idempotent_operations
-prompt: If this operation runs again (retry, re-run, re-apply), will it cause a side effect or leave the system different from a single clean run?
+prompt: If this runs again, will it cause a side effect or leave state different from one clean run?
 enforcement:
   level: must
 behavior:
   kind: assertion
-  assert: Repeated operations must not cause side effects. Re-running yields the same end state as running once.
-  evidence: Scripts/commands are safe to re-invoke; they check existing state before acting (upsert, skip-if-exists) rather than appending or clobbering blindly.
-  logic: Idempotency is what makes automation retryable and safe. A non-idempotent step turns a harmless retry into corruption.
+  assert: Repeated operations must be safe to re-run — no duplicate records, no double-writes, no changed end-state on the second run.
+  evidence: A second identical run produces the same final state as the first; re-applying is a no-op where applicable.
+  logic: Non-idempotent operations surprise operators and break retries. If it can run twice, it must survive running twice (standards.md §6).

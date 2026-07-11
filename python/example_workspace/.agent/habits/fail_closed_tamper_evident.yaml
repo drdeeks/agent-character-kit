@@ -1,9 +1,9 @@
 name: fail_closed_tamper_evident
-prompt: "When unsure (enforcer unreachable, config missing, policy ambiguous), do I BLOCK — and is any change to core truth logged as VISIBLE (tamper-EVIDENT), never claimed tamper-PROOF? Also: do I let the audit trail silently swallow its own failures?"
+prompt: When unsure, do I block — and is any change to core truth logged as visible, never claimed tamper-proof?
 enforcement:
   level: must
 behavior:
   kind: assertion
-  assert: "Fail-closed — block when unsure, never allow. Claim tamper-EVIDENT (a hash change is logged + visible), never tamper-PROOF (a 32-bit string hash is detection, not protection). The audit trail must NOT silently swallow failures (no bare catch into the void)."
-  evidence: "Guard rails block on missing/unverifiable input; integrity uses sha256-minimum and reports changes; a failure to write the audit log is surfaced, not caught {}."
-  logic: "A guard that fails open is no guard. Tamper-EVIDENT is honest; tamper-PROOF is a false claim. And the moment the audit log can't be written is the moment of maximum need to know — surface it."
+  assert: Fail-closed — block when unsure, never allow. Claim tamper-EVIDENT (hash change logged + visible), never tamper-PROOF. The audit trail must not silently swallow failures.
+  evidence: Guard rails block on missing input; integrity uses sha256-minimum and reports changes; an audit-write failure is surfaced, not caught silently.
+  logic: A guard that fails open is no guard. Tamper-EVIDENT is honest; tamper-PROOF is false. The moment the audit log can't write is when you most need to know.

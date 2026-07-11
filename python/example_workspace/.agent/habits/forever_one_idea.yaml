@@ -1,9 +1,9 @@
 name: forever_one_idea
-prompt: Does this design satisfy "constantly layerable" — which automatically implies adaptable, integrable, scalable, agnostic, and self-resolving?
+prompt: Does this design satisfy "constantly layerable"?
 enforcement:
   level: should
 behavior:
   kind: assertion
-  assert: "A system is forever when it accepts new layers without breaking its core, and plugs into any other system without rewriting itself. Layerable => adaptable => integrable => agnostic => self-resolving => robust => scalable."
-  evidence: The design adds behavior as layers (not rewrites), integrates without self-modification, and resolves its own resources — demonstrating the one idea's chain.
-  logic: If a design satisfies constantly-layerable, it automatically satisfies the rest. Every other forever rule is a consequence of this single property. Start from layerability. (Per FOREVER-SYSTEM §0.)
+  assert: "Layerable implies adaptable, integrable, scalable, agnostic, self-resolving. A system is forever when it accepts layers without breaking core and plugs in without rewriting itself."
+  evidence: The design adds behavior as layers (not rewrites), integrates without self-modification, resolves its own resources.
+  logic: If a design satisfies constantly-layerable, it automatically satisfies the rest. Every other forever rule is a consequence of this one property (§0).

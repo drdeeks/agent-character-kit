@@ -1,9 +1,9 @@
 name: drift_signal_detection
-prompt: In the action I'm about to take, is there a CHARACTER-DRIFT signal — e.g. creating a second file near-identical to an existing one, or contradicting a foundations statement file by file?
+prompt: In this action, is there a character-drift signal — like a near-duplicate file?
 enforcement:
   level: should
 behavior:
   kind: assertion
-  assert: Watch the action itself for drift signals — a near-duplicate file is a positive-policy violation, not a hard-constraint violation. Warn + remind, do not necessarily deny.
-  evidence: Near-duplicate creation is flagged as drift (close to a duplication crack); the enforcer reminds affirmatively rather than only blocking.
-  logic: Drift is the agent slowly contradicting its own purpose file by file — the disease a deny-only gate cannot stop. Catching the signal early (warn + remind) prevents the rot before it becomes a violation. (Per FOREVER-SYSTEM §6.)
+  assert: Watch the action for drift signals — a near-duplicate file is a positive-policy violation, not a hard-constraint one. Warn + remind, don't necessarily deny.
+  evidence: Near-duplicate creation is flagged as drift; the enforcer reminds affirmatively rather than only blocking.
+  logic: Drift is the agent slowly contradicting its own purpose file by file — a deny-only gate can't stop it. Catching the signal early prevents the rot (FOREVER-SYSTEM §6).

@@ -1,9 +1,9 @@
 name: layered_not_rewritten
-prompt: When I update shared truth, do I stack a NEW layer with an ID and a supersedes pointer — or mutate the base file in place (a rewrite disguised as an update)?
+prompt: When I update shared truth, do I stack a new layer with an ID — or mutate the base in place?
 enforcement:
   level: must
 behavior:
   kind: assertion
-  assert: Updates stack ON TOP. The base never changes. New behavior = a new layer carrying an ID, a timestamp, what it adds, and what it supersedes. Rollback = pop the layer (O(1)); the core is intact.
-  evidence: New behavior lives in a versioned layer with an ID + supersedes pointer; removing the top layer restores the prior state exactly; no in-place overwrite of the singular source of truth.
-  logic: A layer without an ID and a supersedes pointer is a rewrite disguised as an update. Reload that mutates truth is rewrite, not layer — forbidden. Layering is the forever guarantee.
+  assert: Updates stack on top; the base never changes. New behavior = a layer with an ID, timestamp, what it adds, and what it supersedes. Rollback = pop the layer.
+  evidence: New behavior lives in a versioned layer with ID + supersedes pointer; removing the top restores prior state exactly; no in-place overwrite of truth.
+  logic: A layer without an ID and supersedes pointer is a rewrite disguised as an update. Reload that mutates truth is rewrite, not layer — forbidden.

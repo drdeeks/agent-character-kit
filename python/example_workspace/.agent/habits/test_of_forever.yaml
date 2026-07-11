@@ -1,9 +1,9 @@
 name: test_of_forever
-prompt: Before I ship this artifact, does it YES all seven — one truth / self-resolving / layered / fail-closed+tamper-evident / agnostic+registered-plugins / affirmatively-reminded / verifiable-via-CI?
+prompt: Before shipping, does it YES all seven forever rules?
 enforcement:
   level: must
 behavior:
   kind: assertion
-  assert: "Every artifact must YES all: (§1) one source of truth per concept; (§2) resolves own paths, no hardcoded absolutes; (§3) updates add layers, never rewrite core; (§4) fails closed, tamper-EVIDENT not -proof; (§5) platform/path agnostic, plugins are real registered units not strings; (§6) affirmatively reminds character at every action; (§7) proves it works via CI green badge, not prose."
-  evidence: "A 7-point checklist covering each forever rule is satisfied (or gaps are named); any NO means not-forever-yet — keep layering."
-  logic: "Any single NO means the artifact will rot, diverge, or fail silently under time, relocation, or scale. The Test of Forever is the bar, derived directly from FOREVER-SYSTEM §10."
+  assert: "One truth / self-resolving / layered / fail-closed+tamper-evident / agnostic+registered-plugins / affirmatively-reminded / verifiable-via-CI. Any NO means not-forever-yet."
+  evidence: A 7-point checklist covering each rule is satisfied or gaps named; keep layering until all YES.
+  logic: Any single NO means the artifact will rot, diverge, or fail silently under time, relocation, or scale. The Test of Forever is the bar (FOREVER-SYSTEM §10).
