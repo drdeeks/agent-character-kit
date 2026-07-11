@@ -10,11 +10,22 @@
 ## Purpose
 
 A **character-enforcement layer** for AI agents. **Every tool call an agent
-makes** is judged by a **separate, tamper-proof enforcer** running
-*outside* the agent's own process — so the agent cannot disable, patch, or
-bypass its own guard. The enforcer validates each action against the agent's
+makes** is judged by a **separate enforcer** running
+*outside* the agent's own process — so the agent cannot trivially disable, patch,
+or bypass its own guard. The enforcer validates each action against the agent's
 **character** (a constitution + habits + policy) and **fails closed**: if it
 can't verify, it blocks.
+
+> **This is a deterrent and a constant reminder, NOT a security boundary.**
+> It catches plain destructive commands and leaked secrets and reminds the agent
+> of its character on every block. It is explicitly **not foolproof**: a
+> determined agent can obfuscate a command (`bash -c "$(echo cm9tIC1yZiAv |
+> base64 -d)"`), rename a binary, run `curl … | sh`, or use an un-gated sibling
+> tool — and the plugin runs *inside* the agent's own process, so it can be
+> disabled by the agent it constrains (e.g. `ACK_DISABLE=1`). We do not try to
+> close those gaps; deep-inspecting every command would make the gate a heavy
+> management layer. A real hard boundary is OS-level (agent non-root, daemon
+> root-owned, egress restricted). The gate is the conscience, not the cage.
 
 **Character is not identity.** *Character* is the agent's inner compass — its
 non-negotiable standards, the bar it holds itself to when no one is watching.
@@ -53,9 +64,13 @@ Cursor, Codex, a shell wrapper) can use it.
   - POSIX default → Unix socket `/run/agent-enforcer/main.sock`
   - Windows / cross-host → `ENFORCER_SOCKET=tcp://127.0.0.1:8753`
   - Clients read the same `ENFORCER_SOCKET`, so they follow automatically.
-- **Out-of-process = tamper-proof.** The agent cannot `kill` or modify it. If the
-  daemon dies, the supervisor (systemd / launchd / `supervise.py` / Windows
-  Service) brings it back in seconds.
+- **Out-of-process = tamper-resistant (NOT tamper-proof).** The daemon runs
+  outside the agent, so the agent cannot trivially `kill` or modify it, and if
+  the daemon dies the supervisor (systemd / launchd / `supervise.py` / Windows
+  Service) brings it back in seconds. But the *companion* plugin still runs
+  inside the agent's own process and can be disabled by it (see the "not
+  foolproof" note under Purpose). Out-of-process raises the bar; it is not a
+  hard security boundary.
 
 ### COMPANION — thin clients (hold NO policy)
 These are dumb pipes to the CORE. They do not enforce anything; they ask the

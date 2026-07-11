@@ -3,36 +3,23 @@ Agent Character Kit — Hermes plugin (real, registered, fail-closed).
 
 Bridges Hermes's generic ``pre_tool_call`` hook to the Agent Character Kit
 enforcer DAEMON over its RPC socket. The daemon is the SINGLE SOURCE OF
-TRUTH for enforcement (FOREVER-SYSTEM.md §1) — it runs as a separate,
-supervised process (systemd/launchd/supervise.py) on Linux, macOS, Windows,
-container, host, or USB free-state. This plugin is a THIN CLIENT: it does NOT
-embed enforcement logic. One policy, one binary, every OS.
+TRUTH for enforcement. This plugin is a THIN CLIENT: it does NOT embed
+enforcement logic.
 
-Design:
-  * This plugin is a LAYER, not a re-implementation. It imports ACK's
-    EnforcerClient and talks to the daemon; it does NOT copy enforcement logic.
-  * It never touches Hermes core files. Only the generic pre_tool_call hook.
-  * Fail-closed: if the daemon socket is unreachable, the tool call is BLOCKED.
-    A guard that fails open is no guard. (The daemon itself is supervised and
-    self-heals; the only true failure is the daemon being down — which must
-    block, not pass.)
-
-Enable: drop this directory into ~/.hermes/plugins/agent-character-kit/ and
-ensure the `agent_character_kit` Python package is importable (pip install -e
-./agent-character-kit/python). The daemon must be running (see supervise.py /
-deploy/).
+Fail-closed: if the daemon socket is unreachable or any error occurs, the
+tool call is BLOCKED. A guard that fails open is no guard.
 """
 
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import os
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# Version — kept in sync with /VERSION at repo root.
 ACK_VERSION = "1.0.0"
 
 # Optional env escape hatch: set ACK_DISABLE=1 to turn the plugin into a
@@ -41,13 +28,27 @@ _DISABLE = os.environ.get("ACK_DISABLE") == "1"
 
 
 def _get_client():
-    """Construct the ACK EnforcerClient (thin RPC client to the daemon).
-
-    Deferred to call-time so the plugin loads even if ACK isn't importable yet
-    (we surface a clear fail-closed error instead of crashing Hermes startup).
-    """
+    """Construct the ACK EnforcerClient (thin RPC client to the daemon)."""
     from agent_character_kit.enforcer import EnforcerClient
     return EnforcerClient()
+
+
+def _call_validate(client, tool_name, args, ctx_id):
+    """Run the async validate_tool regardless of ambient event loop.
+
+    pre_tool_call is a SYNC function. If Hermes already has a running loop
+    we cannot asyncio.run() (RuntimeError). Use a worker thread with its own
+    loop instead. If no loop is running, asyncio.run() is fine.
+    """
+    coro = client.validate_tool(tool_name, args, ctx_id)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop is not None and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(lambda: asyncio.run(coro)).result(timeout=10)
+    return asyncio.run(coro)
 
 
 def _on_pre_tool_call(
@@ -69,20 +70,11 @@ def _on_pre_tool_call(
     if not isinstance(args, dict):
         args = {}
 
-    # Determine the command the same way the daemon does (tool + params shape).
-    command = ""
-    if isinstance(args, dict):
-        for key in ("command", "cmd", "code"):
-            if isinstance(args.get(key), str):
-                command = args[key]
-                break
+    ctx_id = session_id or task_id or "unknown"
 
     try:
         client = _get_client()
-        # EnforcerClient.call/validate_tool are async; run in a fresh loop.
-        result = asyncio.run(
-            client.validate_tool(tool_name, args, session_id or task_id or "unknown")
-        )
+        result = _call_validate(client, tool_name, args, ctx_id)
     except Exception as exc:
         # Fail-closed: daemon unreachable or client error -> block.
         logger.error("[agent-character-kit] enforcement error (failing closed): %s", exc)
