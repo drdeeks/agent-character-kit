@@ -1,20 +1,35 @@
 {
-  "name": "agent-character-kit",
+  "name": "@character-kit/agent-character-kit",
   "version": "1.0.0",
-  "description": "Universal agent character enforcement, knowledge indexing, and memory with YAML frontmatter",
+  "description": "Universal agent character enforcement, knowledge indexing, and memory with YAML frontmatter. True plugin: install once, reference as @character-kit in any harness config.",
   "main": "src/index.js",
   "bin": {
-    "aik": "./bin/aik.js"
+    "ack": "node/bin/ack.js",
+    "character-kit": "node/bin/ack.js"
   },
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "start": "node bin/aik.js"
+    "start": "node bin/aik.js",
+    "install": "node node/bin/install.js",
+    "ack-install": "node node/bin/install.js"
   },
   "keywords": [
-    "agent", "character", "agent-character", "enforcement", "knowledge", "memory",
-    "semantic-search", "hooks", "yaml", "frontmatter",
-    "claude", "cursor", "gemini", "hermes", "opencode"
+    "agent",
+    "character",
+    "agent-character",
+    "enforcement",
+    "knowledge",
+    "memory",
+    "semantic-search",
+    "hooks",
+    "yaml",
+    "frontmatter",
+    "claude",
+    "cursor",
+    "gemini",
+    "hermes",
+    "opencode"
   ],
   "author": "drdeeks",
   "license": "MIT",
@@ -29,5 +44,10 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "overrides": {
+    "onnxruntime-web": "^1.27.0",
+    "onnx-proto": "^8.0.1",
+    "protobufjs": "^7.2.4"
   }
 }
