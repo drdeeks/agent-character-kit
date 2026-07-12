@@ -1,5 +1,5 @@
 {
-  "name": "@character-kit/agent-character-kit",
+  "name": "@drdeeks/character-kit",
   "version": "1.0.1",
   "description": "Universal agent character enforcement, knowledge indexing, and memory with YAML frontmatter. True plugin: install once, reference as @character-kit in any harness config.",
   "main": "node/src/index.js",
