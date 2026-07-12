@@ -56,8 +56,7 @@ closed**: can't verify → block.
 compass, its non-negotiable standards (a constitution + habits + policy). That
 is NOT its *identity* (its self: soul.md, system prompt, agent.json). The kit
 never touches who the agent is; it holds the agent to the bar it should meet
-when no one is watching. (Repo name is a legacy label — read it as
-"agent *character* kit.")
+when no one is watching.
 
 ## Architecture
 
