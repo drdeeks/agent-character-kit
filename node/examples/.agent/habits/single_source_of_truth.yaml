@@ -1,0 +1,9 @@
+name: single_source_of_truth
+prompt: For this concern, is there exactly one module/file/service/port that owns it?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: One canonical location per concern. If two things both need a capability, they declare and route through the one runtime that implements it — never each re-implementing it.
+  evidence: A concept exists in exactly one module; no second copy with a similar name; docs point at the one file that implements behavior.
+  logic: Duplication is the primary disease — it rots into two truths that disagree. One core, many consumers, zero duplicated truth.

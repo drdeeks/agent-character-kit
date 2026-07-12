@@ -1,0 +1,9 @@
+name: binding_map_one_core
+prompt: Is this a consumer plugging into the one core — or am I rebuilding truth from scratch?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: One core (the enforcement runtime), many consumers as layers, zero duplicated truth. A new project declares what it enforces and routes through the one runtime; it doesn't rebuild a half-built foundation.
+  evidence: Shared capability is imported/routed from the one core module; no second enforcement engine exists; consumers are layers, not re-implementations.
+  logic: The waste is N agents each re-implementing a half-built foundation instead of plugging into the one forever-system. One core, many consumers, zero duplicated truth (§8).

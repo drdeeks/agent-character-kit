@@ -1,0 +1,9 @@
+name: track_defects_openly
+prompt: Did I hit a crack — and am I recording it openly, not hiding it?
+enforcement:
+  level: should
+behavior:
+  kind: assertion
+  assert: Known defects are tracked openly as a named list (audit swallows errors, false tamper-proof claim, hook is a string not a plugin, no CI). List the cracks; don't hide them.
+  evidence: Limitations appear in a documented known-defects list with the rule they violate; they're slated to be closed, not concealed.
+  logic: Hidden defects compound into outages nobody saw coming. An openly-listed crack is a managed, closable risk; a concealed one is future failure.

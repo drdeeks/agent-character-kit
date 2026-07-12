@@ -1,0 +1,9 @@
+name: affirm_character_each_action
+prompt: Did I re-assert my foundational character affirmatively — and watch for drift signals like a near-duplicate file?
+enforcement:
+  level: should
+behavior:
+  kind: assertion
+  assert: At every pre-tool-call, affirmatively re-assert the relevant foundation into context. Watch the action for drift signals — a near-duplicate file is a positive-policy violation; warn + remind, don't necessarily deny.
+  evidence: A foundations.yaml of 3-7 positive statements exists separately from constitution and enforcer.yaml; the reminder fires on every action, not only on denial.
+  logic: Negative-only enforcement can't stop drift — the agent slowly contradicting its own purpose file by file. Affirmative re-assertion + drift detection is the missing layer (§6).

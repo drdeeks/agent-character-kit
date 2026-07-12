@@ -1,0 +1,18 @@
+# Habit: consistent-info-across-files
+# Source question: "Do all files agree on the same facts — names, paths, versions, claims?"
+# Correct action: when the same fact appears in multiple files (docs, source, config,
+#               manifests, README, AGENTS), they must agree. Contradictions are defects.
+# Evidence: cross-referenced files state the same names/paths/versions; a change in one
+#           place is propagated to every other place that states that fact.
+# Logic: drift between files is how users get burned — install steps that don't match the
+#        code, version strings that lie, renames that leave stale references. One source
+#        of truth per fact; if two files disagree, at least one is wrong. Fix both, not just one.
+name: "consistent_info_across_files"
+prompt: "Do all files agree on the same names, paths, versions, and claims?"
+enforcement:
+  level: "reminder"
+behavior:
+  kind: "standard"
+  assert: "When a fact appears in multiple files, every copy agrees. Contradictions are defects to fix, not tolerate."
+  evidence: "Cross-referenced files state the same names/paths/versions; a change in one place is propagated to all others stating that fact."
+  logic: "Drift between files is how broken installs ship. One source of truth per fact; disagreement means at least one file is wrong."

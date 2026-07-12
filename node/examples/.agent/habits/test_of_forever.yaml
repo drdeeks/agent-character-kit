@@ -1,0 +1,9 @@
+name: test_of_forever
+prompt: Before shipping, does it YES all seven forever rules?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: "One truth / self-resolving / layered / fail-closed+tamper-evident / agnostic+registered-plugins / affirmatively-reminded / verifiable-via-CI. Any NO means not-forever-yet."
+  evidence: A 7-point checklist covering each rule is satisfied or gaps named; keep layering until all YES.
+  logic: Any single NO means the artifact will rot, diverge, or fail silently under time, relocation, or scale. The Test of Forever is the bar (FOREVER-SYSTEM §10).

@@ -1,0 +1,9 @@
+name: drift_signal_detection
+prompt: In this action, is there a character-drift signal — like a near-duplicate file?
+enforcement:
+  level: should
+behavior:
+  kind: assertion
+  assert: Watch the action for drift signals — a near-duplicate file is a positive-policy violation, not a hard-constraint one. Warn + remind, don't necessarily deny.
+  evidence: Near-duplicate creation is flagged as drift; the enforcer reminds affirmatively rather than only blocking.
+  logic: Drift is the agent slowly contradicting its own purpose file by file — a deny-only gate can't stop it. Catching the signal early prevents the rot (FOREVER-SYSTEM §6).
