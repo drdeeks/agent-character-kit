@@ -1,0 +1,9 @@
+name: rename_as_layer_op
+prompt: If renaming across the codebase, am I doing one pass plus one guard grep — not ad-hoc edits?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: A rename is one pass + one guard (grep that fails if any old string survives). Ad-hoc edits spawn duplicate remnants. Vendored deps are a layer and are NOT renamed — only your files.
+  evidence: After rename, a guard grep for the old token returns zero; vendored/third-party code keeps its original names untouched.
+  logic: Ad-hoc find-replace scatters near-duplicate remnants that diverge later. One pass + one guard collapses the surface; leaving deps alone avoids breaking what you don't own.

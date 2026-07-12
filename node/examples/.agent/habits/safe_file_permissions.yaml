@@ -1,0 +1,9 @@
+name: safe_file_permissions
+prompt: Are files 755/644 — avoiding 700 (locks out) and 777 (world-writable)?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Dirs 755, files 644. Never 700 (locks out collaborators) or 777 (world-writable). Scripts that must execute are 755, not 700.
+  evidence: Created files/dirs use 755/644; no 700 or 777 present in the delivered set.
+  logic: 700 breaks shared access; 777 is a security hole. 755/644 is the safe default (standards.md §5).

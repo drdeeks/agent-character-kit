@@ -1,0 +1,9 @@
+name: lossless_consolidation
+prompt: When merging, did I read all sources, dedupe, and preserve every unique feature?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Merges read every source fully, map sections, dedupe overlaps, and keep all unique features. No information dropped, no silent overwrite.
+  evidence: The consolidated output contains every distinct capability from the inputs; nothing was lost to a careless append.
+  logic: Sloppy merges shed features the user needed. Read all, dedupe, preserve — consolidation must be lossless (standards.md §10).

@@ -1,0 +1,9 @@
+name: one_concern_per_file
+prompt: Does each file cover one concern, not mixed topics?
+enforcement:
+  level: should
+behavior:
+  kind: assertion
+  assert: Each reference/script file covers one concern. Mixed topics get split; no grab-bag file nobody can navigate or reuse.
+  evidence: Files have a single clear purpose; related-but-distinct topics live in separate files.
+  logic: One concern per file keeps things navigable and reusable. A file that does five things does none of them well (standards.md §4).

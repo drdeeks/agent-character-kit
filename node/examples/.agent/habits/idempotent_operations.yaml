@@ -1,0 +1,9 @@
+name: idempotent_operations
+prompt: If this runs again, will it cause a side effect or leave state different from one clean run?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Repeated operations must be safe to re-run — no duplicate records, no double-writes, no changed end-state on the second run.
+  evidence: A second identical run produces the same final state as the first; re-applying is a no-op where applicable.
+  logic: Non-idempotent operations surprise operators and break retries. If it can run twice, it must survive running twice (standards.md §6).

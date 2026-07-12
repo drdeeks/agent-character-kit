@@ -1,0 +1,9 @@
+name: registered_plugin_not_string
+prompt: Is this integration a real registered unit the system calls — or just a string in a doc?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: A plugin is a registered, loadable unit the running system calls — not a string in a doc. If only described in prose, it doesn't count; make it real first.
+  evidence: The hook/plugin is actually registered and invoked by the runtime, not merely printed or documented as a suggestion.
+  logic: A string in a doc is not integration. Coupled modules that can't be removed aren't modular — they're coupled. A plugin must be swappable and actually called (§5).

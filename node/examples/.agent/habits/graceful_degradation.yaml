@@ -1,0 +1,9 @@
+name: graceful_degradation
+prompt: If a dependency is unavailable, does my system fall back safely — or hard-fail?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: On missing dependency or failed service, degrade to a safe reduced mode — skip the optional part, serve cached, log the gap. Never collapse the whole operation.
+  evidence: The system continues with reduced function when a component is down; the failure is isolated, not fatal.
+  logic: A single unavailable piece shouldn't sink the ship. Degrade, don't die (standards.md §6).

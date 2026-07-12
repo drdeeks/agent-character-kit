@@ -1,0 +1,9 @@
+name: timeout_and_retry
+prompt: For any long or network op, did I set a timeout and bounded retry?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Long-running and network calls have a timeout and a bounded retry with backoff. No unbounded waits, no single-try-or-die.
+  evidence: The operation fails fast on timeout and retries a fixed number of times before giving up; the caller isn't hung.
+  logic: Without a timeout something hangs forever; without retry a transient blip becomes a permanent failure (standards.md §6).

@@ -1,0 +1,9 @@
+name: fail_closed_tamper_evident
+prompt: When unsure, do I block — and is any change to core truth logged as visible, never claimed tamper-proof?
+enforcement:
+  level: must
+behavior:
+  kind: assertion
+  assert: Fail-closed — block when unsure, never allow. Claim tamper-EVIDENT (hash change logged + visible), never tamper-PROOF. The audit trail must not silently swallow failures.
+  evidence: Guard rails block on missing input; integrity uses sha256-minimum and reports changes; an audit-write failure is surfaced, not caught silently.
+  logic: A guard that fails open is no guard. Tamper-EVIDENT is honest; tamper-PROOF is false. The moment the audit log can't write is when you most need to know.
