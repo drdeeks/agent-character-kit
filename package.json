@@ -11,8 +11,8 @@
   "scripts": {
     "test": "node --test node/tests/*.test.js",
     "start": "node bin/aik.js",
-    "install": "node bin/install.js",
-    "ack-install": "node bin/install.js"
+    "install": "node node/bin/install.js",
+    "ack-install": "node node/bin/install.js"
   },
   "keywords": [
     "agent",
@@ -41,6 +41,11 @@
   },
   "optionalDependencies": {
     "@xenova/transformers": "^2.17.0"
+  },
+  "overrides": {
+    "onnxruntime-web": "^1.27.0",
+    "onnx-proto": "^8.0.1",
+    "protobufjs": "^7.2.4"
   },
   "engines": {
     "node": ">=18.0.0"
