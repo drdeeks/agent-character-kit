@@ -117,21 +117,42 @@ function launchDaemon(vars) {
   const child = spawn(process.execPath, [DAEMON], {
     env: { ...process.env, ...vars },
     detached: !vars.__root,
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
   });
   child.unref();
-  return child.pid;
+  
+  // Wait for daemon to signal it's ready by reading stdout
+  return new Promise((resolve, reject) => {
+    let output = '';
+    child.stdout.on('data', (data) => {
+      output += data.toString();
+      if (output.includes('listening on')) {
+        resolve(child.pid);
+      }
+    });
+    child.stderr.on('data', (data) => {
+      // Ignore stderr for now
+    });
+    child.on('error', (err) => reject(err));
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Daemon exited with code ${code}`));
+      }
+    });
+    // Timeout after 10 seconds
+    setTimeout(() => reject(new Error('Daemon startup timeout')), 10000);
+  });
 }
 
 function launchMonitorWatchdog(vars, asRoot) {
   // Launch monitor + watchdog as detached background processes (user-mode).
   // For root mode they are typically started via systemd by deploy-agent-enforcer.sh.
   const m = spawn("/usr/bin/env", ["python3", MONITOR], {
-    env: { ...process.env, ...vars }, detached: true, stdio: "ignore",
+    env: { ...process.env, ...vars }, detached: true, stdio: ["ignore", "ignore", "ignore"],
   });
   m.unref();
   const w = spawn("/usr/bin/env", ["python3", WATCHDOG], {
-    env: { ...process.env, ...vars }, detached: true, stdio: "ignore",
+    env: { ...process.env, ...vars }, detached: true, stdio: ["ignore", "ignore", "ignore"],
   });
   w.unref();
   return { monitorPid: m.pid, watchdogPid: w.pid };
@@ -344,7 +365,7 @@ async function main() {
   writeEnvFile(wsEnv, envLines);
 
   // 3. daemon
-  const daemonPid = launchDaemon(vars);
+  const daemonPid = await launchDaemon(vars);
 
   // 4. companion (thin client hook config for any harness)
   let companionMsg = "skipped";

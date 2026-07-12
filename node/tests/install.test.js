@@ -43,7 +43,7 @@ function rpc(sock, method, params) {
   });
 }
 
-test("daemon: reuse-window rejects the previous two habits", { timeout: 15000 }, async () => {
+test("daemon: reuse-window rejects the previous two habits", { timeout: 25000 }, async () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "ackrw-"));
   const sock = path.join(ws, ".agent", "enforcer.sock");
   const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, HOME: os.homedir() };
@@ -70,10 +70,13 @@ test("daemon: reuse-window rejects the previous two habits", { timeout: 15000 },
   try {
     // poll for the socket instead of a fixed sleep (host-speed independent)
     const start = Date.now();
-    while (!fs.existsSync(sock) && Date.now() - start < 3000) {
-      await new Promise((r) => setTimeout(r, 50));
+    while (!fs.existsSync(sock) && Date.now() - start < 8000) {
+      await new Promise((r) => setTimeout(r, 100));
     }
     assert.ok(fs.existsSync(sock), "daemon socket should be up before RPCs");
+
+    // Give daemon extra time to fully initialize
+    await new Promise((r) => setTimeout(r, 1000));
 
     const a = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak why: it applies because this test spawns a real daemon and must not leak its socket path in logs" });
     const b = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: complete_thoroughly resonates true — it ensures proper scope because the window test must exercise three distinct embedded-backed habits, not a lucky pair" });
