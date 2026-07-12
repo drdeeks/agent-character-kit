@@ -61,5 +61,17 @@
     "deploy/",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drdeeks/agent-character-kit.git"
+  },
+  "homepage": "https://github.com/drdeeks/agent-character-kit#readme",
+  "bugs": {
+    "url": "https://github.com/drdeeks/agent-character-kit/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/drdeeks"
+  }
 }
