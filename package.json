@@ -34,7 +34,6 @@
   "author": "drdeeks",
   "license": "MIT",
   "dependencies": {
-    "@drdeeks/character-kit": "^1.0.1",
     "commander": "^11.1.0",
     "glob": "^10.3.0",
     "gray-matter": "^4.0.3",
