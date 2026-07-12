@@ -4,8 +4,8 @@
   "description": "Universal agent character enforcement, knowledge indexing, and memory with YAML frontmatter. True plugin: install once, reference as @character-kit in any harness config.",
   "main": "node/src/index.js",
   "bin": {
-    "ack": "node/bin/aik.js",
-    "character-kit": "node/bin/aik.js"
+    "ack": "node/bin/ack.js",
+    "character-kit": "node/bin/ack.js"
   },
   "type": "module",
   "scripts": {

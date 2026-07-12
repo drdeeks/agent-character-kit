@@ -36,42 +36,54 @@ export class EnforcerClient {
         return;
       }
 
-      const socket = net.createConnection(this.socketPath);
-      const request = JSON.stringify({ method, params }) + "\n";
-      let data = "";
+      let retried = false;
+      const doCall = () => {
+        const socket = net.createConnection(this.socketPath);
+        const request = JSON.stringify({ method, params }) + "\n";
+        let data = "";
 
-      const timeout = setTimeout(() => {
-        socket.destroy();
-        resolve({ error: "enforcer timeout", denied: false });
-      }, 5000);
+        const timeout = setTimeout(() => {
+          socket.destroy();
+          resolve({ error: "enforcer timeout", denied: false });
+        }, 5000);
 
-      socket.on("connect", () => {
-        socket.write(request);
-      });
+        socket.on("connect", () => {
+          socket.write(request);
+        });
 
-      socket.on("data", (chunk) => {
-        data += chunk.toString();
-        if (data.includes("\n")) {
+        socket.on("data", (chunk) => {
+          data += chunk.toString();
+          if (data.includes("\n")) {
+            clearTimeout(timeout);
+            socket.destroy();
+            try {
+              const parsed = JSON.parse(data.trim());
+              // Retry once on "invalid request" (first-request buffering issue)
+              if (parsed.error === "invalid request" && !retried) {
+                retried = true;
+                console.error("[EnforcerClient] Retrying after invalid request...");
+                setTimeout(doCall, 10);
+                return;
+              }
+              resolve(parsed);
+            } catch (e) {
+              resolve({ error: "invalid response", denied: false });
+            }
+          }
+        });
+
+        socket.on("error", (err) => {
+          clearTimeout(timeout);
+          resolve({ error: err.message, denied: false });
+        });
+
+        socket.on("timeout", () => {
           clearTimeout(timeout);
           socket.destroy();
-          try {
-            resolve(JSON.parse(data.trim()));
-          } catch (e) {
-            resolve({ error: "invalid response", denied: false });
-          }
-        }
-      });
-
-      socket.on("error", (err) => {
-        clearTimeout(timeout);
-        resolve({ error: err.message, denied: false });
-      });
-
-      socket.on("timeout", () => {
-        clearTimeout(timeout);
-        socket.destroy();
-        resolve({ error: "socket timeout", denied: false });
-      });
+          resolve({ error: "socket timeout", denied: false });
+        });
+      };
+      doCall();
     });
   }
 

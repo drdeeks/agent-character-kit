@@ -35,8 +35,8 @@ PrivateTmp=true
 
 # ── Configuration (overridable via `systemctl edit` or env at deploy time) ────────
 # Defaults are sensible fallbacks; override with ACK_INSTALL_* env vars when running deploy.
-Environment=ENFORCER_SOCKET=${ENFORCER_SOCKET:-/run/agent-enforcer/main.sock}
-Environment=AGENT_WORKSPACE=${AGENT_WORKSPACE:-/var/lib/agent-character-kit/workspace}
+Environment=ENFORCER_SOCKET=/run/agent-enforcer/main.sock
+Environment=AGENT_WORKSPACE=/var/lib/agent-character-kit/workspace
 Environment=HOME=/root
 Environment=NODE_ENV=production
 

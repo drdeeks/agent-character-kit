@@ -17,58 +17,60 @@ import subprocess
 from pathlib import Path
 
 _HOME = os.environ.get("HOME", "/root")
+_ACK_HOME = os.path.join(_HOME, ".agent-character-kit")
 
-# Use system paths for root-owned services
 PIDFILE = os.environ.get("ACK_MONITOR_PID", "/var/lib/agent-character-kit/ack-monitor.pid")
 WATCHDOG_PID = os.environ.get("ACK_WATCHDOG_PID", "/var/lib/agent-character-kit/ack-watchdog.pid")
 MONITOR_BIN = os.environ.get("ACK_MONITOR_BIN", "/usr/local/lib/agent-character-kit/ack_monitor.py")
 MONITOR_UNIT = "agent-character-monitor.service"
+ENFORCER_UNIT = "agent-enforcer.service"
 INTERVAL = int(os.environ.get("ACK_WATCHDOG_INTERVAL", "5"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [ack-watchdog] %(message)s")
 log = logging.getLogger("ack-watchdog")
 
 
-def monitor_alive() -> bool:
-    """Prefer a process-list check (robust, no pidfile race). Fall back to the
-    pidfile only if pgrep is unavailable. We match the monitor script name so a
-    stale pidfile can never mask a live process (or vice-versa)."""
+def process_alive(pattern: str, unit_name: str = None, pidfile: str | None = None) -> bool:
+    """Check if a process matching pattern is alive. Try pgrep first, fall back to pidfile."""
     try:
         out = subprocess.run(
-            ["pgrep", "-af", "ack_monitor.py"],
+            ["pgrep", "-af", pattern],
             capture_output=True, text=True, timeout=5,
         )
-        # Any line that is NOT the watchdog's own grep counts as alive.
         for line in out.stdout.splitlines():
-            if "ack_monitor.py" in line and "grep" not in line:
+            if pattern in line and "grep" not in line:
                 return True
         return False
     except Exception:
         pass
     # Fallback: pidfile + kill(0)
-    p = Path(PIDFILE)
-    if not p.exists():
-        return False
-    try:
-        pid = int(p.read_text().strip())
-    except Exception:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+    if pidfile:
+        p = Path(pidfile)
+        if p.exists():
+            try:
+                pid = int(p.read_text().strip())
+                os.kill(pid, 0)
+                return True
+            except Exception:
+                pass
+    return False
 
 
-def revive() -> None:
+def monitor_alive() -> bool:
+    return process_alive("ack_monitor.py", MONITOR_UNIT, PIDFILE)
+
+
+def enforcer_alive() -> bool:
+    return process_alive("agent_enforcer_daemon.js", ENFORCER_UNIT, None)
+
+
+def revive_monitor() -> None:
     log.warning("monitor not alive -> restarting")
     try:
         subprocess.run(["systemctl", "restart", MONITOR_UNIT], check=False)
         return
     except Exception as exc:
-        log.error("systemctl restart failed: %s", exc)
-    # Fallback: direct launch (inherits this process's env, which carries the
-    # ACK_MONITOR_PID / ACK_ACK_LOG / ACK_ENFORCER_SOCKET overrides).
+        log.error("systemctl restart monitor failed: %s", exc)
     try:
         subprocess.Popen(
             ["/usr/bin/python3", MONITOR_BIN],
@@ -77,7 +79,17 @@ def revive() -> None:
             stderr=subprocess.DEVNULL,
         )
     except Exception as exc:
-        log.error("direct launch failed: %s", exc)
+        log.error("direct monitor launch failed: %s", exc)
+
+
+def revive_enforcer() -> None:
+    log.warning("enforcer not alive -> restarting")
+    try:
+        subprocess.run(["systemctl", "restart", ENFORCER_UNIT], check=False)
+        return
+    except Exception as exc:
+        log.error("systemctl restart enforcer failed: %s", exc)
+    # No direct fallback for enforcer (it's a Node process managed by systemd)
 
 
 def main() -> None:
@@ -85,10 +97,12 @@ def main() -> None:
         Path(WATCHDOG_PID).write_text(str(os.getpid()))
     except Exception as exc:
         log.warning("could not write pidfile %s: %s", WATCHDOG_PID, exc)
-    log.info("watchdog started (interval=%ss)", INTERVAL)
+    log.info("watchdog started (interval=%ss) — monitoring monitor + enforcer", INTERVAL)
     while True:
         if not monitor_alive():
-            revive()
+            revive_monitor()
+        if not enforcer_alive():
+            revive_enforcer()
         time.sleep(INTERVAL)
 
 

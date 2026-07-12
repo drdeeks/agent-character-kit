@@ -17,15 +17,26 @@ node/node_modules/
 .DS_Store
 Thumbs.db
 
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
+# Python cache - explicit paths
+python/__pycache__/
+python/*.pyc
+python/*.pyo
+python/**/__pycache__/
+python/**/*.pyc
+python/**/*.pyo
+
+# Deploy Python cache
+deploy/__pycache__/
+deploy/*.pyc
+deploy/*.pyo
 
 # Environment files
 .env
 .env.local
 
-# Python test cache
-python/tests/__pycache__/
-python/hermes_plugin/__pycache__/
+# Egg info
+*.egg-info/
+
+# Tarballs
+*.tgz
+*.tar.gz
