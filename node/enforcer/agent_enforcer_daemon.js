@@ -546,8 +546,13 @@ function startSocketServer(enforcer) {
         if (!line) continue;
         try {
           const request = JSON.parse(line);
+          console.error("[daemon] parsed:", JSON.stringify(request));
           let response;
           switch (request.method) {
+          case "status":
+            console.error("[daemon] status case hit, cfg:", !!enforcer.cfg, "habits:", !!enforcer.habits, "HOLD_STATE:", !!enforcer.HOLD_STATE);
+            response = { ok: true, version: ACK_VERSION, workspace: enforcer.cfg.WORKSPACE, socket: enforcer.cfg.SOCKET, habits: enforcer.habits.size, sessions: Object.keys(Object.fromEntries(enforcer.HOLD_STATE)).length };
+            break;
           case "execute_tool":
             response = enforcer.executeTool(request.params.tool, request.params);
             break;
