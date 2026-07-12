@@ -1,6 +1,6 @@
-# Agent Character Kit (ACK) — v1.0.0
+# Agent Character Kit (ACK) — v1.0.1
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](VERSION)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](node/package.json)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue.svg)](python/pyproject.toml)
 [![Enforcer](https://img.shields.io/badge/enforcer-fail--closed-success.svg)](#architecture)
