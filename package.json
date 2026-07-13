@@ -76,7 +76,7 @@
     "url": "https://github.com/sponsors/drdeeks"
   },
   "allowScripts": {
-    "@drdeeks/character-kit@1.0.2": true,
+    "@drdeeks/character-kit@1.0.3": true,
     "protobufjs@7.6.5": true,
     "sharp@0.32.6": true
   }
