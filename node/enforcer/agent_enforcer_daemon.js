@@ -550,8 +550,7 @@ function startSocketServer(enforcer) {
           let response;
           switch (request.method) {
           case "status":
-            console.error("[daemon] status case hit, cfg:", !!enforcer.cfg, "habits:", !!enforcer.habits, "HOLD_STATE:", !!enforcer.HOLD_STATE);
-            response = { ok: true, version: ACK_VERSION, workspace: enforcer.cfg.WORKSPACE, socket: enforcer.cfg.SOCKET, habits: enforcer.habits.size, sessions: Object.keys(Object.fromEntries(enforcer.HOLD_STATE)).length };
+            response = { ok: true, version: ACK_VERSION, workspace: enforcer.cfg.WORKSPACE, socket: enforcer.cfg.SOCKET, habits: enforcer.habits.length, sessions: enforcer.HOLD_STATE.size };
             break;
           case "execute_tool":
             response = enforcer.executeTool(request.params.tool, request.params);
@@ -561,6 +560,10 @@ function startSocketServer(enforcer) {
             break;
           case "validate_workspace":
             response = enforcer.validate_workspace();
+            break;
+          case "reload":
+            enforcer.reload();
+            response = { ok: true, character_hash: enforcer.characterHash };
             break;
           case "get_habit":
             response = enforcer.getHabit(request.params?.name);

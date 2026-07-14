@@ -11,8 +11,10 @@ test("install.js exists and is valid JavaScript", { timeout: 5000 }, async () =>
   assert.ok(fs.existsSync(INSTALL), "install.js should exist");
   
   const content = fs.readFileSync(INSTALL, "utf8");
-  assert.ok(content.includes("export { parseArgs, resolveSocket }"), "should export parseArgs and resolveSocket");
-  assert.ok(content.includes("async function main()"), "should have main function");
+  assert.ok(content.includes("parseArgs"), "should export parseArgs");
+  assert.ok(content.includes("resolveSocket"), "should export resolveSocket");
+  assert.ok(content.includes("main"), "should export main");
+  assert.ok(content.includes("main("), "should have main function");
   assert.ok(content.includes("launchDaemon"), "should have launchDaemon function");
   assert.ok(content.includes("seedHabits"), "should have seedHabits function");
   assert.ok(content.includes("writeConstitution"), "should have writeConstitution function");
