@@ -24,7 +24,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import readline from "readline";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { fileURLToPath, pathToFileURL } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,13 +35,12 @@ const WATCHDOG = path.join(REPO, "deploy", "ack_watchdog.py");
 
 // ─── arg parsing (non-interactive) ────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null, all: false, hookCommand: null };
+  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null, all: false, hookCommand: null, python: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--workspace") out.workspace = argv[++i];
     else if (a === "--socket") out.socket = argv[++i];
     else if (a === "--harness") out.harness = argv[++i];
-    else if (a === "--agent-dir") out.agentDir = argv[++i];
     else if (a === "--root") out.root = true;
     else if (a === "--user") out.root = false;
     else if (a === "--no-monitor") out.monitor = false;
@@ -54,6 +53,8 @@ function parseArgs(argv) {
     else if (a === "--yes" || a === "-y") out.yes = true;
     else if (a === "--all") out.all = true;
     else if (a === "--hook-command") out.hookCommand = argv[++i];
+    else if (a === "--python") out.python = true;
+    else if (a === "--no-python") out.python = false;
   }
   return out;
 }
@@ -116,31 +117,24 @@ function writeConstitution(ws) {
 function launchDaemon(vars) {
   const child = spawn(process.execPath, [DAEMON], {
     env: { ...process.env, ...vars },
-    detached: !vars.__root,
+    detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.unref();
-  
-  // Wait for daemon to signal it's ready by reading stdout
+
+  let settled = false;
   return new Promise((resolve, reject) => {
-    let output = '';
+    const done = (fn, val) => { if (!settled) { settled = true; fn(val); } };
     child.stdout.on('data', (data) => {
-      output += data.toString();
-      if (output.includes('listening on')) {
-        resolve(child.pid);
+      if (data.toString().includes('listening on')) {
+        done(resolve, child.pid);
       }
     });
-    child.stderr.on('data', (data) => {
-      // Ignore stderr for now
-    });
-    child.on('error', (err) => reject(err));
+    child.on('error', (err) => done(reject, err));
     child.on('exit', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Daemon exited with code ${code}`));
-      }
+      if (!settled) done(reject, new Error(`Daemon exited with code ${code}`));
     });
-    // Timeout after 10 seconds
-    setTimeout(() => reject(new Error('Daemon startup timeout')), 10000);
+    setTimeout(() => done(reject, new Error('Daemon startup timeout')), 10000);
   });
 }
 
@@ -251,8 +245,8 @@ function createHabit(rl, ws) {
 }
 
 // ─── main flow ─────────────────────────────────────────────────────────────────
-async function main() {
-  const opts = parseArgs(process.argv.slice(2));
+async function main(callerOpts) {
+  const opts = callerOpts || parseArgs(process.argv.slice(2));
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   // Non-interactive habit creation: write the file and exit (no daemon needed).
@@ -274,22 +268,30 @@ async function main() {
     }
   }
 
-  let ws, socketMode, harness, agentDir, asRoot, doMonitor, doWatchdog, doCompanion;
+  let ws, socketMode, harness, asRoot, doMonitor, doWatchdog, doCompanion, doPython;
 
-  // --all implies --yes (non-interactive) and enables everything
+  // --all: root mode, all components, non-interactive
   if (opts.all) {
     opts.yes = true;
-  }
-
-  if (opts.yes) {
     ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
     socketMode = opts.socket || "unix";
     harness = opts.harness || "generic";
-    agentDir = opts.agentDir || path.join(os.homedir(), ".config", "agent-character-kit");
+    asRoot = true;
+    doMonitor = true;
+    doWatchdog = true;
+    doCompanion = true;
+    doPython = opts.python !== false;
+  }
+
+  if (opts.yes && !opts.all) {
+    ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
+    socketMode = opts.socket || "unix";
+    harness = opts.harness || "generic";
     asRoot = opts.root ?? false;
     doMonitor = opts.monitor;
     doWatchdog = opts.watchdog;
     doCompanion = opts.companion;
+    doPython = opts.python ?? false;
   } else {
     console.log("\n=== Agent Character Kit — interactive install ===\n");
     console.log("This sets up the enforcement daemon, your harness companion,");
@@ -300,13 +302,12 @@ async function main() {
       path.join(os.homedir(), ".agent-character-kit", "workspace"));
     const absWs = path.resolve(ws);
     socketMode = await ask(rl, "Socket mode? [unix | tcp]", "unix");
-    harness = (await ask(rl, "Which harness? [claude | cursor | gemini | opencode | generic]", "generic")).toLowerCase();
-    agentDir = await ask(rl, "Where is your agent's config/home directory? (companion config gets dropped here)",
-      path.join(os.homedir(), ".config", "agent-character-kit"));
+    harness = (await ask(rl, "Which harness? [claude | cursor | gemini | opencode | hermes | generic]", "generic")).toLowerCase();
     asRoot = await yesNo(rl, "Install as ROOT (system-wide, self-respawning)?", false);
     doCompanion = await yesNo(rl, "Set up the harness companion (thin client hook config)?", true);
     doMonitor = await yesNo(rl, "Set up the acknowledgment monitor (credits daemon from ack log)?", true);
     doWatchdog = await yesNo(rl, "Set up the monitor watchdog (revives monitor if it dies)?", true);
+    doPython = await yesNo(rl, "Install Python ACK bindings (optional pip package)?", false);
 
     // Habit creator — create as many as wanted, then continue the install.
     while (await yesNo(rl, "Create a habit now (interactive)?", false)) {
@@ -331,18 +332,7 @@ async function main() {
     ACK_MONITOR_STATE: path.join(absWs, ".agent", "ack-monitor.pos"),
     ACK_WATCHDOG_PID: path.join(absWs, ".agent", "ack-watchdog.pid"),
     ACK_MONITOR_BIN: MONITOR,
-    __root: asRoot,
   };
-
-  // Handle --all flag: everything on, companion for generic harness, root mode
-  if (opts.all) {
-    asRoot = true;
-    doMonitor = true;
-    doWatchdog = true;
-    doCompanion = true;
-    harness = opts.harness || "generic";
-    agentDir = opts.agentDir || path.join(os.homedir(), ".config", "agent-character-kit");
-  }
 
   // 1. workspace scaffold
   fs.mkdirSync(path.join(absWs, ".agent", "habits"), { recursive: true });
@@ -378,9 +368,23 @@ async function main() {
 
   // 5. monitor + watchdog
   let monitorMsg = "skipped";
-  if (doMonitor || doWatchdog) {
-    const procs = launchMonitorWatchdog(vars, asRoot);
-    monitorMsg = `monitor pid ${procs.monitorPid}, watchdog pid ${procs.watchdogPid}`;
+  const procs = {};
+  if (doMonitor) {
+    const m = spawn("/usr/bin/env", ["python3", MONITOR], {
+      env: { ...process.env, ...vars }, detached: true, stdio: ["ignore", "ignore", "ignore"],
+    });
+    m.unref();
+    procs.monitorPid = m.pid;
+  }
+  if (doWatchdog) {
+    const w = spawn("/usr/bin/env", ["python3", WATCHDOG], {
+      env: { ...process.env, ...vars }, detached: true, stdio: ["ignore", "ignore", "ignore"],
+    });
+    w.unref();
+    procs.watchdogPid = w.pid;
+  }
+  if (procs.monitorPid || procs.watchdogPid) {
+    monitorMsg = Object.entries(procs).map(([k, v]) => `${k} ${v}`).join(", ");
   }
 
   // 6. summary (informative, no force-close)
@@ -396,6 +400,39 @@ async function main() {
   console.log("\nDone. Add the companion hook config to your harness to activate enforcement.");
   console.log("The daemon holds every 5th call until you acknowledge 2 habits");
   console.log("with a real, situation-tied reason. No filler, no reuse.\n");
+
+  // 7. optional Python component install
+  if (doPython) {
+    const pyDir = path.join(REPO, "python");
+    if (fs.existsSync(path.join(pyDir, "pyproject.toml"))) {
+      console.log("Installing Python ACK bindings...");
+      try {
+        // Try pip install; fallback to --break-system-packages on Debian-guarded systems
+        const r = spawnSync("pip3", ["install", pyDir], { stdio: "inherit", cwd: REPO });
+        if (r.status === 0) {
+          console.log("  ✓ Python ACK bindings installed (entry: `aik-py`)");
+        } else if (r.signal === null && r.status !== null) {
+          // Non-zero exit — try with --break-system-packages in case of Debian PEP 668 lock
+          console.log("  Retrying with --break-system-packages...");
+          const r2 = spawnSync("pip3", ["install", "--break-system-packages", pyDir], { stdio: "inherit", cwd: REPO });
+          if (r2.status === 0) {
+            console.log("  ✓ Python ACK bindings installed (entry: `aik-py`)");
+          } else {
+            console.log("  ⚠ pip install exited", r2.status || "with signal " + r2.signal);
+            console.log("  Run manually: pip3 install", pyDir);
+          }
+        } else {
+          console.log("  ⚠ pip install was killed (signal", r.signal, ")");
+          console.log("  Run manually: pip3 install", pyDir);
+        }
+      } catch (e) {
+        console.log("  ⚠ Could not run pip3:", e.message);
+        console.log("  Run manually: pip3 install", pyDir);
+      }
+    } else {
+      console.log("  ⚠ Python package source not found at", pyDir);
+    }
+  }
 }
 
 const __isCLI = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
@@ -406,4 +443,4 @@ if (__isCLI) {
   });
 }
 
-export { parseArgs, resolveSocket };
+export { parseArgs, resolveSocket, main, launchDaemon, seedHabits, writeConstitution };
