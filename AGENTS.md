@@ -105,7 +105,7 @@ companion such as the Hermes example — other companions need only Node.)
 
 ```bash
 git clone https://github.com/drdeeks/agent-character-kit.git
-cd agent-character-kit && cd node && npm install && cd ..
+cd agent-character-kit && npm install    # package.json is at repo ROOT, not node/
 ```
 
 ### Linux — systemd (root-owned, self-respawning)

@@ -342,10 +342,15 @@ async function main(callerOpts) {
   // 2. single .env every component reads
   const repoEnv = path.join(REPO, ".env");
   const wsEnv = path.join(absWs, ".env");
+  // Generate a shared auth token so only the client holding it can talk to the
+  // daemon socket. crypto.randomUUID is available on Node >= 14.17.
+  const crypto = await import("crypto");
+  const ackToken = crypto.randomUUID();
   const envLines = {
     AGENT_WORKSPACE: absWs,
     ENFORCER_SOCKET: sock,
     ACK_ACK_LOG: ackLog,
+    ACK_AUTH_TOKEN: ackToken,
     ACK_MONITOR_PID: vars.ACK_MONITOR_PID,
     ACK_MONITOR_STATE: vars.ACK_MONITOR_STATE,
     ACK_WATCHDOG_PID: vars.ACK_WATCHDOG_PID,
