@@ -21,6 +21,7 @@ import { EnforcerClient } from "../src/enforcer/client.js";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -115,8 +116,101 @@ function warn(label, detail = "") {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  Doctor — deep structured diagnostics (read-only)
+//  Stale resource detection & cleanup / auto-activate
 // ═══════════════════════════════════════════════════════════════════════════════
+
+const DAEMON_BIN = path.join(REPO_ROOT, "node", "enforcer", "agent_enforcer_daemon.js");
+
+// Scan /proc for running agent_enforcer_daemon.js processes.
+// Returns [{ pid, cwd, workspace, socket, orphan }]
+//   orphan = the workspace dir no longer exists (leftover from a test run)
+function findEnforcerDaemons() {
+  const out = [];
+  try {
+    for (const pid of fs.readdirSync("/proc").filter(p => /^\d+$/.test(p))) {
+      let cmdline = "";
+      try { cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8"); } catch { continue; }
+      if (!cmdline.includes("agent_enforcer_daemon.js")) continue;
+      let cwd = "";
+      try { cwd = fs.readlinkSync(`/proc/${pid}/cwd`); } catch { /* gone */ }
+      let workspace = "", socket = "";
+      try {
+        const env = fs.readFileSync(`/proc/${pid}/environ`, "utf8").split("\0");
+        for (const line of env) {
+          if (line.startsWith("AGENT_WORKSPACE=")) workspace = line.slice("AGENT_WORKSPACE=".length);
+          else if (line.startsWith("ENFORCER_SOCKET=")) socket = line.slice("ENFORCER_SOCKET=".length);
+        }
+      } catch { /* ignore */ }
+      const orphan = workspace && !fs.existsSync(workspace);
+      out.push({ pid: parseInt(pid, 10), cwd, workspace, socket, orphan });
+    }
+  } catch { /* /proc unavailable */ }
+  return out;
+}
+
+// Find dead socket files: a .sock path that exists but no daemon owns it.
+function findDeadSockets() {
+  const dead = [];
+  const cands = [
+    path.join(resolveWorkspace(), ".agent", "enforcer.sock"),
+    path.join(os.homedir(), ".agent-character-kit", "workspace", ".agent", "enforcer.sock"),
+  ].concat(process.env.ENFORCER_SOCKET && !process.env.ENFORCER_SOCKET.startsWith("tcp://") ? [process.env.ENFORCER_SOCKET] : []);
+  const liveSockets = new Set(findEnforcerDaemons().map(d => d.socket).filter(Boolean));
+  for (const s of cands) {
+    if (s && fs.existsSync(s) && !liveSockets.has(s)) dead.push(s);
+  }
+  return dead;
+}
+
+// Kill a daemon by pid (force). Returns true if killed or already gone.
+function killDaemonPid(pid) {
+  try { process.kill(pid, "SIGKILL"); return true; }
+  catch { return false; }
+}
+
+// Revive the daemon for a workspace (detached + unref so it survives the CLI).
+// Used by repair --auto-activate once an agent's workspace is active again.
+function reviveDaemon(workspace) {
+  const sock = path.join(workspace, ".agent", "enforcer.sock");
+  const child = spawn(process.execPath, [DAEMON_BIN], {
+    env: { ...process.env, AGENT_WORKSPACE: workspace, ENFORCER_SOCKET: sock },
+    stdio: "ignore",
+    detached: true,
+  });
+  child.unref();
+  return child.pid;
+}
+
+// Clean stale resources: kill orphan daemons + remove dead sockets.
+// Returns { killed: number, removedSockets: number, kept: number, daemons: [] }
+function cleanupStaleResources({ killOrphans = true, removeSockets = true } = {}) {
+  const daemons = findEnforcerDaemons();
+  let killed = 0, kept = 0;
+  for (const d of daemons) {
+    if (d.orphan) {
+      if (killOrphans) { if (killDaemonPid(d.pid)) killed++; }
+      else kept++;
+    } else {
+      kept++; // live, attached to an existing workspace — never touch
+    }
+  }
+  let removedSockets = 0;
+  if (removeSockets) {
+    for (const s of findDeadSockets()) {
+      try { fs.unlinkSync(s); removedSockets++; } catch { /* ignore */ }
+    }
+  }
+  return { killed, kept, removedSockets, daemons };
+}
+
+// Is a workspace "active" (an agent would use it)? Has habits seeded.
+function isWorkspaceActive(workspace) {
+  const habitsDir = path.join(workspace, ".agent", "habits");
+  if (!fs.existsSync(habitsDir)) return false;
+  return fs.readdirSync(habitsDir).some(f => f.endsWith(".yaml"));
+}
+
+
 
 async function runDoctor() {
   const ws = resolveWorkspace();
@@ -224,6 +318,30 @@ async function runDoctor() {
     if (anyConfigured > 0) {
       c("Any endpoint alive", false, "No running daemon found on any socket path");
     }
+  }
+
+  // Section 3b: Stale Resources (read-only report — repair cleans these)
+  section("Stale Resources (cleanup guard)");
+  const staleDaemons = findEnforcerDaemons();
+  if (staleDaemons.length === 0) {
+    check(true, "No orphaned enforcer daemons");
+  } else {
+    let orphans = 0;
+    for (const d of staleDaemons) {
+      if (d.orphan) {
+        orphans++;
+        warn(`Orphan daemon pid ${d.pid}`, `workspace gone: ${d.workspace || "(none)"} — run 'ack repair daemon' to clean`);
+      }
+    }
+    const live = staleDaemons.length - orphans;
+    c(`Enforcer daemons running`, live >= 1, `${live} live, ${orphans} orphaned`);
+  }
+  const deadSocks = findDeadSockets();
+  if (deadSocks.length === 0) {
+    check("No dead socket files", true);
+  } else {
+    c("Dead socket files present", false, `${deadSocks.length} — run 'ack repair daemon' to remove`);
+    for (const s of deadSocks) warn(`  stale socket: ${s}`);
   }
 
   // Section 4: Ack Log
@@ -405,13 +523,46 @@ async function runRepair(targets, opts) {
 
       case "daemon": {
         console.log(`  Target: daemon`);
+
+        // ── cleanup guard: kill orphaned daemons + remove dead sockets ──
+        const cleanup = cleanupStaleResources();
+        if (cleanup.killed > 0) {
+          console.log(`    ✓ Killed ${cleanup.killed} orphaned daemon(s) (workspace no longer exists)`);
+          fixed++;
+        }
+        if (cleanup.removedSockets > 0) {
+          console.log(`    ✓ Removed ${cleanup.removedSockets} dead socket file(s)`);
+          fixed++;
+        }
+        if (cleanup.killed === 0 && cleanup.removedSockets === 0) {
+          console.log(`    ~ No stale daemons or sockets to clean`);
+        }
+
+        // ── auto-activate: revive the daemon for an active workspace ──
         const daemonStatus = await checkDaemon(sock);
         if (daemonStatus.alive) {
           console.log("    ~ Daemon already running");
-        } else if (sock.startsWith("tcp://")) {
+          break;
+        }
+        const wsActive = isWorkspaceActive(ws);
+        if (wsActive) {
+          const pid = reviveDaemon(ws);
+          // give it a moment, then verify
+          await new Promise(r => setTimeout(r, 800));
+          const revived = await checkDaemon(sock);
+          if (revived.alive) {
+            console.log(`    ✓ Auto-activated daemon (pid ${pid}) for active workspace ${ws}`);
+            fixed++;
+          } else {
+            console.log(`    ⚠ Revived daemon (pid ${pid}) but socket not yet ready — check 'ack doctor'`);
+          }
+          break;
+        }
+        // not active and not running: point the user at install
+        if (sock.startsWith("tcp://")) {
           console.log("    ~ TCP transport — start daemon manually: `ack daemon start`");
         } else {
-          console.log("    ~ Daemon not reachable. Start with:");
+          console.log("    ~ No active workspace. Deploy with:");
           console.log("        sudo systemctl start agent-enforcer           (root)");
           console.log("        ack install --yes                             (user)");
         }
@@ -686,7 +837,7 @@ program.addHelpText("after", `
 Category summary:
   [Core]     hook, install
   [Config]   config show, config verify, config set, config write-env
-  [Diag]     status, doctor, repair
+  [Diag]     status, doctor, repair (doctor reports + repair cleans stale daemons/sockets, auto-activates)
   [Habits]   habit create, habit list
 
 Examples:
