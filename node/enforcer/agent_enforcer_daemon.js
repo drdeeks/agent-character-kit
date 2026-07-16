@@ -147,8 +147,17 @@ export class Enforcer {
     }));
     this.startedAt = Date.now();
     this.lastHeartbeat = Date.now();
-    // Daemon-owned acknowledgment HOLD ledger (per session). The agent cannot
-    // reset or bypass this — it lives in the root-owned daemon, not the plugin.
+    // Configurable commit discipline: when a hold releases (every 5th call)
+    // the agent must have made a real `git commit` since the previous hold,
+    // with a message >= COMMIT_MIN_CHARS characters. Defaults to 150.
+    // Override via enforcer.yaml `commit_min_chars:` or ACK_COMMIT_MIN_CHARS.
+    this.commitMinChars = parseInt(
+      process.env.ACK_COMMIT_MIN_CHARS ||
+      (typeof this.policy.commit_min_chars === "number" ? this.policy.commit_min_chars : ""),
+      10
+    ) || 150;
+    // Daemon-owned hold ledger (per session). The agent cannot reset or
+    // bypass this — it lives in the root-owned daemon, not the plugin.
     // Every 5th tool call is held until 2 valid `Habit: <name> resonates true
     // because <reason>` statements are credited for the session.
     this.HOLD_STATE = new Map();
@@ -204,6 +213,15 @@ export class Enforcer {
         this._audit(tool, command, result);
         return result;
       }
+    }
+
+    // 1b. `git commit` is the sanctioned discipline — never blocked by
+    // the allow-list or habit gates. Hard-constraints (secret-leak etc.)
+    // above still apply, so a commit that leaks a secret is still denied.
+    const isCommit = /\bgit\s+.*\bcommit\b/.test(command) && !/\b(--no-commit|rebase|cherry-pick)\b/.test(command);
+    if (isCommit) {
+      this._audit(tool, command, { denied: false, commit_intent: true });
+      return { denied: false };
     }
 
     // 2. Allow-list policy: if policy.allow is set, ONLY listed tools/commands pass
@@ -451,7 +469,42 @@ export class Enforcer {
     return this.habits.map((h) => h.name).filter(Boolean);
   }
 
-  // Canonicalize a habit identifier so filename style (hyphens) and YAML name
+  // Verifies a real `git commit` happened in the workspace since `sinceMs`
+  // (the previous hold release), with a message >= commitMinChars chars.
+  // Returns { ok, reason } — ok:true means the discipline is satisfied.
+  _verifyCommitSince(sinceMs) {
+    const ws = this.cfg.WORKSPACE;
+    if (!ws) return { ok: false, reason: "no workspace configured" };
+    let out;
+    try {
+      // %ct = committer epoch (secs); separator is a NUL byte (safe: git
+      // subjects/bodies don't contain it). Split on "\0".
+      out = execSync(
+        "git -C " + JSON.stringify(ws) + " log -1 --format=%ct%n%B",
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+      ).trim();
+    } catch {
+      return { ok: false, reason: "no git commit found in workspace" };
+    }
+    if (!out) return { ok: false, reason: "no git commit found in workspace" };
+    const nl = out.indexOf("\n");
+    const tsStr = (nl === -1 ? out : out.slice(0, nl)).trim();
+    const msg = (nl === -1 ? "" : out.slice(nl + 1)).trim();
+    const ts = parseInt(tsStr, 10) * 1000;
+    if (!Number.isFinite(ts)) return { ok: false, reason: "unreadable commit" };
+    if (sinceMs && ts < sinceMs) {
+      return { ok: false, reason: "commit is older than the last hold (need a fresh commit)" };
+    }
+    if (msg.length < this.commitMinChars) {
+      return {
+        ok: false,
+        reason: `commit message is ${msg.length} chars; need >= ${this.commitMinChars}`,
+      };
+    }
+    return { ok: true, chars: msg.length };
+  }
+
+  // Canonicalize a habit identifier so filename style (hyphens) and YAML name YAML name
   // style (underscores) match: lowercase, non-alphanumerics collapsed to "-".
   _normName(n) {
     return String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
@@ -474,6 +527,22 @@ export class Enforcer {
     st.count += 1;
     if (st.acked >= 2) return { hold: false };
     if (st.count % 5 === 0) {
+      // Enforce the commit discipline on every 5th hold release:
+      // a real `git commit` must have landed in the workspace SINCE the
+      // previous hold, with a message >= commitMinChars. Configurable.
+      const since = st.lastHoldMs || 0;
+      const commit = this._verifyCommitSince(since);
+      if (!commit.ok) {
+        return {
+          hold: true,
+          reason: "TOOL ACCESS HELD — commit discipline not satisfied: " + commit.reason,
+          format: "Habit: <habit-file-name> resonates true because <reason>",
+          habits: this._habitNames(),
+          commit_required: true,
+          commit_min_chars: this.commitMinChars,
+        };
+      }
+      st.lastHoldMs = Date.now();
       return {
         hold: true,
         reason: "TOOL ACCESS HELD — acknowledge 2 habits before tooling resumes.",
