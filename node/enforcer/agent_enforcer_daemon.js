@@ -14,6 +14,12 @@
 
 // Minimal .env autoload (no external dep). Package root = ../../ from node/enforcer/.
 // install.js writes one .env here; every component reads it. Env vars win over .env.
+// SECURITY: do NOT inject ACK_AUTH_TOKEN into the daemon's own process.env.
+// The token is a shared secret between daemon + client; the client reads it
+// from .env itself, and the supervisor/systemd passes it to the daemon's
+// LAUNCH env. Auto-loading it here would make the daemon self-gate
+// against any client that doesn't also inherit this repo's .env (e.g. the
+// test harness, or a companion launched without it) — breaking legit calls.
 import { fileURLToPath } from "url";
 const __daemonDir = path.dirname(fileURLToPath(import.meta.url));
 const __pkgRoot = path.resolve(__daemonDir, "..", "..");
@@ -21,7 +27,7 @@ const __envFile = path.join(__pkgRoot, ".env");
 if (fs.existsSync(__envFile)) {
   for (const line of fs.readFileSync(__envFile, "utf8").split("\n")) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
+    if (m && m[1] !== "ACK_AUTH_TOKEN" && !(m[1] in process.env)) process.env[m[1]] = m[2];
   }
 }
 
