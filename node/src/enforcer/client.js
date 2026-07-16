@@ -39,7 +39,7 @@ export class EnforcerClient {
       let retried = false;
       const doCall = () => {
         const socket = net.createConnection(this.socketPath);
-        const request = JSON.stringify({ method, params }) + "\n";
+      const request = JSON.stringify({ method, params, token: process.env.ACK_AUTH_TOKEN }) + "\n";
         let data = "";
 
         const timeout = setTimeout(() => {

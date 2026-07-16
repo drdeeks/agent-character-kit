@@ -547,6 +547,16 @@ function startSocketServer(enforcer) {
         try {
           const request = JSON.parse(line);
           console.error("[daemon] parsed:", JSON.stringify(request));
+
+          // Auth gate: if ACK_AUTH_TOKEN is set in the daemon's env, every
+          // request MUST carry a matching `token`. A local process that can't
+          // read the daemon's env (i.e. any other uid) is rejected with 403.
+          const expected = process.env.ACK_AUTH_TOKEN;
+          if (expected && request.token !== expected) {
+            socket.write(JSON.stringify({ error: "unauthorized" }) + "\n");
+            continue;
+          }
+
           let response;
           switch (request.method) {
           case "status":
@@ -623,25 +633,28 @@ function startSocketServer(enforcer) {
   if (isTcp) {
     server.listen(tcpPort, tcpHost, onListening);
   } else {
+    // Secure the socket: 0600 (owner-only) + 0700 on the dir so no other
+    // local uid can connect to or even see the enforcement socket. World-666
+    // (the old default) let ANY process on the host talk to the enforcer.
+    const sockDir = path.dirname(raw);
+    try { fssync.mkdirSync(sockDir, { recursive: true, mode: 0o700 }); } catch {}
+    try { fssync.chmodSync(sockDir, 0o700); } catch {}
     server.listen(raw, () => {
-      // Socket is world-connectable by design: connecting does NOT bypass
-      // enforcement — every request is still gated. What the agent CANNOT do is
-      // kill, modify, or replace this root-owned process or its files.
-      try { fssync.chmodSync(raw, 0o666); } catch {}
+      try { fssync.chmodSync(raw, 0o600); } catch {}
       onListening();
     });
   }
 
-  // If a stale socket file exists (e.g. previous instance killed with -9), remove
-  // it so listen() succeeds on respawn. Without this, RestartSec cycles spin on a
-  // locked socket and recovery blows past the 3-5s target. (TCP has no stale
-  // file; EADDRINUSE there means the port is taken — fail and let the supervisor
-  // handle it.)
+  // If a stale socket file exists (e.g. previous instance killed with -9),
+  // remove it so listen() succeeds on respawn. Without this, RestartSec
+  // cycles spin on a locked socket and recovery blows past the 3-5s target.
+  // (TCP has no stale file; EADDRINUSE there means the port is taken —
+  // fail and let the supervisor handle it.)
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE" && !isTcp) {
       try {
         fssync.unlinkSync(raw);
-        server.listen(raw, () => { try { fssync.chmodSync(raw, 0o666); } catch {} onListening(); });
+        server.listen(raw, () => { try { fssync.chmodSync(raw, 0o600); } catch {} onListening(); });
         return;
       } catch {}
     }
