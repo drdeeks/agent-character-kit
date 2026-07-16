@@ -406,38 +406,27 @@ async function main(callerOpts) {
   console.log("The daemon holds every 5th call until you acknowledge 2 habits");
   console.log("with a real, situation-tied reason. No filler, no reuse.\n");
 
-  // 7. optional Python component install
+  // 7. ACK install prompt (do NOT auto-run npm/pip — visibility first)
+  // The user installs the package explicitly; we surface the exact
+  // command rather than running post-install scripts silently.
+  console.log("\n─── Install Agent Character Kit (ACK) ───");
+  console.log("  The CLI is installed locally. To make `ack` available");
+  console.log("  system-wide (or in another project), install the package:");
+  console.log("");
+  console.log("    npm install -g @drdeeks/character-kit");
+  console.log("    # or, from this repo root:");
+  console.log("    npm install");
+  console.log("");
   if (doPython) {
     const pyDir = path.join(REPO, "python");
     if (fs.existsSync(path.join(pyDir, "pyproject.toml"))) {
-      console.log("Installing Python ACK bindings...");
-      try {
-        // Try pip install; fallback to --break-system-packages on Debian-guarded systems
-        const r = spawnSync("pip3", ["install", pyDir], { stdio: "inherit", cwd: REPO });
-        if (r.status === 0) {
-          console.log("  ✓ Python ACK bindings installed (entry: `aik-py`)");
-        } else if (r.signal === null && r.status !== null) {
-          // Non-zero exit — try with --break-system-packages in case of Debian PEP 668 lock
-          console.log("  Retrying with --break-system-packages...");
-          const r2 = spawnSync("pip3", ["install", "--break-system-packages", pyDir], { stdio: "inherit", cwd: REPO });
-          if (r2.status === 0) {
-            console.log("  ✓ Python ACK bindings installed (entry: `aik-py`)");
-          } else {
-            console.log("  ⚠ pip install exited", r2.status || "with signal " + r2.signal);
-            console.log("  Run manually: pip3 install", pyDir);
-          }
-        } else {
-          console.log("  ⚠ pip install was killed (signal", r.signal, ")");
-          console.log("  Run manually: pip3 install", pyDir);
-        }
-      } catch (e) {
-        console.log("  ⚠ Could not run pip3:", e.message);
-        console.log("  Run manually: pip3 install", pyDir);
-      }
-    } else {
-      console.log("  ⚠ Python package source not found at", pyDir);
+      console.log("  Python bindings (optional, for Python-plugin companions):");
+      console.log("    pip3 install " + pyDir);
+      console.log("    # or, if Debian-guarded (PEP 668): pip3 install --break-system-packages " + pyDir);
     }
   }
+  console.log("");
+  console.log("  Run `ack --help` to see all commands once installed.");
 }
 
 const __isCLI = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
