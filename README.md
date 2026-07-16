@@ -1,6 +1,6 @@
 # Agent Character Kit (ACK)
 
-[![Node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](node/package.json)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue.svg)](python/pyproject.toml)
 [![Enforcer](https://img.shields.io/badge/enforcer-fail--closed-success.svg)](#architecture)
 [![Framework-agnostic](https://img.shields.io/badge/framework-agnostic-9cf.svg)](#architecture)
