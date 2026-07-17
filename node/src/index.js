@@ -21,4 +21,4 @@ export { Memory, DailyNotes, WeeklyDigest, LongTermMemory, KnowledgeGraph } from
 
 // ─── Version ────────────────────────────────────────────────────────────────
 
-export const VERSION = "1.0.0";
+export const VERSION = "1.0.5";
