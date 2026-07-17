@@ -39,7 +39,7 @@ import { execSync } from "child_process";
 import yaml from "js-yaml";
 
 // Version — kept in sync with /VERSION at repo root. Bump there, not here.
-export const ACK_VERSION = "1.0.0";
+export const ACK_VERSION = "1.0.5";
 
 // ─── Self-resolving paths (root-owned defaults) ──────────────────────────────────
 function resolveConfig() {
@@ -774,7 +774,7 @@ function startSocketServer(enforcer) {
 const enforcer = new Enforcer();
 startSocketServer(enforcer);
 
-console.log("ACK Enforcer daemon v1.0.0 started successfully.");
+console.log(`ACK Enforcer daemon v${ACK_VERSION} started successfully.`);
 console.log("Root-owned system daemon with automatic restart support.");
 console.log(`Workspace: ${enforcer.cfg.WORKSPACE}`);
 console.log(`Config: ${enforcer.cfg.CONSTITUTION}`);
