@@ -1,8 +1,5 @@
 # Agent Character Kit (ACK)
 
-[![DrDeeks Project](https://img.shields.io/badge/DrDeeks%20Project-171718?style=flat-square&labelColor=b84d32)](https://github.com/drdeeks)
-
-
 [![Node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue.svg)](python/pyproject.toml)
 [![Enforcer](https://img.shields.io/badge/enforcer-fail--closed-success.svg)](#architecture)
