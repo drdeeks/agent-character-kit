@@ -124,7 +124,18 @@ function launchDaemon(vars) {
 
   let settled = false;
   return new Promise((resolve, reject) => {
-    const done = (fn, val) => { if (!settled) { settled = true; fn(val); } };
+    let timer;
+    // child.unref() only unrefs the child process handle -- the piped
+    // stdout/stderr streams it creates in THIS process are separate handles
+    // that keep the event loop alive on their own. Without unref'ing them
+    // too, the installer process never exits after a successful install
+    // (it just hangs forever, however far past the summary it got).
+    const finish = () => {
+      clearTimeout(timer);
+      child.stdout.unref();
+      child.stderr.unref();
+    };
+    const done = (fn, val) => { if (!settled) { settled = true; finish(); fn(val); } };
     child.stdout.on('data', (data) => {
       if (data.toString().includes('listening on')) {
         done(resolve, child.pid);
@@ -134,7 +145,7 @@ function launchDaemon(vars) {
     child.on('exit', (code) => {
       if (!settled) done(reject, new Error(`Daemon exited with code ${code}`));
     });
-    setTimeout(() => done(reject, new Error('Daemon startup timeout')), 10000);
+    timer = setTimeout(() => done(reject, new Error('Daemon startup timeout')), 10000);
   });
 }
 

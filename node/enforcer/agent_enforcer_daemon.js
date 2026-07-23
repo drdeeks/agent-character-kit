@@ -39,7 +39,7 @@ import { execSync } from "child_process";
 import yaml from "js-yaml";
 
 // Version — kept in sync with /VERSION at repo root. Bump there, not here.
-export const ACK_VERSION = "1.0.6";
+export const ACK_VERSION = "1.0.7";
 
 // ─── Self-resolving paths (root-owned defaults) ──────────────────────────────────
 function resolveConfig() {

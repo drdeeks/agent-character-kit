@@ -1,4 +1,4 @@
-# AGENTS.md — Agent Character Kit (ACK) v1.0.6
+# AGENTS.md — Agent Character Kit (ACK) v1.0.7
 
 > **This is the single source of truth for AIK.** README.md is a short overview
 > that points here. There is no other install/customize doc — if you're reading
@@ -335,8 +335,8 @@ habit *adds* to it; it does not replace it.
 ---
 
 ## Version tracking
-`VERSION` at repo root = `1.0.6`. The daemon prints it on boot
-(`ACK Enforcer daemon v1.0.6`) and returns it in `heartbeat.version`. The Hermes
+`VERSION` at repo root = `1.0.7`. The daemon prints it on boot
+(`ACK Enforcer daemon v1.0.7`) and returns it in `heartbeat.version`. The Hermes
 plugin carries the same `AIK_VERSION`. **Bump `VERSION` and the in-code
 constants together** when enforcement behavior changes.
 
