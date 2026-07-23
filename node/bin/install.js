@@ -281,9 +281,7 @@ async function main(callerOpts) {
     doWatchdog = true;
     doCompanion = true;
     doPython = opts.python !== false;
-  }
-
-  if (opts.yes && !opts.all) {
+  } else if (opts.yes) {
     ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
     socketMode = opts.socket || "unix";
     harness = opts.harness || "generic";
@@ -298,15 +296,47 @@ async function main(callerOpts) {
     console.log("and the acknowledgment monitor/watchdog. Every step is optional");
     console.log("to skip; press Enter to accept the default.\n");
 
-    ws = await ask(rl, "Where should the agent workspace live? (habits, socket, constitution)",
+    console.log("The workspace holds this install's habits, socket, and constitution.");
+    console.log("Use one per project if you want isolated character/config per repo.");
+    ws = await ask(rl, "Where should the agent workspace live?",
       path.join(os.homedir(), ".agent-character-kit", "workspace"));
     const absWs = path.resolve(ws);
+
+    console.log("\nunix = local socket file (default, fastest, same-host only).");
+    console.log("tcp  = network socket (needed on Windows, or if the agent runs");
+    console.log("       in a different container/host than the daemon).");
     socketMode = await ask(rl, "Socket mode? [unix | tcp]", "unix");
+
+    console.log("\nThe harness is which agent tool will call the companion hook.");
     harness = (await ask(rl, "Which harness? [claude | cursor | gemini | opencode | hermes | generic]", "generic")).toLowerCase();
+
+    console.log("\n⚠ SECURITY-RELEVANT — read before answering:");
+    console.log("  no  (user-mode): daemon runs as YOUR user, same as the agent.");
+    console.log("      The agent's own shell/exec tools CAN kill this daemon or");
+    console.log("      edit its config directly (same-UID = same permissions).");
+    console.log("      This is a reminder/deterrent, not a hard boundary.");
+    console.log("  yes (root-mode): daemon + monitor + watchdog run as root via");
+    console.log("      systemd. The agent's tools run as a non-root user with no");
+    console.log("      permission to touch a root-owned process — this is the");
+    console.log("      only mode where the enforcement is actually outside the");
+    console.log("      agent's reach. Requires sudo now and answers 'y' below.");
+    console.log("  Full comparison: AGENTS.md § User-mode vs Root-mode.");
     asRoot = await yesNo(rl, "Install as ROOT (system-wide, self-respawning)?", false);
+
+    console.log("\nThe companion is the hook config your harness calls on every");
+    console.log("tool use — without it, the daemon runs but nothing asks it anything.");
     doCompanion = await yesNo(rl, "Set up the harness companion (thin client hook config)?", true);
+
+    console.log("\nThe monitor credits habit acknowledgments from the ack log so the");
+    console.log("periodic hold can lift. Skipping it means holds never clear.");
     doMonitor = await yesNo(rl, "Set up the acknowledgment monitor (credits daemon from ack log)?", true);
+
+    console.log("\nThe watchdog restarts the monitor if it dies — recommended whenever");
+    console.log("you're running the monitor at all.");
     doWatchdog = await yesNo(rl, "Set up the monitor watchdog (revives monitor if it dies)?", true);
+
+    console.log("\nOnly needed if a companion you use is Python-based (e.g. the Hermes");
+    console.log("plugin). Node-only companions (aik hook) don't need this.");
     doPython = await yesNo(rl, "Install Python ACK bindings (optional pip package)?", false);
 
     // Habit creator — create as many as wanted, then continue the install.
@@ -394,6 +424,9 @@ async function main(callerOpts) {
 
   // 6. summary (informative, no force-close)
   console.log("\n=== Install summary ===");
+  console.log("Mode:          ", asRoot
+    ? "ROOT — enforcement is outside the agent's reach (real boundary)"
+    : "USER — agent has same-UID access; this is a reminder, NOT a hard boundary");
   console.log("Workspace:     ", absWs);
   console.log("Socket:        ", sock);
   console.log("Ack log:       ", ackLog);
@@ -404,7 +437,14 @@ async function main(callerOpts) {
   console.log("Monitor/Watch: ", monitorMsg);
   console.log("\nDone. Add the companion hook config to your harness to activate enforcement.");
   console.log("The daemon holds every 5th call until you acknowledge 2 habits");
-  console.log("with a real, situation-tied reason. No filler, no reuse.\n");
+  console.log("with a real, situation-tied reason. No filler, no reuse.");
+  if (!asRoot) {
+    console.log("\nNote: this is a USER-mode install (see 'Mode' above). For an");
+    console.log("actual privilege boundary the agent can't cross, re-run with the");
+    console.log("root path: sudo bash deploy/deploy-agent-enforcer.sh && sudo bash");
+    console.log("deploy/deploy-ack-services.sh — see AGENTS.md § User-mode vs Root-mode.");
+  }
+  console.log("");
 
   // 7. ACK install prompt (do NOT auto-run npm/pip — visibility first)
   // The user installs the package explicitly; we surface the exact
