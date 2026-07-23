@@ -300,8 +300,8 @@ async function runDoctor() {
       c(`Daemon has ${daemon.habits.length} habits indexed`, daemon.habits.length >= 5);
     }
     if (daemon.version) {
-      c(`Daemon version matches CLI`, daemon.version === "1.0.6",
-        `daemon=${daemon.version} cli=1.0.6`);
+      c(`Daemon version matches CLI`, daemon.version === "1.0.7",
+        `daemon=${daemon.version} cli=1.0.7`);
     }
   } else {
     c("Daemon reachable", false, `${daemon.error || "unreachable"}`);
@@ -588,7 +588,7 @@ async function runRepair(targets, opts) {
 const program = new Command()
   .name("ack")
   .description("Agent Character Kit — character enforcement for any agent")
-  .version("1.0.6")
+  .version("1.0.7")
   .configureHelp({
     sortSubcommands: true,
     subcommandTerm: (cmd) => {
