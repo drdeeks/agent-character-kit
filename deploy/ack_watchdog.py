@@ -64,13 +64,34 @@ def enforcer_alive() -> bool:
     return process_alive("agent_enforcer_daemon.js", ENFORCER_UNIT, None)
 
 
+def is_root() -> bool:
+    """systemctl restart of a root-owned unit only makes sense (and only
+    succeeds) when this watchdog itself is root -- which is only true for a
+    real root-mode deploy. In a user-mode install the unit was never
+    installed, so calling systemctl here can never succeed; it would just
+    fail (or worse, prompt for a password via polkit) on every interval
+    forever."""
+    return os.geteuid() == 0
+
+
+def _systemctl_restart(unit: str) -> bool:
+    """Attempt a real systemd restart. Returns True only on a genuine
+    success (returncode 0) -- check=False means subprocess.run does NOT
+    raise on a nonzero exit, so the exit code must be checked explicitly or
+    a failed/denied restart looks identical to a successful one and the
+    caller wrongly skips its fallback."""
+    try:
+        r = subprocess.run(["systemctl", "restart", unit], check=False, timeout=10)
+        return r.returncode == 0
+    except Exception as exc:
+        log.error("systemctl restart %s failed: %s", unit, exc)
+        return False
+
+
 def revive_monitor() -> None:
     log.warning("monitor not alive -> restarting")
-    try:
-        subprocess.run(["systemctl", "restart", MONITOR_UNIT], check=False)
+    if is_root() and _systemctl_restart(MONITOR_UNIT):
         return
-    except Exception as exc:
-        log.error("systemctl restart monitor failed: %s", exc)
     try:
         subprocess.Popen(
             ["/usr/bin/python3", MONITOR_BIN],
@@ -83,12 +104,20 @@ def revive_monitor() -> None:
 
 
 def revive_enforcer() -> None:
-    log.warning("enforcer not alive -> restarting")
-    try:
-        subprocess.run(["systemctl", "restart", ENFORCER_UNIT], check=False)
+    if not is_root():
+        # User-mode has no enforcer supervisor by design (see AGENTS.md
+        # Fail-closed guarantees) -- warn once per detection instead of
+        # retrying a systemctl call against a unit that was never installed.
+        log.warning(
+            "enforcer not alive, but this is a user-mode install (no root) -- "
+            "skipping systemctl restart of %s, it was never installed here. "
+            "Re-run 'ack install' to relaunch the daemon directly, or use "
+            "root-mode for automatic revival.", ENFORCER_UNIT,
+        )
         return
-    except Exception as exc:
-        log.error("systemctl restart enforcer failed: %s", exc)
+    log.warning("enforcer not alive -> restarting")
+    if not _systemctl_restart(ENFORCER_UNIT):
+        log.error("systemctl restart of %s failed", ENFORCER_UNIT)
     # No direct fallback for enforcer (it's a Node process managed by systemd)
 
 

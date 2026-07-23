@@ -20,7 +20,7 @@ const program = new Command();
 program
   .name("aik")
   .description("Agent Character Kit — Character enforcement + knowledge + memory")
-  .version("1.0.7");
+  .version("1.0.8");
 
 // ─── Hook Command (Core) ────────────────────────────────────────────────────
 
