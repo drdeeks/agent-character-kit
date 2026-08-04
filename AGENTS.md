@@ -397,6 +397,39 @@ should hardcode a version literal. Root `VERSION`, root `package.json`,
 plain version stamp) that still need bumping by hand alongside
 `node/src/version.js` — **bump all five together** when cutting a release.
 
+**Changelog:** this repo has no `CHANGELOG.md` yet. Every repo should have
+one — append-only, newest entry on top, never rewrite a past entry. Add one
+the next time a release is cut (start it from that point forward; don't
+block a release on backfilling history that predates it).
+
+---
+
+## Known gaps / future work
+
+- **No CLI visibility or interactive control over what's actually
+  blocked.** `ack doctor` / `ack config verify` only check whether
+  `constitution.yaml` (`hard_constraints`) and `enforcer.yaml` (allow/deny)
+  *exist* — nothing prints their contents, and there's no `ack constitution
+  show/add/remove` or `ack policy show/allow/deny` to change them
+  interactively. The only path today is hand-editing the YAML files
+  directly (see "Customize" above). Habits (`ack habit list/create`) are the
+  one part of this that IS interactive — hard blocks and allow/deny policy
+  are not.
+- **No CLI access to the audit trail.** Every allow/deny decision is
+  genuinely logged (`enforcer-audit.jsonl` from the daemon,
+  `tool-audit.jsonl` from the companion side), but there is no `ack log` /
+  `ack audit` command to view, tail, search, or filter it — a user has to
+  know the files exist and read the raw JSONL themselves. Not documented in
+  any `--help` output.
+- **`node/corpus/`'s knowledge-indexing (`DocumentIndexer`/`SemanticSearch`)
+  has no CLI surface.** It used to (`aik index run`, `aik semantic index`,
+  via the now-deleted `aik.js`); `ack.js` never got an equivalent. Currently
+  library-only (`import { DocumentIndexer, SemanticSearch } from
+  "agent-character-kit"`) — see `node/corpus/README.md`. Left this way
+  deliberately per `HABIT_POLICY.md` §3 (knowledge/memory is a separate
+  skill from character enforcement) rather than assuming it should be
+  restored to a CLI; revisit if that assumption is wrong.
+
 ---
 
 ## File map
