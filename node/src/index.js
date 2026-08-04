@@ -11,7 +11,7 @@
 // ─── Core: Character Enforcement ─────────────────────────────────────────────
 
 export { EnforcerClient } from "./enforcer/client.js";
-export { processToolCall, generateConfig } from "./hooks/character.js";
+export { processToolCall, processPromptSubmit, generateConfig } from "./hooks/character.js";
 
 // ─── Secondary: Knowledge & Memory ──────────────────────────────────────────
 
@@ -21,4 +21,4 @@ export { Memory, DailyNotes, WeeklyDigest, LongTermMemory, KnowledgeGraph } from
 
 // ─── Version ────────────────────────────────────────────────────────────────
 
-export const VERSION = "1.0.8";
+export { VERSION } from "./version.js";

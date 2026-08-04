@@ -1,5 +1,5 @@
 [Unit]
-Description=AIK Enforcer self-respawn PROOF (user-systemd)
+Description=ACK Enforcer self-respawn PROOF (user-systemd)
 After=network.target
 StartLimitIntervalSec=60
 StartLimitBurst=10

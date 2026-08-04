@@ -5,7 +5,7 @@ Requires=agent-enforcer.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/lib/agent-character-kit/ack_monitor.py
+ExecStart=/usr/bin/env node /usr/local/lib/agent-character-kit/ack_monitor.js
 Restart=always
 RestartSec=3
 User=root

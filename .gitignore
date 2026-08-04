@@ -15,7 +15,7 @@ __pycache__/
 build/
 dist/
 
-# ===== Agent Identity Kit runtime / generated =====
+# ===== Agent Character Kit runtime / generated =====
 .agent/
 enforcer-audit.jsonl
 *.audit.jsonl
@@ -41,10 +41,11 @@ yarn-error.log*
 *.pem
 *.key
 
-# ===== Archives =====
+# ===== Archives / backups =====
 *.tar.gz
 *.tgz
 *.zip
+*.bak
 
 # ===== Editors / OS =====
 .vscode/
@@ -58,3 +59,4 @@ Thumbs.db
 .cache/
 .tmp/
 tmp/
+.trash/

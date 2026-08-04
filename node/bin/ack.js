@@ -16,7 +16,7 @@
  */
 
 import { Command } from "commander";
-import { generateConfig } from "../src/index.js";
+import { generateConfig, processToolCall, processPromptSubmit, VERSION } from "../src/index.js";
 import { EnforcerClient } from "../src/enforcer/client.js";
 import fs from "fs";
 import os from "os";
@@ -26,6 +26,10 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
+// Absolute path to this exact file -- never "npx ack hook" as a default.
+// If the package isn't globally installed/linked, npx silently fetches an
+// unrelated public package instead of running this CLI (verified live).
+const SELF = fileURLToPath(import.meta.url);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Path resolution helpers
@@ -270,8 +274,11 @@ async function runDoctor() {
     for (const f of habitFiles.slice(0, 30)) {
       try {
         const content = fs.readFileSync(path.join(habitsDir, f), "utf8");
-        const hasName = /name:\s*"/.test(content);
-        const hasPrompt = /prompt:\s*"/.test(content);
+        // Quote optional -- see the same fix in `habit list` above. Roughly
+        // half the bundled habits use unquoted YAML scalars for these
+        // fields; a quote-required check flagged them as invalid.
+        const hasName = /^name:\s*"?\S/m.test(content);
+        const hasPrompt = /^prompt:\s*"?\S/m.test(content);
         const hasLogic = /\blogic\b/.test(content);
         if (hasName && hasPrompt) validCount++;
         else invalidCount++;
@@ -296,12 +303,17 @@ async function runDoctor() {
   if (daemon.alive) {
     c("Daemon reachable", true, sock);
     if (daemon.workspace) check(true, "Daemon reports workspace", daemon.workspace);
-    if (daemon.habits && Array.isArray(daemon.habits)) {
-      c(`Daemon has ${daemon.habits.length} habits indexed`, daemon.habits.length >= 5);
+    // The daemon's status RPC returns a habit COUNT (enforcer.habits.length),
+    // not an array of names -- it deliberately never hands out habit names
+    // over the wire (see agent_enforcer_daemon.js toolTick / HABIT_POLICY.md
+    // §4). Checking Array.isArray() here always failed and silently skipped
+    // this check entirely.
+    if (typeof daemon.habits === "number") {
+      c(`Daemon has ${daemon.habits} habits indexed`, daemon.habits >= 5);
     }
     if (daemon.version) {
-      c(`Daemon version matches CLI`, daemon.version === "1.0.8",
-        `daemon=${daemon.version} cli=1.0.8`);
+      c(`Daemon version matches CLI`, daemon.version === VERSION,
+        `daemon=${daemon.version} cli=${VERSION}`);
     }
   } else {
     c("Daemon reachable", false, `${daemon.error || "unreachable"}`);
@@ -588,7 +600,7 @@ async function runRepair(targets, opts) {
 const program = new Command()
   .name("ack")
   .description("Agent Character Kit — character enforcement for any agent")
-  .version("1.0.8")
+  .version(VERSION)
   .configureHelp({
     sortSubcommands: true,
     subcommandTerm: (cmd) => {
@@ -608,12 +620,45 @@ function addHelpCategory(cmd, category) {
 
 program
   .command("hook")
-  .description("Generate hook config for your agent framework [Core]")
+  .description("Gate a tool call via stdin, or print wiring config with --config [Core]")
   .argument("<framework>", "Framework: claude | cursor | gemini | opencode | hermes | generic")
-  .option("--hook-command <cmd>", "Custom hook command", "npx ack hook")
-  .action((framework, opts) => {
-    const config = generateConfig(framework, opts.hookCommand);
-    console.log(JSON.stringify(config, null, 2));
+  .option("--hook-command <cmd>", "Custom hook command", `node '${SELF}' hook`)
+  .option("--config", "Print the hook wiring config instead of gating a call")
+  .action(async (framework, opts) => {
+    if (opts.config) {
+      const config = generateConfig(framework, opts.hookCommand);
+      console.log(JSON.stringify(config, null, 2));
+      return;
+    }
+
+    // Real gate: this is what the harness actually invokes on every tool
+    // call, piping the tool-call payload as JSON on stdin. No stdin (e.g.
+    // a human running `ack hook claude` manually) falls back to printing
+    // the wiring config, so the command stays useful without --config too.
+    let input = "";
+    if (!process.stdin.isTTY) {
+      input = await new Promise((resolve) => {
+        let data = "";
+        process.stdin.on("data", (chunk) => (data += chunk));
+        process.stdin.on("end", () => resolve(data));
+      });
+    }
+    if (!input.trim()) {
+      const config = generateConfig(framework, opts.hookCommand);
+      console.log(JSON.stringify(config, null, 2));
+      return;
+    }
+
+    const payload = JSON.parse(input);
+    // UserPromptSubmit (Claude) / an explicit pre_llm_call-shaped payload ->
+    // the injection channel, not the gate. Everything else is a tool-call
+    // gate check.
+    const isPromptSubmit = payload.hook_event_name === "UserPromptSubmit";
+    const result = isPromptSubmit
+      ? await processPromptSubmit(payload, { framework })
+      : await processToolCall(payload, { framework });
+    console.log(JSON.stringify(result.output));
+    process.exit(result.exitCode);
   });
 
 program
@@ -631,19 +676,49 @@ program
   .option("--no-monitor", "Skip acknowledgment monitor")
   .option("--no-watchdog", "Skip monitor watchdog")
   .option("--no-companion", "Skip companion hook config")
+  .option("--hook-command <cmd>", "Custom hook command for the generated companion config")
+  .option("--start", "Launch the daemon/monitor/watchdog now (default)")
+  .option("--no-start", "Only write config/env files; start everything yourself later")
+  .option("--claude-config", "Write the PreToolUse+UserPromptSubmit hooks into ~/.claude/settings.json (default with --harness claude)")
+  .option("--no-claude-config", "Print the Claude hook config but don't write it into settings.json")
+  .option("--create-habit", "Create a habit non-interactively (needs --habit-name/--habit-prompt/--habit-logic)")
+  .option("--habit-name <name>", "Habit name, with --create-habit")
+  .option("--habit-prompt <text>", "Habit prompt, with --create-habit")
+  .option("--habit-logic <text>", "Habit logic, with --create-habit")
   .action(async (opts) => {
     const { main } = await import("./install.js");
-    const flags = Object.entries(opts)
-      .filter(([k, v]) => {
-        if (k === "python") return false; // handled separately
-        return v !== false && v !== true;
-      })
-      .flatMap(([k, v]) => v === true ? [`--${k}`] : [`--${k}`, String(v)]);
-    // Pass --python / --no-python explicitly (boolean flags are filtered above)
+    // Reconstruct raw --flag argv from commander's parsed opts and hand it
+    // to install.js's OWN parseArgs (via main() with no argument) rather
+    // than passing the commander opts object directly. Commander's
+    // camelCase auto-naming doesn't always match the property names
+    // install.js's internals expect (e.g. --claude-config -> opts.claudeConfig
+    // via commander's convention, but install.js reads opts.writeClaudeConfig) —
+    // routing everything through install.js's single parseArgs keeps flag
+    // semantics defined in exactly one place instead of two that can drift.
+    const kebab = (k) => k.replace(/([A-Z])/g, "-$1").toLowerCase();
+    // Options declared ONLY as --no-X (no positive counterpart in
+    // parseArgs): only ever emit the negative form, and only when the user
+    // actually passed it (v === false). Emitting a bare --monitor etc. would
+    // be an unrecognized flag to parseArgs (it only checks for --no-monitor).
+    const negationOnly = new Set(["monitor", "watchdog", "companion"]);
+    const flags = [];
+    for (const [k, v] of Object.entries(opts)) {
+      if (k === "python") continue; // handled separately below
+      if (v === undefined || v === null) continue;
+      if (typeof v === "boolean") {
+        if (negationOnly.has(k)) {
+          if (v === false) flags.push(`--no-${kebab(k)}`);
+          continue;
+        }
+        flags.push(v ? `--${kebab(k)}` : `--no-${kebab(k)}`);
+        continue;
+      }
+      flags.push(`--${kebab(k)}`, String(v));
+    }
     if (opts.python === true) flags.push("--python");
     else if (opts.python === false) flags.push("--no-python");
     process.argv = ["node", "install.js", ...flags, "--yes"];
-    await main(opts);
+    await main();
   });
 
 // ─── Configuration ─────────────────────────────────────────────────────────
@@ -825,9 +900,12 @@ habitCmd
     }
     for (const f of files) {
       const content = fs.readFileSync(path.join(habitsDir, f), "utf8");
-      const nameMatch = content.match(/name:\s*"([^"]+)"/);
-      const promptMatch = content.match(/prompt:\s*"([^"]+)"/);
-      console.log(`  ${nameMatch?.[1] || f}: ${promptMatch?.[1] || "(no prompt)"}`);
+      // Quote is OPTIONAL -- YAML allows unquoted plain scalars for both
+      // fields, and roughly half the bundled habits actually use that form.
+      // A quote-required regex silently showed "(no prompt)" for them.
+      const nameMatch = content.match(/^name:\s*"?([^"\n]*)/m);
+      const promptMatch = content.match(/^prompt:\s*"?([^"\n]*)/m);
+      console.log(`  ${nameMatch?.[1]?.trim() || f}: ${promptMatch?.[1]?.trim() || "(no prompt)"}`);
     }
   });
 

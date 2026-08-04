@@ -1,6 +1,6 @@
 {
   "name": "@character-kit/agent-character-kit",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Universal agent character enforcement, knowledge indexing, and memory with YAML frontmatter. True plugin: install once, reference as @character-kit in any harness config.",
   "main": "src/index.js",
   "bin": {
@@ -10,7 +10,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "start": "node bin/aik.js",
+    "start": "node bin/ack.js",
     "install": "node bin/install.js",
     "ack-install": "node bin/install.js"
   },

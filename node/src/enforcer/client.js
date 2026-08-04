@@ -132,6 +132,45 @@ export class EnforcerClient {
   }
 
   /**
+   * Ask the daemon whether this (non-search) tool call should be held for
+   * habit acknowledgment / commit discipline. The daemon owns ALL hold
+   * state (per-session count, ack ledger, file-touch tracking) — this is a
+   * thin ask-and-obey call, same fail-closed posture as validateTool.
+   * @param {string} tool
+   * @param {string} sessionId
+   * @param {string} [filePath] - best-effort file path from tool params,
+   *   used for the distinct-file-count commit trigger. Undefined is fine.
+   * @returns {Promise<{hold: boolean, reason?: string, commit_required?: boolean}>}
+   */
+  async toolTick(tool, sessionId = "default", filePath) {
+    const response = await this.call("tool_tick", {
+      session_id: sessionId,
+      tool,
+      file_path: filePath,
+    });
+    // Fail-closed: if the daemon can't be reached, treat it as a hold so the
+    // agent re-grounds rather than silently sailing through unmonitored.
+    if (response.error) {
+      return { hold: true, reason: "Enforcer unavailable — treating as held (fail-closed)." };
+    }
+    return response;
+  }
+
+  /**
+   * Ask the daemon for this session's next rotating habit-prompt subset.
+   * The daemon owns the rotation state (per session) so it works correctly
+   * even when the caller is a fresh CLI process per call (Claude/Cursor/
+   * Gemini via `ack hook`), not just long-lived in-process companions.
+   * @param {string} sessionId
+   * @returns {Promise<{prompts: Array<{prompt:string, logic:string, evidence:string}>}>}
+   */
+  async pickPrompt(sessionId = "default") {
+    const response = await this.call("pick_prompt", { session_id: sessionId });
+    if (response.error) return { prompts: [] };
+    return response;
+  }
+
+  /**
    * Send heartbeat to enforcer.
    */
   async heartbeat(status = "ok") {

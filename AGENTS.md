@@ -1,6 +1,6 @@
-# AGENTS.md — Agent Character Kit (ACK) v1.0.8
+# AGENTS.md — Agent Character Kit (ACK) v1.1.0
 
-> **This is the single source of truth for AIK.** README.md is a short overview
+> **This is the single source of truth for ACK.** README.md is a short overview
 > that points here. There is no other install/customize doc — if you're reading
 > one, it's stale. Everything (purpose, architecture, install, customize,
 > validate, version) lives in this file.
@@ -46,7 +46,7 @@ Cursor, Codex, a shell wrapper) can use it.
         ▼
    COMPANION (thin client)  ──RPC──►  CORE: ENFORCER DAEMON  ──►  ALLOW / BLOCK
    - Hermes Python plugin              (Node, single source      + reason
-   - generic `aik hook`                of truth)
+   - generic `ack hook`                of truth)
                                         │ owns:
                                         │  constitution.yaml  (hard_constraints)
                                         │  enforcer.yaml      (allow/deny)
@@ -84,7 +84,7 @@ daemon and obey. If the daemon is unreachable, the client **blocks** (fail-close
 1. **Hermes plugin** (`python/hermes_plugin/`) — an EXAMPLE companion, for
    agents that load Python plugins (`pre_tool_call` → daemon → allow/deny).
    It is one of several interchangeable companions, not "the" way.
-2. **Generic `aik hook`** (`node/bin/aik.js hook --framework <name>`) — for
+2. **Generic `ack hook`** (`node/bin/ack.js hook <name>`) — for
    Claude / Cursor / Gemini / OpenCode / generic. Emits the framework's
    hook JSON; each call hits the daemon.
 
@@ -142,8 +142,7 @@ sudo systemctl status agent-enforcer.service   # Active: running
 ```bash
 # install node first; macOS has no /run, so use a writable socket path:
 export ENFORCER_SOCKET=$HOME/Library/Caches/agent-enforcer/main.sock
-node node/bin/aik.js enforcer --install      # emits a launchd plist (KeepAlive)
-# or just run the supervisor directly:
+# no CLI-generated launchd plist yet; run the stdlib supervisor directly:
 python3 supervise.py &
 ```
 
@@ -164,8 +163,8 @@ sudo python3 supervise.py          # restarts daemon on death (3s backoff)
 
 ### Wire a COMPANION into your agent (examples — multiple harnesses shown)
 
-AIK is harness-agnostic: the daemon enforces; the companion is just a thin
-client. Below are TWO worked examples (Hermes and a generic `aik hook`
+ACK is harness-agnostic: the daemon enforces; the companion is just a thin
+client. Below are TWO worked examples (Hermes and a generic `ack hook`
 framework). Showing several, not one — pick the companion that matches your
 agent. Do not treat any single harness as "the" install path.
 
@@ -174,14 +173,15 @@ agent. Do not treat any single harness as "the" install path.
 cd python && pip install -e . && cd ..
 mkdir -p ~/.hermes/plugins/agent-character-kit
 cp -r python/hermes_plugin/* ~/.hermes/plugins/agent-character-kit/
-# restart Hermes; pre_tool_call is now gated by the CORE daemon
+# restart Hermes; pre_tool_call + pre_llm_call are now gated/injected by the CORE daemon
 ```
 
-**Example B — Claude / Cursor / Gemini / OpenCode (generic `aik hook`):**
+**Example B — Claude / Cursor / Gemini / OpenCode (generic `ack hook`):**
 ```bash
-node node/bin/aik.js hook --framework claude --config   # prints the hook JSON
+node node/bin/ack.js hook claude --config   # prints the hook JSON
 # add it to the framework's hooks; it calls the daemon per tool call
 # swap `claude` for cursor | gemini | opencode | generic as needed
+# (framework is a POSITIONAL argument to `hook`, not a --framework flag)
 ```
 
 ## Daemon-owned hold pipeline (acknowledgment gate)
@@ -192,33 +192,78 @@ forever on autopilot without re-grounding in its character. The hold is
 the agent cannot reset or bypass it by editing/disabling the plugin.
 
 **Behavior:**
-- Every 5th non-search tool call is **held** until the agent has acknowledged
-  **2** habits in the form:
+- Every Nth non-search tool call is **held** (default N=5, configurable via
+  `ACK_HOLD_EVERY_N_CALLS` / `enforcer.yaml: hold_every_n_calls`) until the
+  agent has acknowledged **2** habits (configurable via `ACK_REQUIRED_ACKS` /
+  `required_acks`) in the form:
   `Habit: <habit-file-name> <resonates true | why: | because | …> <engaged reason>`
   (the close is variable — see `HABIT_POLICY.md` §4; the reason must be specific
   and situation-tied, not filler).
+- The hold response deliberately does **not** list habit names or the ack
+  format — only a terse "acknowledge N habits" reason. The agent must
+  search/read `.agent/habits/*.yaml` to find which habit matches whatever
+  prompt it was most recently shown (see the pre-LLM injection channel
+  below), then answer with the real name it discovers there. Handing out
+  names in the hold response would defeat that.
 - Search/read tools (`search_files`, `read_file`, `web_search`, `web_extract`,
   `glob`, `grep`) are **never held** — the agent can always look up a habit it
   can't recall.
-- After 2 valid acknowledgments the hold lifts for the session.
+- After 2 valid acknowledgments the hold **resets and repeats**: the counter
+  goes back to 0 and the daemon holds again at the next N-call boundary,
+  requiring 2 fresh (non-reused) acknowledgments. This is continuous for the
+  life of the session, not a one-time ritual — character is "the default
+  lens... over time" (`HABIT_POLICY.md` §1), not something satisfied once.
+
+**Pre-LLM injection (second channel):** independent of the hold above, the
+daemon also rotates 2-3 random habit **prompts** (with `logic`/`evidence`
+reasoning, never the `name`) into context before each LLM turn — the
+`pick_prompt` RPC, surfaced via Claude's `UserPromptSubmit` hook
+(`hookSpecificOutput.additionalContext`) or a companion's own
+`processPromptSubmit`/`_on_pre_llm_call` call for in-process harnesses
+(OpenCode, Hermes). This is a reminder channel, not a gate — it never blocks.
+See `docs/agent-character-injection-design.md` for the "why two channels"
+rationale.
+
+**Commit discipline (layered on top of the hold, not every cycle):** at a
+hold boundary, a fresh `git commit` (message ≥`ACK_COMMIT_MIN_CHARS` chars,
+default 150) becomes mandatory once **either** threshold is crossed,
+whichever first:
+- **Distinct files touched** since the last satisfied commit reaches
+  `ACK_FILE_CHANGE_THRESHOLD` / `file_change_threshold` (default **5**).
+  Tracked as a Set, not an edit counter — 27 edits to one file is one file.
+- **Hold-cycles** passed since the last satisfied commit reaches
+  `ACK_COMMIT_EVERY_N_CYCLES` / `commit_every_n_cycles` (default **4**, i.e.
+  ≈20 tool calls at the default `hold_every_n_calls=5`).
+
+Both trackers reset together the moment a qualifying commit lands. Until
+either threshold is crossed, a hold only asks for the 2 habit acks — no
+commit required that cycle. File-path tracking is best-effort (whatever the
+tool call's `file_path`/`path` param carries); tool calls with no
+identifiable file (e.g. `Bash`) still count toward the cycle dimension.
 
 **Three-layer architecture (why it's not bypassable):**
 1. **Daemon** (`node/enforcer/agent_enforcer_daemon.js`) — owns the per-session
    tool-call counter + ack ledger via `tool_tick` / `submit_ack` RPCs. Decides
    allow/hold. Name normalization (hyphen ↔ underscore) lets the agent state
    `rigorous-commits-no-push` and match the file `name: rigorous_commits_no_push`.
-2. **Plugin** (`python/hermes_plugin/`, thin client) — on each tool call asks the
-   daemon `tool_tick` and obeys the hold; records any `Habit: <name> <resonates
-   true | why: | because | …> <reason>` the agent states into the **external ACK LOG**
-   (`/tmp/agent-character-kit-ack.jsonl`). The plugin does **not** self-credit —
-   it cannot forge acknowledgments.
-3. **Monitor** (`deploy/ack_monitor.py`, root-owned systemd
+2. **Companion** (`ack hook`, or `python/hermes_plugin/` for Hermes) — on each
+   tool call asks the daemon `tool_tick` and obeys the hold; records any
+   `Habit: <name> <resonates true | why: | because | …> <reason>` the agent
+   states into the **external ACK LOG** (`/tmp/agent-character-kit-ack.jsonl`).
+   The companion does **not** self-credit — it cannot forge acknowledgments.
+3. **Monitor** (`deploy/ack_monitor.js`, root-owned systemd
    `agent-character-monitor.service`) — tails the ACK LOG, validates each
    statement against the daemon's real habit list, and credits the daemon via
    `submit_ack`. The agent cannot kill it without root.
-4. **Watchdog** (`deploy/ack_watchdog.py`, root-owned systemd
-   `agent-character-watchdog.service`) — revives the monitor if it dies
-   (self-healing).
+4. **Watchdog** (`deploy/ack_watchdog.js`, root-owned systemd
+   `agent-character-watchdog.service`) — revives the monitor (and, in
+   root-mode, the daemon itself) if either dies (self-healing).
+
+**Node-only by default.** The daemon/monitor/watchdog trio is pure Node —
+Python is never required to get the self-healing infrastructure running.
+`python/hermes_plugin/` (and `deploy/ack_monitor.py` / `ack_watchdog.py`,
+kept for parity) are only needed if you're binding a Hermes-style Python
+harness as the companion; every other harness only ever touches Node.
 
 **Wiring:** the interactive installer (`node node/bin/install.js`, or
 `npm i -g @character-kit && ack install`) sets up ALL FOUR components — daemon,
@@ -247,12 +292,17 @@ sudo bash deploy/deploy-ack-services.sh
 ## Verify it's live
 
 ```bash
-node node/bin/aik.js enforcer --status     # version + identity hash + enforcing
+node node/bin/ack.js status                # version + character hash + enforcing
 
 # direct, as the agent user:
 echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"},"hook_event_name":"PreToolUse"}' \
-  | node node/bin/aik.js hook -f claude
+  | node node/bin/ack.js hook claude
 # => permissionDecision: "deny"
+
+# pre-LLM injection channel (rotating habit prompts, never the habit name):
+echo '{"hook_event_name":"UserPromptSubmit","session_id":"demo"}' \
+  | node node/bin/ack.js hook claude
+# => hookSpecificOutput.additionalContext: "AGENT CHARACTER HABITS ..."
 ```
 
 Test suite (spawns a real daemon on an empty workspace — proves embedded
@@ -313,8 +363,11 @@ behavior:
 The embedded secret-leak guard is **always on** even with no habit file. Your
 habit *adds* to it; it does not replace it.
 
-**Live reload** (no restart): `node node/bin/aik.js enforcer --reload`
-(or `systemctl restart agent-enforcer.service`).
+**Reload:** the daemon has a `reload` RPC (re-reads constitution/habits/policy,
+recomputes the character hash) but it isn't yet wired to a CLI flag — restart
+the daemon process to pick up changes (`systemctl restart
+agent-enforcer.service` under systemd, or just let the supervisor notice the
+process exit and restart it).
 
 ---
 
@@ -335,10 +388,14 @@ habit *adds* to it; it does not replace it.
 ---
 
 ## Version tracking
-`VERSION` at repo root = `1.0.8`. The daemon prints it on boot
-(`ACK Enforcer daemon v1.0.8`) and returns it in `heartbeat.version`. The Hermes
-plugin carries the same `AIK_VERSION`. **Bump `VERSION` and the in-code
-constants together** when enforcement behavior changes.
+Single source of truth: `node/src/version.js` (`VERSION`). `ack.js`, the
+daemon (`agent_enforcer_daemon.js`, re-exported as `ACK_VERSION`), and
+`node/src/index.js` all import from there — nowhere else in the Node side
+should hardcode a version literal. Root `VERSION`, root `package.json`,
+`node/package.json`, and the Hermes plugin's `python/hermes_plugin/__init__.py`
+`ACK_VERSION` are separate files (npm/Python ecosystem conventions and a
+plain version stamp) that still need bumping by hand alongside
+`node/src/version.js` — **bump all five together** when cutting a release.
 
 ---
 
@@ -348,7 +405,7 @@ constants together** when enforcement behavior changes.
 |------|------|
 | `node/enforcer/agent_enforcer_daemon.js` | **CORE** — the enforcer (single source of truth) |
 | `node/src/enforcer/client.js` | Node thin client |
-| `node/bin/aik.js` | CLI (`enforcer --start/--supervise/--status/--install/--reload`) |
+| `node/bin/ack.js` | CLI (`hook/install/status/doctor/repair/config/habit`) |
 | `python/hermes_plugin/` | **COMPANION** — example Python-plugin client (one of several) |
 | `python/agent_character_kit/enforcer.py` | Python client (`EnforcerClient`) to the CORE |
 | `supervise.py` | stdlib-only cross-platform supervisor |

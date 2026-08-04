@@ -28,7 +28,7 @@ reason + reflection ("this isn't a rule to work around — it's who we are").
 ## Install
 
 ```bash
-# 1. Make the AIK Python package importable
+# 1. Make the ACK Python package importable
 cd agent-character-kit/python
 pip install -e .
 

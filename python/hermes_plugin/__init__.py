@@ -37,7 +37,10 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-ACK_VERSION = "1.0.0"
+# Kept in sync with node/src/version.js / /VERSION at repo root -- bump all
+# together. Currently unused within this module (no RPC or log line reads
+# it) but kept for parity with the Node side's ACK_VERSION.
+ACK_VERSION = "1.1.0"
 
 # Optional env escape hatch: set ACK_DISABLE=1 to turn the plugin into a
 # no-op (never use in production — it defeats the purpose).
@@ -116,28 +119,37 @@ def _on_pre_tool_call(
     # Allowed by daemon. Now apply the daemon-owned HOLD (state lives in the
     # root-owned daemon, NOT here — the agent cannot bypass it).
     try:
-        tick = _daemon_rpc("tool_tick", {"session_id": ctx_id, "tool": tool_name})
+        file_path = args.get("file_path") or args.get("path")
+        tick = _daemon_rpc("tool_tick", {"session_id": ctx_id, "tool": tool_name, "file_path": file_path})
         if tick and tick.get("hold"):
-            habits = tick.get("habits", [])
-            # User-visible output: ONLY the two Habit: lines to state, then the
-            # agent's continuation. No hook/hold narration, no instructions, no
-            # habit list, no "held"/"acknowledge" language. The mechanism still
-            # logs the full hook detail to debug (hidden from the user).
+            # The daemon deliberately does NOT tell us habit names or the
+            # ack format here — the agent must search/read .agent/habits/*.yaml
+            # to find the habit matching whatever prompt it was last given
+            # (via pre_llm_call injection) and answer with the real name.
+            # Handing out names here would defeat that; keep this terse.
+            msg = tick.get("reason", "acknowledge 2 habits.")
             logger.debug(
-                "[agent-character-kit] HOLD active for %s — daemon requires 2 "
-                "distinct habit acknowledgments before tool access resumes. "
-                "Available habits: %s",
-                ctx_id, habits,
-            )
-            needed = habits[:2] if len(habits) >= 2 else (habits + ["<habit-name>"])[:2]
-            msg = (
-                f"Habit: {needed[0]} resonates true — <reason>\n\n"
-                f"Habit: {needed[1]} resonates true — <reason>"
+                "[agent-character-kit] HOLD active for %s — %s",
+                ctx_id, msg,
             )
             return {"action": "block", "message": msg}
     except Exception as exc:
         logger.error("[agent-character-kit] hold check failed (failing closed): %s", exc)
         return {"action": "block", "message": "HOLD check unavailable — action blocked."}
+    return None
+
+
+def _walk_up_for_agent_dir(start_dir: str) -> Optional[str]:
+    """Walk up from start_dir looking for .agent/enforcer.sock."""
+    d = start_dir
+    while True:
+        sock = os.path.join(d, ".agent", "enforcer.sock")
+        if os.path.exists(sock):
+            return sock
+        parent = os.path.dirname(d)
+        if parent == d:  # at root
+            break
+        d = parent
     return None
 
 
@@ -149,11 +161,29 @@ def _daemon_rpc(method: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]
     and the caller decides (pre_tool_call blocks; pre_llm_call ignores).
     """
     import socket as _sock
+
+    # Workspace resolution:
+    #   1. ENFORCER_SOCKET env var
+    #   2. CWD-walk for project-local .agent/
+    #   3. AGENT_WORKSPACE/.agent/enforcer.sock
+    #   4. Harness-specific default (Claude: ~/.claude/.agent/)
+    #   5. Global fallback
     raw = os.environ.get("ENFORCER_SOCKET")
     if not raw:
-        ws = os.environ.get("AGENT_WORKSPACE")
-        raw = os.path.join(ws, ".agent", "enforcer.sock") if ws else os.path.join(
-            os.environ.get("HOME", "/root"), ".agent-character-kit", "workspace", ".agent", "enforcer.sock")
+        cwd_sock = _walk_up_for_agent_dir(os.getcwd())
+        if cwd_sock:
+            raw = cwd_sock
+        else:
+            ws = os.environ.get("AGENT_WORKSPACE")
+            if ws:
+                raw = os.path.join(ws, ".agent", "enforcer.sock")
+            else:
+                home = os.environ.get("HOME", "/root")
+                claude_sock = os.path.join(home, ".claude", ".agent", "enforcer.sock")
+                if os.path.exists(claude_sock):
+                    raw = claude_sock
+                else:
+                    raw = os.path.join(home, ".agent-character-kit", "workspace", ".agent", "enforcer.sock")
     payload = (json.dumps({"method": method, "params": params}) + "\n").encode()
     try:
         if raw.startswith("tcp://"):

@@ -1,13 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import net from "node:net";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 const REPO = path.resolve(process.cwd());
-const DAEMON = path.join(REPO, "node", "enforcer", "agent_enforcer_daemon.js");
 const SRC = path.join(REPO, "python", "example_workspace", ".agent", "habits");
 
 // The decision-logic habits extracted from the user's named sources:
@@ -27,39 +24,32 @@ const EXTRACTED = [
   "one_concern_per_file",
 ];
 
-function rpc(sock, method, params) {
-  return new Promise((res, rej) => {
-    const c = net.connect(sock, () => c.write(JSON.stringify({ method, params }) + "\n"));
-    let buf = "";
-    c.on("data", (d) => {
-      buf += d;
-      if (buf.includes("\n")) { c.end(); try { res(JSON.parse(buf.split("\n")[0])); } catch (e) { rej(e); } }
-    });
-    c.on("error", rej);
-  });
+// Reads habit `name:` fields directly from the seeded YAML files. This is
+// deliberately NOT going through the daemon's tool_tick RPC — the hold
+// response no longer exposes habit names (by design: the agent must
+// search/read the habit files itself, see agent_enforcer_daemon.js
+// toolTick / HABIT_POLICY.md §4), so that channel can't be used to verify
+// the bundled set anymore. Reading the files directly is the correct check:
+// it verifies what ships, independent of what the daemon chooses to reveal.
+function namesFromDir(dir) {
+  const names = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith(".yaml") && !f.endsWith(".yml")) continue;
+    const txt = fs.readFileSync(path.join(dir, f), "utf8");
+    const m = txt.match(/^name:\s*"?([^"\n]*)/m);
+    if (m) names.push(m[1].trim());
+  }
+  return names;
 }
 
-test("default bundled habits include the 15 extracted decision-logic habits", async () => {
+test("default bundled habits include the 15 extracted decision-logic habits", () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "ackdefault-"));
   fs.mkdirSync(path.join(ws, ".agent", "habits"), { recursive: true });
   for (const f of fs.readdirSync(SRC)) {
     fs.copyFileSync(path.join(SRC, f), path.join(ws, ".agent", "habits", f));
   }
-  const sock = path.join(ws, ".agent", "enforcer.sock");
-  const d = spawn(process.execPath, [DAEMON], {
-    env: { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock }, stdio: "ignore",
-  });
 
-  let known = [];
-  try {
-    await new Promise((r) => setTimeout(r, 700));
-    for (let i = 1; i <= 5; i++) {
-      const r = await rpc(sock, "tool_tick", { session_id: "default-test", tool: "terminal" });
-      if (r.hold) { known = r.habits || []; break; }
-    }
-  } finally {
-    d.kill();
-  }
+  const known = namesFromDir(path.join(ws, ".agent", "habits"));
 
   assert.ok(known.length >= 32, `expected >=32 default habits, got ${known.length}`);
   for (const name of EXTRACTED) {

@@ -1,6 +1,13 @@
 import { EnforcerClient } from "../enforcer/client.js";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+// Absolute path to the bundled ack.js bin, never "npx ack hook" as a
+// fallback default. If the package isn't globally installed/linked yet,
+// npx silently fetches an unrelated public npm package instead of running
+// this CLI (verified live during testing).
+const ACK_BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "bin", "ack.js");
 
 const AUDIT_DIR = path.join(
   process.env.HOME || "/root",
@@ -199,6 +206,21 @@ export async function processToolCall(payload, options = {}) {
       result = { allowed: true };
     }
 
+    // Allowed by the constitution/policy check — now apply the daemon-owned
+    // periodic HOLD (habit acknowledgment + commit discipline). This was
+    // previously only wired for the Hermes/Python companion; every
+    // framework routed through here (Claude/Cursor/Gemini/OpenCode/generic)
+    // gets it too now — the hold is expressed as a denial with the hold's
+    // reason, since most of these frameworks only have an allow/deny gate,
+    // not a separate "block with message" concept.
+    if (result.allowed) {
+      const filePath = normalized.params && (normalized.params.file_path || normalized.params.path);
+      const tick = await enforcer.toolTick(normalized.tool, normalized.sessionId || "unknown", filePath);
+      if (tick.hold) {
+        result = { allowed: false, reason: tick.reason || "acknowledge 2 habits." };
+      }
+    }
+
     auditLog("pre_tool_use", normalized.tool, normalized.params, result);
   } else {
     auditLog("post_tool_use", normalized.tool, normalized.params, payload.result);
@@ -211,11 +233,99 @@ export async function processToolCall(payload, options = {}) {
   return { output, exitCode };
 }
 
+// ─── Pre-LLM habit injection ────────────────────────────────────────────────
+// Same behavior as python/hermes_plugin/__init__.py's _on_pre_llm_call:
+// rotate 2-3 random habit prompts (+ logic/evidence reasoning) into context
+// each turn, NEVER the habit name — the agent must search/read
+// .agent/habits/*.yaml to find which habit a given prompt belongs to, then
+// acknowledge it by the name it discovers there (see HABIT_POLICY.md §4,
+// agent_enforcer_daemon.js toolTick). This is the "belts and suspenders"
+// second channel described in docs/agent-character-injection-design.md —
+// kept alongside the tool-call response channel, not a replacement for it.
+//
+// The rotation state lives in the DAEMON (pickPrompt RPC), not here. Unlike
+// Hermes's Python companion — which stays loaded as one long-running process,
+// so a module-level dict genuinely persists across calls — Claude/Cursor/
+// Gemini invoke `ack hook` as a FRESH CLI process per hook call. Any
+// in-process rotation state here would silently reset every single call and
+// never actually rotate. The daemon is the only thing in this architecture
+// that's actually long-lived, so it's the only place this state can live.
+
+function _logInjection(prompts) {
+  try {
+    const logPath = process.env.ACK_INJECT_LOG || "/tmp/ack-inject-log.jsonl";
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, JSON.stringify({
+      ts: new Date().toISOString(), count: prompts.length, prompts,
+    }) + "\n");
+  } catch { /* logging must never break injection */ }
+}
+
+/**
+ * Ask the daemon for this session's next rotating habit-prompt subset and
+ * format it into the injectable context string. Returns null if there's
+ * nothing to say (no habits, daemon unreachable, or ACK_DISABLE=1).
+ */
+export async function pickHabitPrompts(sessionId, enforcer) {
+  if (process.env.ACK_DISABLE === "1") return null;
+  const client = enforcer || ENFORCER;
+  const { prompts } = await client.pickPrompt(sessionId);
+  if (!prompts || !prompts.length) return null;
+
+  const lines = [];
+  for (const h of prompts) {
+    const reason = h.logic || h.evidence;
+    lines.push("- " + h.prompt);
+    if (reason) lines.push("    why: " + reason);
+  }
+  _logInjection(prompts.map((h) => h.prompt));
+  return "AGENT CHARACTER HABITS (read before reasoning):\n" + lines.join("\n");
+}
+
+/**
+ * Process a pre-LLM-turn hook, injecting rotating habit prompts into context.
+ * Mirrors processToolCall's shape (framework detection, {output, exitCode})
+ * but never blocks — this is a reminder channel, not a gate.
+ */
+export async function processPromptSubmit(payload, options = {}) {
+  const framework = options.framework === "auto"
+    ? detectFramework(payload)
+    : (options.framework || "generic");
+  const enforcer = options.enforcer || ENFORCER;
+  const sessionId = payload.session_id || payload.sessionId || payload.task_id || "default";
+  const ctx = await pickHabitPrompts(sessionId, enforcer);
+
+  if (!ctx) return { output: {}, exitCode: 0 };
+
+  switch (framework) {
+    case "claude":
+      return {
+        output: {
+          hookSpecificOutput: {
+            hookEventName: "UserPromptSubmit",
+            additionalContext: ctx,
+          },
+        },
+        exitCode: 0,
+      };
+    case "hermes":
+      return { output: { context: ctx }, exitCode: 0 };
+    case "opencode":
+      return { output: { context: ctx }, exitCode: 0 };
+    default:
+      return { output: { context: ctx }, exitCode: 0 };
+  }
+}
+
 /**
  * Generate framework-specific hook configuration.
  */
 export function generateConfig(framework, hookCommand) {
-  const cmd = hookCommand || "npx aik hook";
+  // ack.js's `hook` command takes framework as a POSITIONAL argument
+  // (`ack hook claude`), not a --framework flag. Every command string built
+  // here must match that shape or the harness's own hook invocation fails
+  // with "unknown option" on every single tool call.
+  const cmd = hookCommand || `node '${ACK_BIN}' hook`;
 
   switch (framework) {
     case "claude":
@@ -223,7 +333,13 @@ export function generateConfig(framework, hookCommand) {
         hooks: {
           PreToolUse: [{
             matcher: "*",
-            hooks: [{ type: "command", command: `${cmd} --framework claude` }],
+            hooks: [{ type: "command", command: `${cmd} claude` }],
+          }],
+          // UserPromptSubmit: the pre-LLM injection channel (see
+          // processPromptSubmit above) — same command, the daemon-side hook
+          // action routes on hook_event_name to decide gate vs. inject.
+          UserPromptSubmit: [{
+            hooks: [{ type: "command", command: `${cmd} claude` }],
           }],
         },
       };
@@ -232,7 +348,7 @@ export function generateConfig(framework, hookCommand) {
       return {
         version: 1,
         hooks: {
-          preToolUse: [{ command: `${cmd} --framework cursor`, matcher: "*" }],
+          preToolUse: [{ command: `${cmd} cursor`, matcher: "*" }],
         },
       };
 
@@ -244,15 +360,19 @@ export function generateConfig(framework, hookCommand) {
             hooks: [{
               name: "character-enforcer",
               type: "command",
-              command: `${cmd} --framework gemini`,
+              command: `${cmd} gemini`,
             }],
           }],
         },
       };
 
     case "hermes":
+      // NOTE: the shipped Hermes companion is python/hermes_plugin, which
+      // already registers pre_tool_call + pre_llm_call directly against the
+      // daemon (no JS layer involved). This snippet is only for a
+      // hypothetical JS-based Hermes-style companion.
       return `# Add to your Hermes plugin:
-const { processToolCall } = require("agent-character-kit");
+const { processToolCall, processPromptSubmit } = require("agent-character-kit");
 
 ctx.register_hook("pre_tool_call", async (toolName, args, taskId) => {
   const result = await processToolCall(
@@ -261,25 +381,42 @@ ctx.register_hook("pre_tool_call", async (toolName, args, taskId) => {
   );
   return result.output;
 });
+
+ctx.register_hook("pre_llm_call", async (sessionId) => {
+  const result = await processPromptSubmit(
+    { session_id: sessionId },
+    { framework: "hermes" }
+  );
+  return result.output; // { context: "..." } or {} if nothing to inject
+});
 `;
 
     case "opencode":
       return `// Add to your OpenCode plugin:
-import { processToolCall } from "agent-character-kit";
+import { processToolCall, processPromptSubmit } from "agent-character-kit";
 
-export default async ({ tool, args }) => {
+export default async ({ tool, args, session }) => {
   const result = await processToolCall(
     { tool, args },
     { framework: "opencode" }
   );
   return result.output;
 };
+
+// Call before forwarding the user's message to the model:
+export async function onPromptSubmit({ session }) {
+  const result = await processPromptSubmit(
+    { session_id: session },
+    { framework: "opencode" }
+  );
+  return result.output; // { context: "..." } or {} if nothing to inject
+}
 `;
 
     default:
       return {
         hooks: {
-          pre_tool_use: [{ command: `${cmd} --framework generic` }],
+          pre_tool_use: [{ command: `${cmd} generic` }],
         },
       };
   }

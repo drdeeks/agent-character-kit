@@ -12,6 +12,18 @@
  *  - The socket lives in a root-owned dir; only root + the enforced client may connect.
  */
 
+// install.js's launchDaemon() pipes stdout/stderr into the short-lived
+// installer process so it can detect the "listening on" startup line, then
+// unrefs its end once seen -- but that only stops the pipe from keeping the
+// INSTALLER alive; it does not detach the DAEMON's end. Once the installer
+// process exits, this daemon's next console.log/error write hits a closed
+// pipe and throws EPIPE, which is an unhandled 'error' event by default and
+// crashes the whole daemon -- exactly the kind of self-healing failure this
+// process exists to prevent. Swallow it; logging is not essential to
+// enforcement, staying alive is.
+process.stdout.on("error", (err) => { if (err.code !== "EPIPE") throw err; });
+process.stderr.on("error", (err) => { if (err.code !== "EPIPE") throw err; });
+
 // Minimal .env autoload (no external dep). Package root = ../../ from node/enforcer/.
 // install.js writes one .env here; every component reads it. Env vars win over .env.
 // SECURITY: do NOT inject ACK_AUTH_TOKEN into the daemon's own process.env.
@@ -23,13 +35,26 @@
 import { fileURLToPath } from "url";
 const __daemonDir = path.dirname(fileURLToPath(import.meta.url));
 const __pkgRoot = path.resolve(__daemonDir, "..", "..");
-const __envFile = path.join(__pkgRoot, ".env");
-if (fs.existsSync(__envFile)) {
-  for (const line of fs.readFileSync(__envFile, "utf8").split("\n")) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m && m[1] !== "ACK_AUTH_TOKEN" && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
+
+// .env resolution: workspace-specific > CWD > repo root (existing fallback).
+// Only loads vars NOT already in process.env (env vars always win).
+function _loadEnvFile(envPath) {
+  try {
+    if (!fs.existsSync(envPath)) return;
+    for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+      if (m && m[1] !== "ACK_AUTH_TOKEN" && !(m[1] in process.env)) process.env[m[1]] = m[2];
+    }
+  } catch { /* best-effort */ }
 }
+
+// 1. Check workspace-specific .env (set by install.js per-workspace)
+const __wsEnv = process.env.AGENT_WORKSPACE && path.join(process.env.AGENT_WORKSPACE, ".agent", ".env");
+if (__wsEnv) _loadEnvFile(__wsEnv);
+// 2. Check CWD .env (for manual daemon launches from a project)
+_loadEnvFile(path.join(process.cwd(), ".env"));
+// 3. Check repo root .env (existing fallback for dev/test)
+_loadEnvFile(path.join(__pkgRoot, ".env"));
 
 import net from "net";
 import fs from "fs";
@@ -37,9 +62,12 @@ import fssync from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import yaml from "js-yaml";
+import { VERSION } from "../src/version.js";
 
-// Version — kept in sync with /VERSION at repo root. Bump there, not here.
-export const ACK_VERSION = "1.0.8";
+// Version — single source of truth is node/src/version.js (kept in sync
+// with /VERSION at repo root). Re-exported under this name for the RPC
+// wire format / existing call sites in this file.
+export const ACK_VERSION = VERSION;
 
 // ─── Self-resolving paths (root-owned defaults) ──────────────────────────────────
 function resolveConfig() {
@@ -153,20 +181,55 @@ export class Enforcer {
     }));
     this.startedAt = Date.now();
     this.lastHeartbeat = Date.now();
-    // Configurable commit discipline: when a hold releases (every 5th call)
-    // the agent must have made a real `git commit` since the previous hold,
-    // with a message >= COMMIT_MIN_CHARS characters. Defaults to 150.
-    // Override via enforcer.yaml `commit_min_chars:` or ACK_COMMIT_MIN_CHARS.
-    this.commitMinChars = parseInt(
-      process.env.ACK_COMMIT_MIN_CHARS ||
-      (typeof this.policy.commit_min_chars === "number" ? this.policy.commit_min_chars : ""),
+    // ─── Configurable values (env var > enforcer.yaml > embedded default) ───
+    const _num = (envKey, policyKey, def) => parseInt(
+      process.env[envKey] ||
+      (typeof this.policy[policyKey] === "number" ? this.policy[policyKey] : ""),
       10
-    ) || 150;
+    ) || def;
+
+    // Commit discipline: min chars for git commit messages during hold cycles.
+    this.commitMinChars = _num("ACK_COMMIT_MIN_CHARS", "commit_min_chars", 150);
+    // How many non-search tool calls between holds (default: every 5th).
+    this.holdEveryNCalls = _num("ACK_HOLD_EVERY_N_CALLS", "hold_every_n_calls", 5);
+    // How many habit acknowledgments required to release a hold.
+    this.requiredAcks = _num("ACK_REQUIRED_ACKS", "required_acks", 2);
+    // Minimum character length for ack reasons (prevents filler).
+    this.minAckReasonChars = _num("ACK_MIN_ACK_REASON_CHARS", "min_ack_reason_chars", 12);
+    // Max remembered ack reasons for reuse guard (rolling window).
+    this.maxAckReasonHistory = _num("ACK_MAX_ACK_REASON_HISTORY", "max_ack_reason_history", 8);
+    // Heartbeat staleness threshold in seconds (watchdog).
+    this.heartbeatStaleSeconds = _num("ACK_HEARTBEAT_STALE_SECONDS", "heartbeat_stale_seconds", 600);
+    // Watchdog validation interval in milliseconds.
+    this.validationIntervalMs = _num("ACK_VALIDATION_INTERVAL_MS", "validation_interval_ms", 30000);
+    // Audit log command truncation length.
+    this.auditMaxCommandChars = _num("ACK_AUDIT_MAX_COMMAND_CHARS", "audit_max_command_chars", 500);
+    // Commit becomes mandatory once EITHER threshold is crossed, whichever
+    // first: this many DISTINCT files touched (not edit count — 27 edits to
+    // one file is one file)...
+    this.fileChangeThreshold = _num("ACK_FILE_CHANGE_THRESHOLD", "file_change_threshold", 5);
+    // ...or this many hold-cycles have passed since the last satisfied
+    // commit (default 4 cycles * hold_every_n_calls=5 = ~20 tool calls).
+    this.commitEveryNCycles = _num("ACK_COMMIT_EVERY_N_CYCLES", "commit_every_n_cycles", 4);
+    // Tools exempt from hold counting (agent can always search/read during hold).
+    const defaultSearchTools = "search_files,read_file,web_search,web_extract,glob,grep,read";
+    const rawSearchTools = process.env.ACK_SEARCH_TOOLS || (typeof this.policy.search_tools === "string" ? this.policy.search_tools : "");
+    this.searchTools = new Set(
+      (rawSearchTools || defaultSearchTools).split(",").map((s) => s.trim()).filter(Boolean)
+    );
+
     // Daemon-owned hold ledger (per session). The agent cannot reset or
     // bypass this — it lives in the root-owned daemon, not the plugin.
-    // Every 5th tool call is held until 2 valid `Habit: <name> resonates true
-    // because <reason>` statements are credited for the session.
     this.HOLD_STATE = new Map();
+
+    // Daemon-owned habit-prompt rotation state (per session). Companions
+    // invoked as a fresh CLI process per call (Claude/Cursor/Gemini via
+    // `ack hook`) have no process memory of their own between calls — the
+    // rotation MUST live here, not in the companion, or "rotating" habits
+    // would just replay the same first pick every single turn. Long-lived
+    // in-process companions (Hermes/OpenCode) could track this locally too,
+    // but routing everyone through the daemon keeps one source of truth.
+    this.PROMPT_CYCLE = new Map();
   }
 
   _loadHabits() {
@@ -399,7 +462,7 @@ export class Enforcer {
         ts: new Date().toISOString(),
         character_hash: this.characterHash,
         tool,
-        command: (command || "").slice(0, 500),
+        command: (command || "").slice(0, this.auditMaxCommandChars),
         decision: result.denied ? "deny" : "allow",
         reason: result.reason || null,
       };
@@ -462,11 +525,65 @@ export class Enforcer {
     };
   }
 
+  // ─── Daemon-owned habit-prompt rotation (pre-LLM injection) ────────────────
+  // Deterministic PRNG seeded from a string — no external dep, good enough
+  // for rotation (not security-sensitive).
+  _seededRandom(seed) {
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (Math.imul(31, h) + seed.charCodeAt(i)) | 0;
+    return function () {
+      h |= 0; h = (h + 0x6D2B79F5) | 0;
+      let t = Math.imul(h ^ (h >>> 15), 1 | h);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Picks a rotating 2-3 habit subset for this session's next turn. Returns
+  // {prompt, reasons} — prompt text only, NEVER the habit name (mirrors
+  // python/hermes_plugin's _on_pre_llm_call: the agent must search/read the
+  // habit files to discover which habit a prompt belongs to).
+  pickPrompt(session) {
+    if (!this.habits.length) return { prompts: [] };
+    let state = this.PROMPT_CYCLE.get(session);
+    if (!state || state.order.length !== this.habits.length) {
+      const order = this.habits.map((_, i) => i);
+      const shuffleRand = this._seededRandom(session + String(this.habits.length));
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(shuffleRand() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      state = { order, pos: 0 };
+    }
+    const countRand = this._seededRandom(session + String(state.pos));
+    const count = 2 + Math.floor(countRand() * 2); // 2 or 3
+    const picked = [];
+    for (let i = 0; i < count; i++) {
+      picked.push(this.habits[state.order[state.pos % this.habits.length]]);
+      state.pos = (state.pos + 1) % this.habits.length;
+    }
+    this.PROMPT_CYCLE.set(session, state);
+
+    return {
+      prompts: picked.map((h) => {
+        const b = h.behavior || {};
+        return { prompt: h.prompt || b.prompt, logic: b.logic || "", evidence: b.evidence || "" };
+      }),
+    };
+  }
+
   // ─── Daemon-owned acknowledgment HOLD ──────────────────────────────────────
   // The agent cannot bypass: state lives here (root-owned), not in the plugin.
   _holdState(session) {
     if (!this.HOLD_STATE.has(session)) {
-      this.HOLD_STATE.set(session, { count: 0, acked: 0, lastTwo: [], reasons: [] });
+      this.HOLD_STATE.set(session, {
+        count: 0, acked: 0, lastTwo: [], reasons: [],
+        // Distinct files touched since the last satisfied commit gate (a
+        // Set, not a counter — 27 edits to one file is one file).
+        filesTouched: new Set(),
+        // Hold-cycles passed since the last satisfied commit gate.
+        cyclesSinceCommit: 0,
+      });
     }
     return this.HOLD_STATE.get(session);
   }
@@ -521,39 +638,52 @@ export class Enforcer {
   }
 
   // Called by the plugin on every (non-search) tool call. Returns hold decision.
-  toolTick(session, tool) {
-    const SEARCH_TOOLS = new Set([
-      "search_files", "read_file", "web_search", "web_extract",
-      "glob", "grep", "read",
-    ]);
-    if (SEARCH_TOOLS.has(tool)) {
+  // filePath (optional): best-effort file path from the tool's params, used
+  // ONLY for the distinct-file-count commit trigger below — never required.
+  toolTick(session, tool, filePath) {
+    if (this.searchTools.has(tool)) {
       return { hold: false }; // search/read always allowed during a hold
     }
     const st = this._holdState(session);
     st.count += 1;
-    if (st.acked >= 2) return { hold: false };
-    if (st.count % 5 === 0) {
-      // Enforce the commit discipline on every 5th hold release:
-      // a real `git commit` must have landed in the workspace SINCE the
-      // previous hold, with a message >= commitMinChars. Configurable.
-      const since = st.lastHoldMs || 0;
-      const commit = this._verifyCommitSince(since);
-      if (!commit.ok) {
-        return {
-          hold: true,
-          reason: "TOOL ACCESS HELD — commit discipline not satisfied: " + commit.reason,
-          format: "Habit: <habit-file-name> resonates true because <reason>",
-          habits: this._habitNames(),
-          commit_required: true,
-          commit_min_chars: this.commitMinChars,
-        };
+    if (filePath) st.filesTouched.add(filePath);
+    // NOTE: no permanent "already satisfied this session" bypass here —
+    // submitAck() resets st.acked to 0 as soon as a cycle completes, so the
+    // hold repeats at every future hold_every_n_calls boundary instead of
+    // firing once per session.
+    if (st.count % this.holdEveryNCalls === 0) {
+      // Commit discipline is NOT required on every hold-cycle — only once
+      // EITHER threshold is crossed: enough distinct files touched, or
+      // enough cycles have passed since the last satisfied commit. Whichever
+      // comes first. Both configurable (ACK_FILE_CHANGE_THRESHOLD /
+      // ACK_COMMIT_EVERY_N_CYCLES), same env-var-first pattern as everything
+      // else here.
+      st.cyclesSinceCommit += 1;
+      const filesTouchedCount = st.filesTouched.size;
+      const commitDue = filesTouchedCount >= this.fileChangeThreshold
+        || st.cyclesSinceCommit >= this.commitEveryNCycles;
+
+      if (commitDue) {
+        const since = st.lastCommitCheckMs || 0;
+        const commit = this._verifyCommitSince(since);
+        if (!commit.ok) {
+          return {
+            hold: true,
+            reason: "TOOL ACCESS HELD — commit discipline not satisfied: " + commit.reason
+              + ` (${filesTouchedCount}/${this.fileChangeThreshold} files touched, `
+              + `${st.cyclesSinceCommit}/${this.commitEveryNCycles} cycles since last commit)`,
+            commit_required: true,
+            commit_min_chars: this.commitMinChars,
+          };
+        }
+        // Commit discipline satisfied — reset both trackers for the next window.
+        st.filesTouched = new Set();
+        st.cyclesSinceCommit = 0;
+        st.lastCommitCheckMs = Date.now();
       }
-      st.lastHoldMs = Date.now();
       return {
         hold: true,
-        reason: "TOOL ACCESS HELD — acknowledge 2 habits before tooling resumes.",
-        format: "Habit: <habit-file-name> resonates true because <reason>",
-        habits: this._habitNames(),
+        reason: "acknowledge 2 habits.",
       };
     }
     return { hold: false };
@@ -584,7 +714,7 @@ export class Enforcer {
       return { ok: false, error: `unknown habit: ${name}` };
     }
     // Require a substantive, engaged reason — not filler.
-    if (reason.length < 12) return { ok: false, error: "reason too short — state WHY this habit governs this action (specific, situation-tied)" };
+    if (reason.length < this.minAckReasonChars) return { ok: false, error: "reason too short — state WHY this habit governs this action (specific, situation-tied)" };
     const st = this._holdState(session);
     // No reuse of either of the two most-recent habits (rolling window).
     if (st.lastTwo.includes(norm)) {
@@ -599,9 +729,18 @@ export class Enforcer {
     // freeze the "previous two" and keep reusing everything else.
     st.lastTwo = [...st.lastTwo, norm].slice(-2);
     st.reasons.push(reason.toLowerCase());
-    if (st.reasons.length > 8) st.reasons.shift();
-    if (st.acked >= 2) return { ok: true, already_satisfied: true, acked: st.acked };
+    if (st.reasons.length > this.maxAckReasonHistory) st.reasons.shift();
     st.acked += 1;
+    // Once this cycle's required acks are in, reset the counter immediately
+    // rather than permanently disabling future holds for the session. Habits
+    // are "the default lens... over time" (HABIT_POLICY.md §1), not a
+    // one-time ritual — the daemon should hold again at the next
+    // hold_every_n_calls boundary and require 2 fresh acknowledgments, same
+    // as the first cycle.
+    if (st.acked >= this.requiredAcks) {
+      st.acked = 0;
+      return { ok: true, cycle_complete: true };
+    }
     return { ok: true, acked: st.acked };
   }
 }
@@ -653,10 +792,14 @@ function startSocketServer(enforcer) {
           case "get_habit":
             response = enforcer.getHabit(request.params?.name);
             break;
+          case "pick_prompt":
+            response = enforcer.pickPrompt(request.params?.session_id || "default");
+            break;
           case "tool_tick":
             response = enforcer.toolTick(
               request.params?.session_id || "default",
-              request.params?.tool || ""
+              request.params?.tool || "",
+              request.params?.file_path
             );
             break;
           case "submit_ack":
@@ -745,19 +888,17 @@ function startSocketServer(enforcer) {
   // Watchdog (mirrors the harness reference enforcer's validation_loop):
   // periodically re-validate the workspace and flag a stale heartbeat as
   // tamper-evidence. Runs inside the daemon, so it survives even with no client.
-  const HEARTBEAT_STALE_THRESHOLD = 600; // 10 min, per reference impl
-  const VALIDATION_INTERVAL = 30000;     // 30s
   setInterval(() => {
     const violations = enforcer.validate_workspace();
     if (violations.length) {
       enforcer._audit("watchdog", "validate_workspace", { denied: true, reason: violations.join("; ") });
       console.error(`[watchdog] WORKSPACE_VIOLATION: ${violations.join("; ")}`);
     }
-    if (enforcer.lastHeartbeat && Date.now() - enforcer.lastHeartbeat > HEARTBEAT_STALE_THRESHOLD * 1000) {
+    if (enforcer.lastHeartbeat && Date.now() - enforcer.lastHeartbeat > enforcer.heartbeatStaleSeconds * 1000) {
       enforcer._audit("watchdog", "heartbeat", { denied: true, reason: "STALE_HEARTBEAT" });
       console.error("[watchdog] STALE_HEARTBEAT: agent has not checked in");
     }
-  }, VALIDATION_INTERVAL);
+  }, enforcer.validationIntervalMs);
 
   const shutdown = () => {
     console.log("Shutting down enforcer daemon...");
@@ -770,12 +911,272 @@ function startSocketServer(enforcer) {
   process.on("SIGINT", shutdown);
 }
 
-// ─── Bootstrap ──────────────────────────────────────────────────────────────────
-const enforcer = new Enforcer();
-startSocketServer(enforcer);
+// ─── Multi-workspace support ───────────────────────────────────────────────────
+// One daemon process can serve multiple workspaces simultaneously. Each workspace
+// gets its own Enforcer instance, socket, and hold state. The workspace list is
+// read from AGENT_WORKSPACES (comma-separated paths) or a registry file.
+//
+// The primary workspace (AGENT_WORKSPACE) is always included. Additional
+// workspaces are spawned as separate socket servers on the same process.
 
-console.log(`ACK Enforcer daemon v${ACK_VERSION} started successfully.`);
-console.log("Root-owned system daemon with automatic restart support.");
-console.log(`Workspace: ${enforcer.cfg.WORKSPACE}`);
-console.log(`Config: ${enforcer.cfg.CONSTITUTION}`);
-console.log(`Habits directory: ${enforcer.cfg.HABITS_DIR}`);
+function resolveWorkspaces() {
+  const primary = process.env.AGENT_WORKSPACE
+    || path.join(process.env.HOME || "/root", ".agent-character-kit", "workspace");
+  const workspaces = new Set([primary]);
+
+  // AGENT_WORKSPACES = comma-separated additional workspace paths
+  const extra = process.env.AGENT_WORKSPACES;
+  if (extra) {
+    for (const ws of extra.split(",").map((s) => s.trim()).filter(Boolean)) {
+      workspaces.add(path.resolve(ws));
+    }
+  }
+
+  // Registry file: ~/.agent-character-kit/workspaces.json (JSON array of paths)
+  const registryPath = path.join(process.env.HOME || "/root", ".agent-character-kit", "workspaces.json");
+  try {
+    if (fs.existsSync(registryPath)) {
+      const list = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+      if (Array.isArray(list)) {
+        for (const ws of list) {
+          if (typeof ws === "string" && ws.trim()) workspaces.add(path.resolve(ws.trim()));
+        }
+      }
+    }
+  } catch { /* best-effort */ }
+
+  return [...workspaces];
+}
+
+function startMultiWorkspaceDaemon(workspaces) {
+  const servers = [];
+  const enforcers = new Map(); // workspace path -> Enforcer instance
+
+  for (const ws of workspaces) {
+    const envOverrides = { ...process.env, AGENT_WORKSPACE: ws };
+    // Each workspace gets its own socket under its .agent/ dir
+    const sock = process.env.ENFORCER_SOCKET && workspaces.length === 1
+      ? process.env.ENFORCER_SOCKET
+      : path.join(ws, ".agent", "enforcer.sock");
+
+    // Create a temporary Enforcer to read its config values
+    const tmpEnforcer = new Enforcer();
+    const enforcerCfg = tmpEnforcer.cfg;
+    // Override workspace-specific values
+    enforcerCfg.WORKSPACE = ws;
+    enforcerCfg.SOCKET = sock;
+    enforcerCfg.AGENT_DIR = path.join(ws, ".agent");
+    enforcerCfg.CONSTITUTION = path.join(enforcerCfg.AGENT_DIR, "constitution.yaml");
+    enforcerCfg.HABITS_DIR = process.env.ACK_HABITS_DIR || path.join(enforcerCfg.AGENT_DIR, "habits");
+    enforcerCfg.POLICY_FILE = process.env.ENFORCER_POLICY || path.join(enforcerCfg.AGENT_DIR, "enforcer.yaml");
+
+    // Re-create the Enforcer with the correct workspace config
+    const enforcer = new EnforcerWithConfig(enforcerCfg);
+    enforcers.set(ws, enforcer);
+
+    // Create a socket server for this workspace
+    const server = net.createServer((socket) => {
+      socket.setEncoding("utf8");
+      let buf = "";
+      socket.on("data", (data) => {
+        buf += data;
+        let idx;
+        while ((idx = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
+          if (!line) continue;
+          try {
+            const request = JSON.parse(line);
+
+            // Auth gate
+            const expected = process.env.ACK_AUTH_TOKEN;
+            if (expected && request.token !== expected) {
+              socket.write(JSON.stringify({ error: "unauthorized" }) + "\n");
+              continue;
+            }
+
+            let response;
+            switch (request.method) {
+            case "status":
+              response = { ok: true, version: ACK_VERSION, workspace: ws, socket: sock, habits: enforcer.habits.length, sessions: enforcer.HOLD_STATE.size };
+              break;
+            case "execute_tool":
+              response = enforcer.executeTool(request.params.tool, request.params);
+              break;
+            case "heartbeat":
+              response = enforcer.heartbeat();
+              break;
+            case "validate_workspace":
+              response = enforcer.validate_workspace();
+              break;
+            case "reload":
+              enforcer.reload();
+              response = { ok: true, character_hash: enforcer.characterHash };
+              break;
+            case "get_habit":
+              response = enforcer.getHabit(request.params?.name);
+              break;
+            case "pick_prompt":
+              response = enforcer.pickPrompt(request.params?.session_id || "default");
+              break;
+            case "tool_tick":
+              response = enforcer.toolTick(
+                request.params?.session_id || "default",
+                request.params?.tool || "",
+                request.params?.file_path
+              );
+              break;
+            case "submit_ack":
+              response = enforcer.submitAck(
+                request.params?.session_id || "default",
+                request.params?.statement || ""
+              );
+              break;
+            case "register_workspace":
+              // Register a new workspace at runtime
+              response = _registerWorkspace(request.params?.workspace);
+              break;
+            default:
+              response = { error: "unknown method" };
+            }
+
+            socket.write(JSON.stringify(response) + "\n");
+          } catch (err) {
+            socket.write(JSON.stringify({ error: "invalid request" }) + "\n");
+          }
+        }
+      });
+      socket.on("error", (err) => {
+        console.error("Socket error:", err);
+      });
+    });
+
+    // Listen on the socket
+    const isTcp = typeof sock === "string" && sock.startsWith("tcp://");
+    if (isTcp) {
+      const u = new URL(sock);
+      server.listen(parseInt(u.port, 10) || 8753, u.hostname || "127.0.0.1", () => {
+        console.log(`ACK Enforcer daemon v${ACK_VERSION} listening on ${sock} [workspace: ${ws}]`);
+      });
+    } else {
+      const sockDir = path.dirname(sock);
+      try { fssync.mkdirSync(sockDir, { recursive: true, mode: 0o700 }); } catch {}
+      try { fssync.chmodSync(sockDir, 0o700); } catch {}
+      server.listen(sock, () => {
+        try { fssync.chmodSync(sock, 0o600); } catch {}
+        console.log(`ACK Enforcer daemon v${ACK_VERSION} listening on ${sock} [workspace: ${ws}]`);
+      });
+    }
+
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE" && !isTcp) {
+        try {
+          fssync.unlinkSync(sock);
+          server.listen(sock, () => {
+            try { fssync.chmodSync(sock, 0o600); } catch {}
+            console.log(`ACK Enforcer daemon v${ACK_VERSION} listening on ${sock} [workspace: ${ws}]`);
+          });
+          return;
+        } catch {}
+      }
+      console.error(`Failed to start enforcer socket for workspace ${ws}:`, err);
+    });
+
+    servers.push(server);
+  }
+
+  // Watchdog for all workspaces
+  setInterval(() => {
+    for (const [ws, enforcer] of enforcers) {
+      const violations = enforcer.validate_workspace();
+      if (violations.length) {
+        enforcer._audit("watchdog", "validate_workspace", { denied: true, reason: violations.join("; ") });
+        console.error(`[watchdog] WORKSPACE_VIOLATION (${ws}): ${violations.join("; ")}`);
+      }
+      if (enforcer.lastHeartbeat && Date.now() - enforcer.lastHeartbeat > enforcer.heartbeatStaleSeconds * 1000) {
+        enforcer._audit("watchdog", "heartbeat", { denied: true, reason: "STALE_HEARTBEAT" });
+        console.error(`[watchdog] STALE_HEARTBEAT (${ws}): agent has not checked in`);
+      }
+    }
+  }, 30000);
+
+  // Graceful shutdown
+  const shutdown = () => {
+    console.log("Shutting down enforcer daemon...");
+    for (const server of servers) {
+      server.close();
+    }
+    console.log("Enforcer daemon stopped.");
+    process.exit(0);
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+
+  return { servers, enforcers };
+}
+
+// Register a new workspace at runtime (called via register_workspace RPC)
+function _registerWorkspace(wsPath) {
+  if (!wsPath || typeof wsPath !== "string") return { ok: false, error: "workspace path required" };
+  const absWs = path.resolve(wsPath);
+  const agentDir = path.join(absWs, ".agent");
+  try { fssync.mkdirSync(path.join(agentDir, "habits"), { recursive: true }); } catch {}
+
+  // Add to registry file
+  const registryPath = path.join(process.env.HOME || "/root", ".agent-character-kit", "workspaces.json");
+  try {
+    let list = [];
+    if (fs.existsSync(registryPath)) {
+      list = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+      if (!Array.isArray(list)) list = [];
+    }
+    if (!list.includes(absWs)) {
+      list.push(absWs);
+      fssync.mkdirSync(path.dirname(registryPath), { recursive: true });
+      fs.writeFileSync(registryPath, JSON.stringify(list, null, 2) + "\n");
+    }
+  } catch { /* best-effort */ }
+
+  return { ok: true, workspace: absWs, message: "workspace registered — restart daemon to serve it" };
+}
+
+// Enforcer variant that accepts an explicit config (for multi-workspace mode)
+class EnforcerWithConfig extends Enforcer {
+  constructor(cfg) {
+    // Skip the parent constructor's resolveConfig() by setting this.cfg first
+    super();
+    // Override with the provided config
+    this.cfg = cfg;
+    const fileConstitution = loadYaml(cfg.CONSTITUTION);
+    this.constitution = Object.assign({}, DEFAULT_CONSTITUTION, fileConstitution);
+    const fileHabits = this._loadHabits();
+    const byName = new Map();
+    for (const h of [...DEFAULT_HABITS, ...fileHabits]) byName.set(h.name, h);
+    this.habits = [...byName.values()];
+    const filePolicy = loadYaml(cfg.POLICY_FILE);
+    this.policy = Object.assign({}, filePolicy);
+    this.characterHash = this._hash(JSON.stringify({
+      c: this.constitution,
+      h: this.habits,
+      p: this.policy,
+    }));
+  }
+}
+
+// ─── Bootstrap ──────────────────────────────────────────────────────────────────
+const workspaces = resolveWorkspaces();
+if (workspaces.length > 1 || process.env.AGENT_WORKSPACES) {
+  // Multi-workspace mode
+  startMultiWorkspaceDaemon(workspaces);
+  console.log(`ACK Enforcer daemon v${ACK_VERSION} started in multi-workspace mode.`);
+  console.log(`Serving ${workspaces.length} workspaces: ${workspaces.join(", ")}`);
+} else {
+  // Single workspace mode (backward compatible)
+  const enforcer = new Enforcer();
+  startSocketServer(enforcer);
+  console.log(`ACK Enforcer daemon v${ACK_VERSION} started successfully.`);
+  console.log("Root-owned system daemon with automatic restart support.");
+  console.log(`Workspace: ${enforcer.cfg.WORKSPACE}`);
+  console.log(`Config: ${enforcer.cfg.CONSTITUTION}`);
+  console.log(`Habits directory: ${enforcer.cfg.HABITS_DIR}`);
+}

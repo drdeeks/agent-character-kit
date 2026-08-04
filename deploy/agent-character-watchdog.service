@@ -5,7 +5,7 @@ Requires=agent-character-monitor.service agent-enforcer.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/lib/agent-character-kit/ack_watchdog.py
+ExecStart=/usr/bin/env node /usr/local/lib/agent-character-kit/ack_watchdog.js
 Restart=always
 RestartSec=3
 User=root
@@ -15,7 +15,7 @@ Environment=ENFORCER_SOCKET=/run/agent-enforcer/main.sock
 Environment=AGENT_WORKSPACE=/var/lib/agent-character-kit/workspace
 Environment=ACK_MONITOR_PID=/var/lib/agent-character-kit/ack-monitor.pid
 Environment=ACK_WATCHDOG_PID=/var/lib/agent-character-kit/ack-watchdog.pid
-Environment=ACK_MONITOR_BIN=/usr/local/lib/agent-character-kit/ack_monitor.py
+Environment=ACK_MONITOR_BIN=/usr/local/lib/agent-character-kit/ack_monitor.js
 
 [Install]
 WantedBy=multi-user.target

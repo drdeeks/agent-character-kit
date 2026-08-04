@@ -46,7 +46,7 @@ The enforcement reinforces the reflection. The randomization prevents gaming. Th
 ## What You Get
 
 - **CORE**: `node/enforcer/agent_enforcer_daemon.js` — single enforcement engine, out-of-process, fail-closed
-- **COMPANIONS**: Thin clients (Hermes plugin, `aik hook` for Claude/Cursor/Gemini/Codex) — zero policy, just RPC
+- **COMPANIONS**: Thin clients (Hermes plugin, `ack hook` for Claude/Cursor/Gemini/Codex) — zero policy, just RPC
 - **Default character embedded** — works with zero config; disk config merges on top
 - **Harness-agnostic** — any agent with pre-tool-call hook works
 
@@ -56,7 +56,7 @@ The enforcement reinforces the reflection. The randomization prevents gaming. Th
 
 **This is a deterrent and a constant reminder, not a security boundary.**
 
-The gate catches plain destructive commands (`rm -rf /`, `sudo`, `git push --force`), blocks pasted secrets, and reminds the agent of its character on every block. It makes *doing the right thing* the default and *deviation* visible. That is the whole point: a lightweight, persistent nudge — not a cage.
+The gate hard-blocks the one non-negotiable floor (`rm -rf /`) and pasted secrets by default. Everything else opinionated — `sudo`, `git push --force`, `chmod 777` — is deliberately NOT a hard block; it lives as habit-level guidance instead (so it nudges rather than cages, and stays editable without touching the daemon — see `DEFAULT_CONSTITUTION` in `agent_enforcer_daemon.js`). The gate reminds the agent of its character on every block. It makes *doing the right thing* the default and *deviation* visible. That is the whole point: a lightweight, persistent nudge — not a cage.
 
 **It is explicitly NOT foolproof.** A determined agent can walk around it:
 
@@ -91,7 +91,7 @@ We do **not** try to close those gaps. Decoding and deep-inspecting every comman
 These are dumb pipes to the CORE. They do not enforce anything; they ask the daemon and obey. If the daemon is unreachable, the client **blocks** (fail-closed).
 
 1. **Hermes plugin** (`python/hermes_plugin/`) — an EXAMPLE companion, for agents that load Python plugins (`pre_tool_call` → daemon → allow/deny). It is one of several interchangeable companions, not "the" way.
-2. **Generic `aik hook`** (`node/bin/aik.js hook --framework <name>`) — for Claude / Cursor / Gemini / OpenCode / generic. Emits the framework's hook JSON; each call hits the daemon.
+2. **Generic `ack hook`** (`node/bin/ack.js hook <name>`) — for Claude / Cursor / Gemini / OpenCode / generic. Emits the framework's hook JSON; each call hits the daemon.
 
 > **No harness is definitive.** The CORE (daemon) is harness-agnostic. Pick the companion that matches YOUR agent's hook mechanism — Hermes is shown here only as one worked example among others.
 
@@ -124,8 +124,7 @@ sudo systemctl status agent-enforcer.service   # Active: running
 ```bash
 # install node first; macOS has no /run, so use a writable socket path:
 export ENFORCER_SOCKET=$HOME/Library/Caches/agent-enforcer/main.sock
-node node/bin/aik.js enforcer --install      # emits a launchd plist (KeepAlive)
-# or just run the supervisor directly:
+# no CLI-generated launchd plist yet; run the stdlib supervisor directly:
 python3 supervise.py &
 ```
 
@@ -150,7 +149,7 @@ sudo python3 supervise.py          # restarts daemon on death (3s backoff)
 
 ## Wire a COMPANION into your agent (examples — multiple harnesses shown)
 
-AIK is harness-agnostic: the daemon enforces; the companion is just a thin client. Below are TWO worked examples (Hermes and a generic `aik hook` framework). Showing several, not one — pick the companion that matches your agent. Do not treat any single harness as "the" install path.
+ACK is harness-agnostic: the daemon enforces; the companion is just a thin client. Below are TWO worked examples (Hermes and a generic `ack hook` framework). Showing several, not one — pick the companion that matches your agent. Do not treat any single harness as "the" install path.
 
 ### A. Hermes (Python-plugin companion)
 
@@ -159,17 +158,18 @@ cd python && pip install -e . && cd ..
 mkdir -p ~/.hermes/plugins/agent-character-kit
 cp -r python/hermes_plugin/* ~/.hermes/plugins/agent-character-kit/
 hermes plugins enable agent-character-kit   # grant tool-override (y) when asked
-# restart Hermes; pre_tool_call is now gated by the CORE daemon
+# restart Hermes; pre_tool_call + pre_llm_call are now gated/injected by the CORE daemon
 ```
 
 > **The venv gotcha (this is the #1 setup failure).** If the package isn't importable *in the venv the agent runs from*, the plugin can't reach the daemon and **fails closed on EVERYTHING** — even `ls` gets blocked with "enforcer unavailable." That looks like "the gate is broken" but it means the package simply isn't installed where Hermes looks. Install it into the venv (step 1 above) and restart.
 
-### B. Claude / Cursor / Gemini / OpenCode (generic `aik hook`)
+### B. Claude / Cursor / Gemini / OpenCode (generic `ack hook`)
 
 ```bash
-node node/bin/aik.js hook --framework claude --config   # prints the hook JSON
+node node/bin/ack.js hook claude --config   # prints the hook JSON
 # add it to the framework's hooks; it calls the daemon per tool call
 # swap `claude` for cursor | gemini | opencode | generic as needed
+# (framework is a POSITIONAL argument to `hook`, not a --framework flag)
 ```
 
 ---
@@ -180,15 +180,15 @@ Don't trust "it's enabled." Verify. These four checks cover the failure modes we
 
 | # | Check | Command | Expected | If wrong → means |
 |---|-------|---------|----------|------------------|
-| 1 | Daemon up | `systemctl is-active agent-enforcer` (or `node node/bin/aik.js enforcer --status`) | `active` / version+hash | Daemon not running → gate fails closed on everything |
+| 1 | Daemon up | `systemctl is-active agent-enforcer` (or `node node/bin/ack.js status`) | `active` / version+hash | Daemon not running → gate fails closed on everything |
 | 2 | Package in venv | `uv pip show agent-character-kit` (or `<venv>/bin/python -c "import agent_character_kit"`) | shows the package | Missing → fails closed on ALL calls (the venv gotcha) |
 | 3 | Allow path | run `ls` through the agent | executes | If blocked as "unavailable" → daemon unreachable OR package missing (1/2) |
-| 4 | Block path | run `sudo ls` (or `rm -rf /`) through the agent | **blocked** with a reason | If it *executes* → plugin not loaded / stale / not restarted |
+| 4 | Block path | run `rm -rf /` through the agent (the one hard-blocked default — `sudo` is deliberately NOT hard-blocked, see above) | **blocked** with a reason | If it *executes* → plugin not loaded / stale / not restarted |
 
 **Reading the results:**
-- `ls` runs **and** `sudo` is blocked → ✅ enforcing. You're done.
+- `ls` runs **and** `rm -rf /` is blocked → ✅ enforcing. You're done.
 - *Everything* blocked with "enforcer unavailable" → the plugin can't talk to the daemon. Almost always #1 (daemon down) or #2 (package not in the venv). Fix those, restart, re-check.
-- `sudo` *executes* (not blocked) → the plugin isn't active in this session. Either it wasn't enabled, the file is stale/corrupted, or the session wasn't restarted after install. Re-copy the plugin, re-enable, restart, re-check.
+- `rm -rf /` *executes* (not blocked) → the plugin isn't active in this session. Either it wasn't enabled, the file is stale/corrupted, or the session wasn't restarted after install. Re-copy the plugin, re-enable, restart, re-check.
 
 **Stale-plugin trap:** if you edit the plugin source and copy it over, the running session still uses the old in-memory version until you restart the agent process. A "fix" that doesn't take effect after a restart means the running process didn't reload — restart harder (kill the session PID, relaunch).
 

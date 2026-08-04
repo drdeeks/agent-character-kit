@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { processToolCall, generateConfig } from "../src/index.js";
+import { processToolCall, processPromptSubmit, generateConfig } from "../src/index.js";
 import { DocumentIndexer } from "../src/knowledge/indexer.js";
 import fs from "fs";
 import os from "os";
@@ -11,7 +11,13 @@ import path from "path";
 test("hook formats Claude allow decision", async () => {
   const { output, exitCode } = await processToolCall(
     { tool_name: "Bash", tool_input: { command: "ls" }, hook_event_name: "PreToolUse" },
-    { framework: "claude", enforcer: { validateTool: async () => ({ allowed: true }) } }
+    {
+      framework: "claude",
+      enforcer: {
+        validateTool: async () => ({ allowed: true }),
+        toolTick: async () => ({ hold: false }),
+      },
+    }
   );
   assert.equal(output.hookSpecificOutput.permissionDecision, "allow");
   assert.equal(exitCode, 0);
@@ -24,6 +30,52 @@ test("hook fails CLOSED when enforcer unreachable", async () => {
   );
   assert.equal(output.hookSpecificOutput.permissionDecision, "deny");
   assert.equal(exitCode, 2);
+});
+
+test("hook denies an allowed call that the daemon HOLDS (habit ack required)", async () => {
+  // Regression: processToolCall must actually call toolTick and surface a
+  // hold as a denial — this used to be wired for Hermes only.
+  const { output, exitCode } = await processToolCall(
+    { tool_name: "Bash", tool_input: { command: "ls" }, hook_event_name: "PreToolUse", session_id: "s1" },
+    {
+      framework: "claude",
+      enforcer: {
+        validateTool: async () => ({ allowed: true }),
+        toolTick: async () => ({ hold: true, reason: "acknowledge 2 habits." }),
+      },
+    }
+  );
+  assert.equal(output.hookSpecificOutput.permissionDecision, "deny");
+  assert.equal(output.hookSpecificOutput.permissionDecisionReason, "acknowledge 2 habits.");
+  assert.equal(exitCode, 2);
+});
+
+test("processPromptSubmit injects rotating habit prompts, never a habit name", async () => {
+  const { output } = await processPromptSubmit(
+    { hook_event_name: "UserPromptSubmit", session_id: "s1" },
+    {
+      framework: "claude",
+      enforcer: {
+        pickPrompt: async () => ({
+          prompts: [
+            { prompt: "Did I validate this?", logic: "Claims aren't facts.", evidence: "" },
+          ],
+        }),
+      },
+    }
+  );
+  const ctx = output.hookSpecificOutput.additionalContext;
+  assert.match(ctx, /Did I validate this\?/);
+  assert.doesNotMatch(ctx, /name/i);
+});
+
+test("processPromptSubmit returns empty output when there's nothing to inject", async () => {
+  const { output, exitCode } = await processPromptSubmit(
+    { hook_event_name: "UserPromptSubmit", session_id: "s1" },
+    { framework: "claude", enforcer: { pickPrompt: async () => ({ prompts: [] }) } }
+  );
+  assert.deepEqual(output, {});
+  assert.equal(exitCode, 0);
 });
 
 test("generateConfig emits claude/cursor/gemini blocks", () => {

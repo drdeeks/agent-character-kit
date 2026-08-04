@@ -13,11 +13,19 @@ This directory is the agent's *external* knowledge source.
 dedicated directories (`.agent/`, `memory/`, `knowledge/`) and are **never indexed as
 corpus**. Indexing only ever reads what you place here.
 
-Index it with:
+Index it via the library (not currently exposed as an `ack` CLI command —
+knowledge indexing/semantic search is a separate skill from character
+enforcement, see `HABIT_POLICY.md` §3):
 
-```
-aik index run          # defaults to ./corpus
-aik index run ./corpus
-aik semantic index      # build vectors for semantic search
-aik semantic hybrid "your question"
+```js
+import { DocumentIndexer, SemanticSearch } from "agent-character-kit";
+
+const indexer = new DocumentIndexer(process.cwd());
+await indexer.init();
+await indexer.indexDirectory("./corpus", {});   // or indexer.indexFile(path, {})
+const keywordResults = await indexer.search("your question");
+
+const semantic = new SemanticSearch(process.cwd());
+await semantic.init();
+await semantic.hybridSearch("your question", keywordResults);
 ```

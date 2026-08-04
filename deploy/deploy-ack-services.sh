@@ -11,7 +11,8 @@
 #   - The daemon has the toolTick/submitAck RPCs (repo node/ is current).
 #
 # What it does:
-#   1. Copies ack_monitor.py + ack_watchdog.py to /usr/local/lib/agent-character-kit (root-owned).
+#   1. Copies ack_monitor.js + ack_watchdog.js (Node-native; no Python
+#      required for this trio) to /usr/local/lib/agent-character-kit (root-owned).
 #   2. Installs the two systemd units.
 #   3. Enables + starts both (Restart=always -> self-healing).
 #
@@ -22,16 +23,16 @@ set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_LIB="/usr/local/lib/agent-character-kit"
-MON_BIN="$INSTALL_LIB/ack_monitor.py"
-WATCH_BIN="$INSTALL_LIB/ack_watchdog.py"
+MON_BIN="$INSTALL_LIB/ack_monitor.js"
+WATCH_BIN="$INSTALL_LIB/ack_watchdog.js"
 
 [ "$(id -u)" -eq 0 ] || { echo "ERROR: run as root (sudo bash $0)"; exit 1; }
 
 echo ">> Installing ACK monitor + watchdog (root-owned, self-healing)..."
 
 install -d -o root -g root -m 0755 "$INSTALL_LIB"
-install -o root -g root -m 0644 "$SRC_DIR/deploy/ack_monitor.py" "$MON_BIN"
-install -o root -g root -m 0644 "$SRC_DIR/deploy/ack_watchdog.py" "$WATCH_BIN"
+install -o root -g root -m 0644 "$SRC_DIR/deploy/ack_monitor.js" "$MON_BIN"
+install -o root -g root -m 0644 "$SRC_DIR/deploy/ack_watchdog.js" "$WATCH_BIN"
 install -o root -g root -m 0644 "$SRC_DIR/deploy/agent-character-monitor.service" /etc/systemd/system/agent-character-monitor.service
 install -o root -g root -m 0644 "$SRC_DIR/deploy/agent-character-watchdog.service" /etc/systemd/system/agent-character-watchdog.service
 
