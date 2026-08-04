@@ -5,8 +5,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
+import { fileURLToPath } from "node:url";
 
-const REPO = path.resolve(process.cwd());
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(__dirname, "..", ".."); // package root, regardless of CWD
 const INSTALL = path.join(REPO, "node", "bin", "install.js");
 const DAEMON = path.join(REPO, "node", "enforcer", "agent_enforcer_daemon.js");
 

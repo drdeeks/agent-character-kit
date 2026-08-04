@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const REPO = path.resolve(process.cwd());
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(__dirname, "..", ".."); // package root, regardless of CWD
 const INSTALL = path.join(REPO, "node", "bin", "install.js");
 
 test("install.js exists and is valid JavaScript", { timeout: 5000 }, async () => {

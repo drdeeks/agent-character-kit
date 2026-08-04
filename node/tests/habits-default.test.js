@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const REPO = path.resolve(process.cwd());
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.resolve(__dirname, "..", ".."); // package root, regardless of CWD
 const SRC = path.join(REPO, "python", "example_workspace", ".agent", "habits");
 
 // The decision-logic habits extracted from the user's named sources:
