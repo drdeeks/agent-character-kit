@@ -17,18 +17,11 @@ node/node_modules/
 .DS_Store
 Thumbs.db
 
-# Python cache - explicit paths
-python/__pycache__/
-python/*.pyc
-python/*.pyo
-python/**/__pycache__/
-python/**/*.pyc
-python/**/*.pyo
-
-# Deploy Python cache
-deploy/__pycache__/
-deploy/*.pyc
-deploy/*.pyo
+# Python cache - anywhere in the tree, any depth
+**/__pycache__
+**/__pycache__/**
+**/*.pyc
+**/*.pyo
 
 # Environment files
 .env

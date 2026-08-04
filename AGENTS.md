@@ -429,6 +429,20 @@ block a release on backfilling history that predates it).
   deliberately per `HABIT_POLICY.md` §3 (knowledge/memory is a separate
   skill from character enforcement) rather than assuming it should be
   restored to a CLI; revisit if that assumption is wrong.
+- **No middle ground between user-mode and full root-mode.** Today it's
+  binary: same-UID user-mode (agent can kill/edit the daemon and its config
+  — a reminder, not a boundary) or literal root (agent can't touch it at
+  all). A dedicated non-root service account (e.g. a system user
+  `ack-enforcer` that owns the daemon + config, distinct from both the human
+  operator and the agent's own UID) would give real write-protection without
+  requiring full root privileges. Not built.
+- **Socket.dev supply-chain scan not yet run against this repo.** `socket`
+  CLI is installed but has never been authenticated in any environment this
+  work happened in (`socket whoami` → 401 / `token: (not set)`) — every
+  Socket command that matters (`scan create`, `package score`, etc.)
+  requires `socket login` first, which needs an interactive
+  browser/token flow no agent session can complete unattended. Run it once
+  a human has logged in: `socket scan create --json`.
 
 ---
 
