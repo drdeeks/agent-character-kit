@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # Kept in sync with node/src/version.js / /VERSION at repo root -- bump all
 # together. Currently unused within this module (no RPC or log line reads
 # it) but kept for parity with the Node side's ACK_VERSION.
-ACK_VERSION = "1.1.0"
+ACK_VERSION = "1.2.0"
 
 # Optional env escape hatch: set ACK_DISABLE=1 to turn the plugin into a
 # no-op (never use in production — it defeats the purpose).

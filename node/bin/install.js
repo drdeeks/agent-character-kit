@@ -82,6 +82,52 @@ function yesNo(rl, q, def = true) {
   return ask(rl, `${q} [y/n]`, def ? "y" : "n").then((a) => /^(y|yes)$/i.test(a || (def ? "y" : "n")));
 }
 
+// ─── existing-workspace discovery (SOUL.md / .agent/constitution.yaml) ────────
+// Bounded, explicit-root-only walk (never scans the whole filesystem, never
+// runs without a root the user gave us) -- looks for the two markers that
+// identify an established agent workspace anywhere in this ecosystem: a
+// SOUL.md (crew-hierarchy style identity file) or .agent/constitution.yaml
+// (ACK's own marker). Skips VCS/dependency/build dirs so a scan of a real
+// projects/ tree finishes in well under a second, not minutes.
+const SCAN_SKIP_DIRS = new Set([
+  "node_modules", ".git", ".hg", ".svn", "__pycache__", ".venv", "venv",
+  "dist", "build", ".next", ".cache", ".trash",
+]);
+const SCAN_MAX_DEPTH = 6;
+
+function discoverAgentWorkspaces(rootDir, maxDepth = SCAN_MAX_DEPTH) {
+  const found = [];
+  const root = path.resolve(rootDir);
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
+    return found;
+  }
+  const walk = (dir, depth) => {
+    if (depth > maxDepth) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // permission denied etc. -- skip silently, this is a best-effort scan
+    }
+    const hasSoul = entries.some((e) => e.isFile() && e.name === "SOUL.md");
+    const hasConstitution = entries.some((e) => e.isDirectory() && e.name === ".agent") &&
+      fs.existsSync(path.join(dir, ".agent", "constitution.yaml"));
+    if (hasSoul || hasConstitution) {
+      found.push({
+        dir,
+        marker: hasSoul ? "SOUL.md" : ".agent/constitution.yaml",
+      });
+      return; // don't descend into an already-identified workspace
+    }
+    for (const e of entries) {
+      if (!e.isDirectory() || SCAN_SKIP_DIRS.has(e.name) || e.name.startsWith(".")) continue;
+      walk(path.join(dir, e.name), depth + 1);
+    }
+  };
+  walk(root, 0);
+  return found;
+}
+
 // ─── socket resolution (shared by daemon, companion, monitor, watchdog) ───────
 function resolveSocket(mode, ws) {
   const s = String(mode || "unix").toLowerCase();
@@ -333,50 +379,50 @@ async function main(callerOpts) {
   }
 
   let ws, socketMode, harness, asRoot, doMonitor, doWatchdog, doCompanion, doPython, doStartNow, doWireClaudeConfig;
+  // Each entry: { ws, socketMode, harness, asRoot, rootSocket, doMonitor,
+  // doWatchdog, doCompanion, doPython, doStartNow, doWireClaudeConfig }.
+  // One entry per harness in interactive multi-harness mode; exactly one
+  // entry for --yes/--all (unchanged behavior from before).
+  const plannedInstalls = [];
+  let rootSocketGlobal = null;
 
   // --all: root mode, all components, non-interactive
   if (opts.all) {
     opts.yes = true;
-    ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
-    socketMode = opts.socket || "unix";
     harness = opts.harness || "generic";
-    asRoot = true;
-    doMonitor = true;
-    doWatchdog = true;
-    doCompanion = true;
-    doPython = opts.python !== false;
-    doStartNow = opts.start !== false;
-    doWireClaudeConfig = harness === "claude" && opts.writeClaudeConfig !== false;
+    plannedInstalls.push({
+      ws: opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace"),
+      socketMode: opts.socket || "unix",
+      harness,
+      asRoot: true,
+      rootSocket: null,
+      doMonitor: true,
+      doWatchdog: true,
+      doCompanion: true,
+      doPython: opts.python !== false,
+      doStartNow: opts.start !== false,
+      doWireClaudeConfig: harness === "claude" && opts.writeClaudeConfig !== false,
+    });
   } else if (opts.yes) {
-    ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
-    socketMode = opts.socket || "unix";
     harness = opts.harness || "generic";
-    asRoot = opts.root ?? false;
-    doMonitor = opts.monitor;
-    doWatchdog = opts.watchdog;
-    doCompanion = opts.companion;
-    doPython = opts.python ?? false;
-    doStartNow = opts.start !== false;
-    doWireClaudeConfig = harness === "claude" && opts.writeClaudeConfig !== false;
+    plannedInstalls.push({
+      ws: opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace"),
+      socketMode: opts.socket || "unix",
+      harness,
+      asRoot: opts.root ?? false,
+      rootSocket: null,
+      doMonitor: opts.monitor,
+      doWatchdog: opts.watchdog,
+      doCompanion: opts.companion,
+      doPython: opts.python ?? false,
+      doStartNow: opts.start !== false,
+      doWireClaudeConfig: harness === "claude" && opts.writeClaudeConfig !== false,
+    });
   } else {
     console.log("\n=== Agent Character Kit — interactive install ===\n");
-    console.log("This sets up the enforcement daemon, your harness companion,");
+    console.log("This sets up the enforcement daemon, your harness companion(s),");
     console.log("and the acknowledgment monitor/watchdog. Every step is optional");
     console.log("to skip; press Enter to accept the default.\n");
-
-    console.log("The workspace holds this install's habits, socket, and constitution.");
-    console.log("Use one per project if you want isolated character/config per repo.");
-    ws = await ask(rl, "Where should the agent workspace live?",
-      path.join(os.homedir(), ".agent-character-kit", "workspace"));
-    const absWs = path.resolve(ws);
-
-    console.log("\nunix = local socket file (default, fastest, same-host only).");
-    console.log("tcp  = network socket (needed on Windows, or if the agent runs");
-    console.log("       in a different container/host than the daemon).");
-    socketMode = await ask(rl, "Socket mode? [unix | tcp]", "unix");
-
-    console.log("\nThe harness is which agent tool will call the companion hook.");
-    harness = (await ask(rl, "Which harness? [claude | cursor | gemini | opencode | hermes | generic]", "generic")).toLowerCase();
 
     console.log("\n⚠ SECURITY-RELEVANT — read before answering:");
     console.log("  no  (user-mode): daemon runs as YOUR user, same as the agent.");
@@ -384,194 +430,305 @@ async function main(callerOpts) {
     console.log("      edit its config directly (same-UID = same permissions).");
     console.log("      This is a reminder/deterrent, not a hard boundary.");
     console.log("  yes (root-mode): daemon + monitor + watchdog run as root via");
-    console.log("      systemd. The agent's tools run as a non-root user with no");
-    console.log("      permission to touch a root-owned process — this is the");
-    console.log("      only mode where the enforcement is actually outside the");
-    console.log("      agent's reach. Requires sudo now and answers 'y' below.");
+    console.log("      systemd — ONE shared instance for the whole machine, every");
+    console.log("      harness's companion below points at the same root socket.");
+    console.log("      This actually runs");
+    console.log(`        sudo bash ${path.join(REPO, "deploy", "deploy-agent-enforcer.sh")}`);
+    console.log("      right now if you say yes here — it will prompt for your");
+    console.log("      sudo password itself, no separate manual step afterward.");
     console.log("  Full comparison: AGENTS.md § User-mode vs Root-mode.");
-    asRoot = await yesNo(rl, "Install as ROOT (system-wide, self-respawning)?", false);
+    const asRootGlobal = await yesNo(rl, "Install as ROOT (system-wide, self-respawning)?", false);
 
-    console.log("\nThe companion is the hook config your harness calls on every");
-    console.log("tool use — without it, the daemon runs but nothing asks it anything.");
-    doCompanion = await yesNo(rl, "Set up the harness companion (thin client hook config)?", true);
-
-    doWireClaudeConfig = false;
-    if (doCompanion && harness === "claude") {
-      console.log("\nWithout this, the hook config above is only printed to your screen --");
-      console.log("Claude Code never actually calls it. Writing it in wires enforcement");
-      console.log("into every tool call for real (merges into your existing hooks, does");
-      console.log("not touch anything else in the file).");
-      doWireClaudeConfig = await yesNo(rl, `Write the PreToolUse hook into ${claudeSettingsPath()} now?`, true);
+    if (asRootGlobal) {
+      const deployScript = path.join(REPO, "deploy", "deploy-agent-enforcer.sh");
+      console.log(`\nRunning: sudo bash ${deployScript}`);
+      console.log("(you'll be prompted for your sudo password now if needed)\n");
+      const result = spawnSync("sudo", ["bash", deployScript], { stdio: "inherit" });
+      if (result.error || result.status !== 0) {
+        console.error(
+          "\nRoot deploy failed" + (result.status != null ? ` (exit ${result.status})` : "") +
+          ". Aborting — fix the error above and re-run `ack install`."
+        );
+        rl.close();
+        process.exit(1);
+      }
+      rootSocketGlobal = process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock";
+      console.log(`\nRoot daemon installed and running. Shared socket: ${rootSocketGlobal}\n`);
     }
 
-    console.log("\nThe monitor credits habit acknowledgments from the ack log so the");
-    console.log("periodic hold can lift. Skipping it means holds never clear.");
-    doMonitor = await yesNo(rl, "Set up the acknowledgment monitor (credits daemon from ack log)?", true);
+    console.log("Which harness(es) do you use on this machine? You'll confirm a");
+    console.log("workspace for each one next (skipped in root mode — they all share");
+    console.log("the one root daemon above). Leave blank when you've added them all.");
+    const harnesses = [];
+    while (true) {
+      const prompt = harnesses.length
+        ? "Another harness? [claude | cursor | gemini | opencode | hermes | generic] (blank = done)"
+        : "First harness [claude | cursor | gemini | opencode | hermes | generic]";
+      const h = (await ask(rl, prompt, harnesses.length ? "" : "claude")).toLowerCase().trim();
+      if (!h) break;
+      harnesses.push(h);
+    }
+    if (harnesses.length === 0) harnesses.push("generic");
 
-    console.log("\nThe watchdog restarts the monitor if it dies — recommended whenever");
-    console.log("you're running the monitor at all.");
-    doWatchdog = await yesNo(rl, "Set up the monitor watchdog (revives monitor if it dies)?", true);
+    let doMonitorGlobal = false, doWatchdogGlobal = false;
+    if (!asRootGlobal) {
+      console.log("\nThe monitor credits habit acknowledgments from the ack log so the");
+      console.log("periodic hold can lift. Skipping it means holds never clear.");
+      doMonitorGlobal = await yesNo(rl, "Set up the acknowledgment monitor (credits daemon from ack log)?", true);
+
+      console.log("\nThe watchdog restarts the monitor if it dies — recommended whenever");
+      console.log("you're running the monitor at all.");
+      doWatchdogGlobal = await yesNo(rl, "Set up the monitor watchdog (revives monitor if it dies)?", true);
+    } else {
+      console.log("\n(monitor + watchdog already running as root via systemd, from the");
+      console.log("deploy step above — not asking again.)");
+    }
 
     console.log("\nOnly needed if a companion you use is Python-based (e.g. the Hermes");
     console.log("plugin). Node-only companions (ack hook) don't need this.");
-    doPython = await yesNo(rl, "Install Python ACK bindings (optional pip package)?", false);
+    const doPythonGlobal = await yesNo(rl, "Install Python ACK bindings (optional pip package)?", false);
 
-    console.log("\nThis actually launches the daemon (and monitor/watchdog if selected)");
-    console.log("as background processes right now. Say no to only write config/env");
-    console.log("files and start everything yourself later.");
-    doStartNow = await yesNo(rl, "Start the daemon/monitor/watchdog now?", true);
+    let doStartNowGlobal = false;
+    if (!asRootGlobal) {
+      console.log("\nThis actually launches the daemon (and monitor/watchdog if selected)");
+      console.log("as background processes right now. Say no to only write config/env");
+      console.log("files and start everything yourself later.");
+      doStartNowGlobal = await yesNo(rl, "Start the daemon/monitor/watchdog now?", true);
+    }
 
-    // Habit creator — create as many as wanted, then continue the install.
-    while (await yesNo(rl, "Create a habit now (interactive)?", false)) {
-      try {
-        await createHabit(rl, absWs);
-      } catch (e) {
-        console.log("Habit not created:", e.message);
+    let firstNonRootWs = null;
+    for (const h of harnesses) {
+      let hWs = null;
+      if (!asRootGlobal) {
+        console.log(`\n--- Workspace for '${h}' ---`);
+        console.log("Point this at an EXISTING agent workspace (I can scan a directory");
+        console.log("for SOUL.md / .agent/constitution.yaml and let you pick one), or");
+        console.log("enter/create a path manually.");
+        const mode = (await ask(rl, "Scan for an existing workspace, or enter manually? [scan|manual]", "manual")).toLowerCase();
+        if (mode.startsWith("s")) {
+          const scanRoot = await ask(rl, "Directory to scan", os.homedir());
+          const found = discoverAgentWorkspaces(scanRoot);
+          if (found.length === 0) {
+            console.log(`No SOUL.md / .agent/constitution.yaml found under ${scanRoot}.`);
+            hWs = await ask(rl, "Workspace path", path.join(os.homedir(), ".agent-character-kit", h));
+          } else {
+            console.log("Found:");
+            found.forEach((f, i) => console.log(`  ${i + 1}) ${f.dir}  (${f.marker})`));
+            const pick = await ask(rl, "Pick a number, or type a different path", "1");
+            const idx = parseInt(pick, 10);
+            hWs = (!Number.isNaN(idx) && found[idx - 1]) ? found[idx - 1].dir : pick;
+          }
+        } else {
+          hWs = await ask(rl, "Workspace path", path.join(os.homedir(), ".agent-character-kit", h));
+        }
+        hWs = path.resolve(hWs);
+        if (!firstNonRootWs) firstNonRootWs = hWs;
+      }
+
+      let hWireClaude = false;
+      if (h === "claude") {
+        console.log("\nWithout this, the hook config is only printed — Claude Code never");
+        console.log("actually calls it. Writing it in wires enforcement for real (merges");
+        console.log("with your existing hooks, doesn't touch anything else).");
+        hWireClaude = await yesNo(rl, `Write the PreToolUse hook into ${claudeSettingsPath()} now?`, true);
+      }
+
+      plannedInstalls.push({
+        ws: hWs,
+        socketMode: "unix",
+        harness: h,
+        asRoot: asRootGlobal,
+        rootSocket: rootSocketGlobal,
+        doMonitor: doMonitorGlobal,
+        doWatchdog: doWatchdogGlobal,
+        doCompanion: true,
+        doPython: doPythonGlobal,
+        doStartNow: doStartNowGlobal,
+        doWireClaudeConfig: hWireClaude,
+      });
+    }
+
+    // Habit creator — ask once, applies to the first user-mode workspace
+    // (root mode's constitution/habits live in the shared root workspace,
+    // already seeded by deploy-agent-enforcer.sh).
+    if (firstNonRootWs) {
+      while (await yesNo(rl, "Create a habit now (interactive)?", false)) {
+        try {
+          await createHabit(rl, firstNonRootWs);
+        } catch (e) {
+          console.log("Habit not created:", e.message);
+        }
       }
     }
   }
 
   rl.close();
 
-  const absWs = path.resolve(ws);
-  const sock = resolveSocket(socketMode, absWs);
-  const ackLog = path.join(absWs, ".agent", "ack.jsonl");
-  const vars = {
-    AGENT_WORKSPACE: absWs,
-    ENFORCER_SOCKET: sock,
-    ACK_ACK_LOG: ackLog,
-    ACK_MONITOR_PID: path.join(absWs, ".agent", "ack-monitor.pid"),
-    ACK_MONITOR_STATE: path.join(absWs, ".agent", "ack-monitor.pos"),
-    ACK_WATCHDOG_PID: path.join(absWs, ".agent", "ack-watchdog.pid"),
-    ACK_MONITOR_BIN: MONITOR,
-  };
+  // Multiple harnesses can share one workspace (always true in root mode --
+  // there's exactly one shared root workspace). The daemon/env/habits/
+  // monitor/watchdog for a workspace only need provisioning ONCE per run;
+  // every harness after the first one sharing that workspace just wires its
+  // own companion against what's already there.
+  const seenWorkspaces = new Map(); // absWs -> { sock, wsEnv, daemonPid, ackLog }
+  const summaries = [];
+  let anyPython = false;
 
-  // 1. workspace scaffold
-  fs.mkdirSync(path.join(absWs, ".agent", "habits"), { recursive: true });
-  seedHabits(absWs);
-  writeConstitution(absWs);
+  for (const inst of plannedInstalls) {
+    ({ harness, asRoot, doMonitor, doWatchdog, doCompanion, doPython, doStartNow, doWireClaudeConfig, socketMode } = inst);
+    if (doPython) anyPython = true;
 
-  // 2. single .env every component reads — workspace-scoped only. A shared
-  // repo-root .env was tried before and silently clobbered whichever agent
-  // installed most recently (its real ACK_AUTH_TOKEN overwriting the prior
-  // agent's, with no warning) since every `ack install` in the same checkout
-  // wrote to the same path. Per-workspace .env is what every component
-  // actually reads (see buildSelfContainedHookCommand below); there's no
-  // reason to also write a collision-prone shared copy.
-  const wsEnv = path.join(absWs, ".env");
-  // Generate a shared auth token so only the client holding it can talk to the
-  // daemon socket. crypto.randomUUID is available on Node >= 14.17.
-  const crypto = await import("crypto");
-  const ackToken = crypto.randomUUID();
-  const envLines = {
-    AGENT_WORKSPACE: absWs,
-    ENFORCER_SOCKET: sock,
-    ACK_ACK_LOG: ackLog,
-    ACK_AUTH_TOKEN: ackToken,
-    ACK_MONITOR_PID: vars.ACK_MONITOR_PID,
-    ACK_MONITOR_STATE: vars.ACK_MONITOR_STATE,
-    ACK_WATCHDOG_PID: vars.ACK_WATCHDOG_PID,
-    ACK_MONITOR_BIN: MONITOR,
-  };
-  writeEnvFile(wsEnv, envLines);
+    const absWs = asRoot
+      ? (process.env.AGENT_WORKSPACE || "/var/lib/agent-character-kit/workspace")
+      : path.resolve(inst.ws);
+    const sock = asRoot
+      ? (inst.rootSocket || process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock")
+      : resolveSocket(socketMode, absWs);
+    const ackLog = path.join(absWs, ".agent", "ack.jsonl");
+    const wsEnv = path.join(absWs, ".env");
 
-  // 3. daemon
-  let daemonPid = null;
-  if (doStartNow) {
-    daemonPid = await launchDaemon(vars);
-  }
+    let daemonPid = null;
+    let monitorMsg;
+    let alreadyProvisioned = seenWorkspaces.has(absWs);
 
-  // 4. companion (thin client hook config for any harness)
-  let companionMsg = "skipped";
-  if (doCompanion) {
-    const { generateConfig } = await import("../src/index.js");
-    // Absolute path to this install's own bin, never "npx ack hook" -- if
-    // the package isn't yet globally installed/linked (true for every fresh
-    // install, since we wire the hook BEFORE step 7's npm-install prompt),
-    // npx silently falls back to fetching an unrelated public package
-    // instead of running this CLI. Verified live: exactly this happened in
-    // testing.
-    const hookCmd = opts.hookCommand || `node ${shellQuote(ACK_BIN)} hook`;
-    const config = generateConfig(harness, hookCmd);
-    if (harness === "claude") {
-      // Rewrite the printed command to the self-contained (env-sourcing)
-      // form so what we show matches exactly what gets written below --
-      // no silent difference between "what the user sees" and "what runs".
-      const rawCmd = config.hooks.PreToolUse[0].hooks[0].command;
-      config.hooks.PreToolUse[0].hooks[0].command = buildSelfContainedHookCommand(rawCmd, wsEnv);
-    }
-    companionMsg = `Hook config for ${harness}:\n${JSON.stringify(config, null, 2)}`;
-    if (harness === "claude") {
-      if (doWireClaudeConfig) {
-        const wrapped = config.hooks.PreToolUse[0].hooks[0].command;
-        const settingsPath = writeClaudeHookConfig(wrapped);
-        companionMsg += `\n\nWired into ${settingsPath} (PreToolUse hook, merged with existing config).`;
+    if (asRoot) {
+      monitorMsg = "root mode: daemon + monitor + watchdog already running via systemd";
+      alreadyProvisioned = true; // root workspace is provisioned by deploy-agent-enforcer.sh, not here
+    } else if (alreadyProvisioned) {
+      monitorMsg = `already running for this workspace (shared with an earlier harness in this run: ${seenWorkspaces.get(absWs).harnesses.join(", ")})`;
+      daemonPid = seenWorkspaces.get(absWs).daemonPid;
+    } else {
+      const vars = {
+        AGENT_WORKSPACE: absWs,
+        ENFORCER_SOCKET: sock,
+        ACK_ACK_LOG: ackLog,
+        ACK_MONITOR_PID: path.join(absWs, ".agent", "ack-monitor.pid"),
+        ACK_MONITOR_STATE: path.join(absWs, ".agent", "ack-monitor.pos"),
+        ACK_WATCHDOG_PID: path.join(absWs, ".agent", "ack-watchdog.pid"),
+        ACK_MONITOR_BIN: MONITOR,
+      };
+
+      // 1. workspace scaffold
+      fs.mkdirSync(path.join(absWs, ".agent", "habits"), { recursive: true });
+      seedHabits(absWs);
+      writeConstitution(absWs);
+
+      // 2. single .env every component reads — workspace-scoped only. A
+      // shared repo-root .env was tried before and silently clobbered
+      // whichever agent installed most recently (its real ACK_AUTH_TOKEN
+      // overwriting the prior agent's, with no warning) since every `ack
+      // install` in the same checkout wrote to the same path. Per-workspace
+      // .env is what every component actually reads (see
+      // buildSelfContainedHookCommand below); no reason to also write a
+      // collision-prone shared copy.
+      const crypto = await import("crypto");
+      const ackToken = crypto.randomUUID();
+      writeEnvFile(wsEnv, {
+        AGENT_WORKSPACE: absWs,
+        ENFORCER_SOCKET: sock,
+        ACK_ACK_LOG: ackLog,
+        ACK_AUTH_TOKEN: ackToken,
+        ACK_MONITOR_PID: vars.ACK_MONITOR_PID,
+        ACK_MONITOR_STATE: vars.ACK_MONITOR_STATE,
+        ACK_WATCHDOG_PID: vars.ACK_WATCHDOG_PID,
+        ACK_MONITOR_BIN: MONITOR,
+      });
+
+      // 3. daemon
+      if (doStartNow) {
+        daemonPid = await launchDaemon(vars);
+      }
+
+      // 5. monitor + watchdog
+      const procs = {};
+      if (doStartNow) {
+        if (doMonitor) {
+          const m = spawn("node", [MONITOR], { env: { ...process.env, ...vars }, detached: true, stdio: ["ignore", "ignore", "ignore"] });
+          m.unref();
+          procs.monitorPid = m.pid;
+        }
+        if (doWatchdog) {
+          const w = spawn("node", [WATCHDOG], { env: { ...process.env, ...vars }, detached: true, stdio: ["ignore", "ignore", "ignore"] });
+          w.unref();
+          procs.watchdogPid = w.pid;
+        }
+        monitorMsg = (procs.monitorPid || procs.watchdogPid)
+          ? Object.entries(procs).map(([k, v]) => `${k} ${v}`).join(", ")
+          : "skipped (not requested)";
       } else {
-        companionMsg += `\n\nNot wired automatically (declined) -- add the above to ${claudeSettingsPath()} yourself, or re-run install.`;
+        monitorMsg = (doMonitor || doWatchdog) ? "configured, not started (see manual start commands below)" : "skipped";
       }
     }
+
+    seenWorkspaces.set(absWs, {
+      sock, wsEnv, daemonPid,
+      harnesses: [...(seenWorkspaces.get(absWs)?.harnesses || []), harness],
+    });
+
+    // 4. companion (thin client hook config for any harness) — always
+    // per-harness, even when the workspace/daemon is shared with another
+    // harness from this same run.
+    let companionMsg = "skipped";
+    if (doCompanion) {
+      const { generateConfig } = await import("../src/index.js");
+      // Absolute path to this install's own bin, never "npx ack hook" -- if
+      // the package isn't yet globally installed/linked (true for every
+      // fresh install, since we wire the hook BEFORE the npm-install
+      // prompt), npx silently falls back to fetching an unrelated public
+      // package instead of running this CLI. Verified live: exactly this
+      // happened in testing.
+      const hookCmd = opts.hookCommand || `node ${shellQuote(ACK_BIN)} hook`;
+      const config = generateConfig(harness, hookCmd);
+      if (harness === "claude") {
+        const rawCmd = config.hooks.PreToolUse[0].hooks[0].command;
+        config.hooks.PreToolUse[0].hooks[0].command = asRoot
+          // Root mode: no per-workspace .env / auth token (deploy-agent-enforcer.sh
+          // doesn't set one, and the daemon only enforces one if present) --
+          // just point directly at the shared root socket.
+          ? `env ENFORCER_SOCKET=${shellQuote(sock)} ${rawCmd}`
+          : buildSelfContainedHookCommand(rawCmd, wsEnv);
+      }
+      companionMsg = `Hook config for ${harness}:\n${JSON.stringify(config, null, 2)}`;
+      if (harness === "claude") {
+        if (doWireClaudeConfig) {
+          const wrapped = config.hooks.PreToolUse[0].hooks[0].command;
+          const settingsPath = writeClaudeHookConfig(wrapped);
+          companionMsg += `\n\nWired into ${settingsPath} (PreToolUse hook, merged with existing config).`;
+        } else {
+          companionMsg += `\n\nNot wired automatically (declined) -- add the above to ${claudeSettingsPath()} yourself, or re-run install.`;
+        }
+      }
+    }
+
+    summaries.push({ harness, absWs, sock, ackLog, daemonPid, companionMsg, monitorMsg, asRoot, alreadyProvisioned, doStartNow, doMonitor, doWatchdog, doWireClaudeConfig });
   }
 
-  // 5. monitor + watchdog
-  let monitorMsg = "skipped";
-  const procs = {};
-  if (doStartNow) {
-    if (doMonitor) {
-      const m = spawn("node", [MONITOR], {
-        env: { ...process.env, ...vars }, detached: true, stdio: ["ignore", "ignore", "ignore"],
-      });
-      m.unref();
-      procs.monitorPid = m.pid;
+  // 6. summary (informative, no force-close) — one block per harness
+  for (const s of summaries) {
+    console.log(`\n=== Install summary: ${s.harness} ===`);
+    console.log("Mode:          ", s.asRoot
+      ? "ROOT — enforcement is outside the agent's reach (real boundary)"
+      : "USER — agent has same-UID access; this is a reminder, NOT a hard boundary");
+    console.log("Workspace:     ", s.absWs);
+    console.log("Socket:        ", s.sock);
+    console.log("Ack log:       ", s.ackLog);
+    console.log("Daemon pid:    ", s.daemonPid ?? "(not started)");
+    console.log("Companion:     ", s.companionMsg);
+    console.log("Monitor/Watch: ", s.monitorMsg);
+    if (s.harness === "claude") {
+      console.log(s.doWireClaudeConfig
+        ? "Done. Claude Code enforcement is live — every tool call now goes through the daemon."
+        : "Done. Config generated but NOT wired — Claude Code will not call the daemon until you add it.");
+    } else {
+      console.log("Done. Add the companion hook config to your harness to activate enforcement.");
     }
-    if (doWatchdog) {
-      const w = spawn("node", [WATCHDOG], {
-        env: { ...process.env, ...vars }, detached: true, stdio: ["ignore", "ignore", "ignore"],
-      });
-      w.unref();
-      procs.watchdogPid = w.pid;
+    if (!s.asRoot && !s.doStartNow) {
+      console.log("Nothing was started for this workspace (declined). Start manually with:");
+      console.log(`  env AGENT_WORKSPACE=${shellQuote(s.absWs)} ENFORCER_SOCKET=${shellQuote(s.sock)} ACK_ACK_LOG=${shellQuote(s.ackLog)} node ${DAEMON}`);
+      console.log("  (or just source the workspace .env before running the command)");
     }
-    if (procs.monitorPid || procs.watchdogPid) {
-      monitorMsg = Object.entries(procs).map(([k, v]) => `${k} ${v}`).join(", ");
-    }
-  } else if (doMonitor || doWatchdog) {
-    monitorMsg = "configured, not started (see manual start commands below)";
   }
-
-  // 6. summary (informative, no force-close)
-  console.log("\n=== Install summary ===");
-  console.log("Mode:          ", asRoot
-    ? "ROOT — enforcement is outside the agent's reach (real boundary)"
-    : "USER — agent has same-UID access; this is a reminder, NOT a hard boundary");
-  console.log("Workspace:     ", absWs);
-  console.log("Socket:        ", sock);
-  console.log("Ack log:       ", ackLog);
-  console.log("Habits seeded: ", path.join(absWs, ".agent", "habits"));
-  console.log(".env written:  ", wsEnv);
-  console.log("Daemon pid:    ", daemonPid ?? "(not started)");
-  console.log("Companion:     ", companionMsg);
-  console.log("Monitor/Watch: ", monitorMsg);
-  if (harness === "claude") {
-    console.log(doWireClaudeConfig
-      ? "\nDone. Claude Code enforcement is live — every tool call now goes through the daemon."
-      : "\nDone. Config generated but NOT wired — Claude Code will not call the daemon until you add it.");
-  } else {
-    console.log("\nDone. Add the companion hook config to your harness to activate enforcement.");
-  }
-  console.log("The daemon holds every 5th call until you acknowledge 2 habits");
+  console.log("\nThe daemon holds every 5th call until you acknowledge 2 habits");
   console.log("with a real, situation-tied reason. No filler, no reuse.");
-  if (!doStartNow) {
-    console.log("\nNothing was started (declined). Start manually with:");
-    console.log(`  env AGENT_WORKSPACE=${shellQuote(absWs)} ENFORCER_SOCKET=${shellQuote(sock)} ACK_ACK_LOG=${shellQuote(ackLog)} node ${DAEMON}`);
-    if (doMonitor) console.log(`  env AGENT_WORKSPACE=${shellQuote(absWs)} ACK_ACK_LOG=${shellQuote(ackLog)} ACK_MONITOR_PID=${shellQuote(vars.ACK_MONITOR_PID)} node ${MONITOR}`);
-    if (doWatchdog) console.log(`  env ACK_MONITOR_PID=${shellQuote(vars.ACK_MONITOR_PID)} ACK_WATCHDOG_PID=${shellQuote(vars.ACK_WATCHDOG_PID)} node ${WATCHDOG}`);
-    console.log("  (or just source the .env written above before running each command)");
-  }
-  if (!asRoot) {
-    console.log("\nNote: this is a USER-mode install (see 'Mode' above). For an");
-    console.log("actual privilege boundary the agent can't cross, re-run with the");
-    console.log("root path: sudo bash deploy/deploy-agent-enforcer.sh && sudo bash");
-    console.log("deploy/deploy-ack-services.sh — see AGENTS.md § User-mode vs Root-mode.");
-  }
   console.log("");
 
   // 7. ACK install prompt (do NOT auto-run npm/pip — visibility first)
@@ -585,7 +742,7 @@ async function main(callerOpts) {
   console.log("    # or, from this repo root:");
   console.log("    npm install");
   console.log("");
-  if (doPython) {
+  if (anyPython) {
     const pyDir = path.join(REPO, "python");
     if (fs.existsSync(path.join(pyDir, "pyproject.toml"))) {
       console.log("  Python bindings (optional, for Python-plugin companions):");
@@ -605,4 +762,4 @@ if (__isCLI) {
   });
 }
 
-export { parseArgs, resolveSocket, main, launchDaemon, seedHabits, writeConstitution };
+export { parseArgs, resolveSocket, main, launchDaemon, seedHabits, writeConstitution, discoverAgentWorkspaces };

@@ -397,10 +397,9 @@ should hardcode a version literal. Root `VERSION`, root `package.json`,
 plain version stamp) that still need bumping by hand alongside
 `node/src/version.js` — **bump all five together** when cutting a release.
 
-**Changelog:** this repo has no `CHANGELOG.md` yet. Every repo should have
-one — append-only, newest entry on top, never rewrite a past entry. Add one
-the next time a release is cut (start it from that point forward; don't
-block a release on backfilling history that predates it).
+**Changelog:** `CHANGELOG.md` at repo root, started with the 1.2.0 release —
+append-only, newest entry on top, never rewrite a past entry. History before
+1.2.0 was not backfilled, per this section's own original guidance.
 
 ---
 

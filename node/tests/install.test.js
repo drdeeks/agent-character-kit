@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
-import { resolveSocket } from "../bin/install.js";
+import { resolveSocket, discoverAgentWorkspaces } from "../bin/install.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root, regardless of CWD
@@ -24,6 +24,47 @@ test("resolveSocket: tcp mode -> loopback url", () => {
   assert.equal(resolveSocket("tcp", "/tmp/x"), "tcp://127.0.0.1:8753");
   assert.equal(resolveSocket("2", "/tmp/x"), "tcp://127.0.0.1:8753");
   assert.equal(resolveSocket("tcp://10.0.0.1:9000", "/tmp/x"), "tcp://10.0.0.1:9000");
+});
+
+// ─── discoverAgentWorkspaces (pure, no spawn) ─────────────────────────────────
+
+test("discoverAgentWorkspaces: finds SOUL.md and .agent/constitution.yaml markers, skips node_modules/.git, stops descending into a found workspace", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ack-discover-"));
+  try {
+    // A real SOUL.md-marked workspace
+    fs.mkdirSync(path.join(root, "agent-a"), { recursive: true });
+    fs.writeFileSync(path.join(root, "agent-a", "SOUL.md"), "# agent a\n");
+    // A real .agent/constitution.yaml-marked workspace
+    fs.mkdirSync(path.join(root, "agent-b", ".agent"), { recursive: true });
+    fs.writeFileSync(path.join(root, "agent-b", ".agent", "constitution.yaml"), "hard_constraints: []\n");
+    // Should never be scanned into
+    fs.mkdirSync(path.join(root, "node_modules", "some-pkg"), { recursive: true });
+    fs.writeFileSync(path.join(root, "node_modules", "some-pkg", "SOUL.md"), "# should not be found\n");
+    // Nested SOUL.md one level inside an already-found workspace -- must not
+    // also appear, since discovery stops descending once a marker is found.
+    fs.mkdirSync(path.join(root, "agent-a", "nested"), { recursive: true });
+    fs.writeFileSync(path.join(root, "agent-a", "nested", "SOUL.md"), "# nested, should not appear separately\n");
+
+    const found = discoverAgentWorkspaces(root);
+    const dirs = found.map((f) => f.dir).sort();
+
+    assert.deepEqual(dirs, [path.join(root, "agent-a"), path.join(root, "agent-b")].sort());
+    assert.equal(found.find((f) => f.dir === path.join(root, "agent-a")).marker, "SOUL.md");
+    assert.equal(found.find((f) => f.dir === path.join(root, "agent-b")).marker, ".agent/constitution.yaml");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("discoverAgentWorkspaces: returns empty array for a directory with no markers, and for a nonexistent path", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ack-discover-empty-"));
+  try {
+    fs.mkdirSync(path.join(root, "just-a-dir"), { recursive: true });
+    assert.deepEqual(discoverAgentWorkspaces(root), []);
+    assert.deepEqual(discoverAgentWorkspaces(path.join(root, "does-not-exist")), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 // ─── daemon reuse-window (integration: boot daemon, exercise submitAck) ───────
