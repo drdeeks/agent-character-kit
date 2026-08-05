@@ -404,20 +404,28 @@ async function main(callerOpts) {
       doWireClaudeConfig: harness === "claude" && opts.writeClaudeConfig !== false,
     });
   } else if (opts.yes) {
-    harness = opts.harness || "generic";
-    plannedInstalls.push({
-      ws: opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace"),
-      socketMode: opts.socket || "unix",
-      harness,
-      asRoot: opts.root ?? false,
-      rootSocket: null,
-      doMonitor: opts.monitor,
-      doWatchdog: opts.watchdog,
-      doCompanion: opts.companion,
-      doPython: opts.python ?? false,
-      doStartNow: opts.start !== false,
-      doWireClaudeConfig: harness === "claude" && opts.writeClaudeConfig !== false,
-    });
+    // opts.harnesses (array) lets non-interactive callers (e.g.
+    // postinstall.js's auto-detection) set up several harnesses in one
+    // main() call, sharing the seenWorkspaces de-dupe below when they
+    // resolve to the same workspace -- one daemon/monitor/watchdog, not
+    // one per harness. Plain opts.harness (single string) still works
+    // unchanged for the existing --harness CLI flag.
+    const harnessList = (opts.harnesses && opts.harnesses.length) ? opts.harnesses : [opts.harness || "generic"];
+    for (const h of harnessList) {
+      plannedInstalls.push({
+        ws: opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace"),
+        socketMode: opts.socket || "unix",
+        harness: h,
+        asRoot: opts.root ?? false,
+        rootSocket: null,
+        doMonitor: opts.monitor,
+        doWatchdog: opts.watchdog,
+        doCompanion: opts.companion,
+        doPython: opts.python ?? false,
+        doStartNow: opts.start !== false,
+        doWireClaudeConfig: h === "claude" && opts.writeClaudeConfig !== false,
+      });
+    }
   } else {
     console.log("\n=== Agent Character Kit — interactive install ===\n");
     console.log("This sets up the enforcement daemon, your harness companion(s),");

@@ -47,6 +47,30 @@ function resolveSocket() {
       : path.join(os.homedir(), ".agent-character-kit", "workspace", ".agent", "enforcer.sock"));
 }
 
+// Best-effort "has this machine ever been through `ack install`" check --
+// NOT a hard gate, just what decides whether to print a first-run nudge.
+// No npm lifecycle script is involved anywhere in this: it only ever runs
+// because the user themselves typed `ack` or `ack status`. A false
+// positive (custom/discovered workspace path this doesn't know about) just
+// means an unnecessary but harmless reminder -- `ack install` is safe to
+// re-run against an already-configured workspace.
+function looksNeverConfigured() {
+  const rootSocketExists = fs.existsSync("/run/agent-enforcer/main.sock");
+  const defaultWs = path.join(os.homedir(), ".agent-character-kit", "workspace");
+  const defaultWsConfigured = fs.existsSync(path.join(defaultWs, ".agent", "constitution.yaml"));
+  const envWsConfigured = process.env.AGENT_WORKSPACE &&
+    fs.existsSync(path.join(process.env.AGENT_WORKSPACE, ".agent", "constitution.yaml"));
+  return !rootSocketExists && !defaultWsConfigured && !envWsConfigured;
+}
+
+const FIRST_RUN_NUDGE =
+  "No Agent Character Kit setup found on this machine yet.\n" +
+  "Run `ack install` for a guided, interactive setup (asks about root vs\n" +
+  "user mode, which harness(es) you use, and confirms before touching\n" +
+  "anything -- nothing runs without you saying yes at each step).\n" +
+  "Or `ack install --yes` for a fast, non-interactive default (user-mode,\n" +
+  "generic harness, no daemon auto-started).\n";
+
 function resolveAckLog() {
   return process.env.ACK_ACK_LOG ||
     path.join(resolveWorkspace(), ".agent", "ack.jsonl");
@@ -821,6 +845,14 @@ program
       console.log(`    path: ${info.path}`);
       if (info.error) console.log(`    error: ${info.error}`);
       if (info.workspace) console.log(`    workspace: ${info.workspace}`);
+    }
+    // Fallback nudge for anyone `npm install -g`'d this with lifecycle
+    // scripts disabled (--ignore-scripts, or an allow-scripts policy that
+    // denied it) -- postinstall.js normally handles setup automatically,
+    // but if it never ran, this is the next place a curious/confused user
+    // is likely to look.
+    if (Object.values(results).every((r) => !r.checked || !r.alive) && looksNeverConfigured()) {
+      console.log(`\n${FIRST_RUN_NUDGE}`);
     }
   });
 

@@ -11,7 +11,8 @@
   "scripts": {
     "test": "node --test node/tests/*.test.js",
     "start": "node bin/ack.js",
-    "ack-install": "node node/bin/install.js"
+    "ack-install": "node node/bin/install.js",
+    "postinstall": "node node/bin/postinstall.js"
   },
   "keywords": [
     "agent",
@@ -66,8 +67,5 @@
   "funding": {
     "type": "github",
     "url": "https://github.com/sponsors/drdeeks"
-  },
-  "allowScripts": {
-    "@drdeeks/character-kit@1.2.0": true
   }
 }
