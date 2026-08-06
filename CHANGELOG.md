@@ -2,6 +2,40 @@
 
 Append-only, newest entry on top. Never rewrite a past entry.
 
+## 1.2.1 — 2026-08-05
+
+**Fixed:**
+- `postinstall.js` now does a fully non-interactive, auto-detected setup on
+  `npm install -g`: detects which harnesses are actually present (Claude,
+  Hermes, OpenCode; falls back to "generic"), wires a companion for each
+  (merging Claude's PreToolUse hook automatically), and starts the
+  daemon/monitor/watchdog for real — `ack status` is alive immediately after
+  install, no manual follow-up required. Replaces an earlier interactive
+  postinstall wizard design, which was proven impossible: npm does not give
+  lifecycle scripts a real TTY (confirmed by direct instrumentation), so a
+  live prompt-and-wait wizard can never run there, on any package.
+- `install.js`'s non-interactive (`--yes`) path now accepts a `harnesses`
+  array alongside the existing single `harness` string, so postinstall can
+  set up every detected harness in one `main()` call sharing one
+  workspace/daemon/monitor/watchdog instead of spawning duplicates.
+- `ack status` now surfaces the `looksNeverConfigured()` fallback (previously
+  dead code) for the case where lifecycle scripts were disabled
+  (`--ignore-scripts`, or an org-wide `allow-scripts` policy) and postinstall
+  never ran at all.
+- Root-mode auto-setup deliberately stays excluded from the unattended
+  postinstall path (needs a sudo password an unattended script must never
+  assume) — still requires the interactive `ack install`, which gets a real
+  terminal since it's a normal CLI invocation, not a lifecycle script.
+
+Scoped tightly to avoid the exact footgun this package hit before (a script
+literally named `install` that fired on any `npm install`, including local
+dev): only proceeds when `npm_config_global === "true"` AND running from
+inside a real `node_modules` install tree. Verified both directions live —
+local dev install is a silent no-op, a real `npm install -g` auto-detects
+every harness present on the test machine, stands up a genuinely running
+daemon (not just configured-but-dormant), and correctly merges Claude's real
+`~/.claude/settings.json` PreToolUse hook.
+
 ## 1.2.0 — 2026-08-05
 
 **Fixed:**
