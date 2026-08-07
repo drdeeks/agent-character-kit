@@ -1937,3 +1937,146 @@ Rollback Ref: git diff against the commit prior to this entry -- 5 separate
   created correctly, the agent can actually connect to the socket after
   the group-membership refresh, and the agent genuinely cannot kill/edit
   the daemon in modes 1/2.
+
+## CL-0010 — Live root-mode deployment findings: real gaps found by drdeek's actual sudo test
+
+```
+Date        : 2026-08-07 21:00 UTC
+Contributor : claude-code-session
+Modules     : [MOD-005]
+Section Tags: [[MODULE-REGISTRY-v2], [SPECS-v2]]
+Files Changed: [.blueprint/blueprint.md only -- see "Files NOT yet changed" below]
+Description : drdeek ran CL-0009's privilege-mode work for real, with real
+              sudo, choosing root-mode. This surfaced real, previously
+              undiscovered gaps that KD-17 (CL-0009) had already flagged as
+              unverified. None of the following were fixed in this entry --
+              this is the discovery record; fixes are tracked as KD-18
+              through KD-23 below and are the next session's work queue.
+
+              What actually happened, in order:
+              1. Interactive wizard's real UX had genuine problems (see
+                 KD-19 for the itemized list) -- confirmed by drdeek
+                 actually using it, not by review.
+              2. drdeek's real install correctly wired the Claude hook to
+                 the root socket (/run/agent-enforcer/main.sock).
+              3. claude-code-session got locked out of its own tools --
+                 root cause: usermod added drdeek to the new ack-clients
+                 group, but group membership only applies to NEW login
+                 sessions; the already-running session kept its old group
+                 list. Restarting the session was expected to fix this but
+                 did NOT alone -- see KD-18.
+              4. While locked out, `ack repair` (one of the few commands
+                 reachable via the break-glass bypass) auto-started a
+                 SECOND, unsupervised user-mode daemon alongside the real
+                 root-mode one, purely as unwanted resource duplication --
+                 a real regression, not intended behavior (KD-20).
+              5. Independently, and NOT caused by tonight's socket-
+                 permission/service-user work (the bug is in code that
+                 wasn't touched), the real root-mode systemd service was
+                 crash-looping: deploy-agent-enforcer.sh copies node/
+                 source into /usr/local/lib/agent-character-kit/node/ but
+                 never installs its npm dependencies there. No
+                 node_modules -> `import ... from "js-yaml"` fails ->
+                 ERR_MODULE_NOT_FOUND -> crash -> systemd's
+                 StartLimitBurst=10/60s exhausted -> service gives up.
+                 This means root-mode's systemd deploy has likely NEVER
+                 actually started successfully for anyone, ever, until
+                 drdeek hit it for real tonight (KD-18, the most severe
+                 item here -- nothing in root/service-user mode works
+                 without this fix).
+              6. drdeek manually fixed the crash-loop himself (referenced
+                 restoring something related to node/package.json;
+                 claude-code-session was locked out throughout and could
+                 not independently verify the exact mechanism) and
+                 confirmed via real `systemctl status` that the daemon was
+                 genuinely running.
+              7. claude-code-session remained blocked even after that --
+                 confirmed the group-membership theory was NOT the full
+                 explanation on its own (a session restart did not
+                 restore access either). Root cause not fully resolved in
+                 this entry.
+              8. drdeek disabled and removed the systemd service entirely
+                 (manually, no ACK-provided command exists for this --
+                 KD-23), which correctly left fail-closed enforcement
+                 blocking everything (the socket is now gone; this is
+                 correct behavior, not a bug). claude-code-session
+                 recovered its OWN access via the already-reachable
+                 bypass command `ack configure --yes` (plain user-mode,
+                 safe, idempotent) -- this is what actually restored tool
+                 access, not the session restart or the group fix.
+              9. drdeek raised a new, separate, valid critique not yet
+                 actioned: `main.sock` / `/run/agent-enforcer/` is too
+                 generically named for a security-relevant enforcement
+                 point, and doesn't match the real project name
+                 (agent-character-kit) anywhere (KD-21).
+              10. drdeek described a larger future direction: a real TUI
+                 for viewing/configuring per-agent links, habits, blocked
+                 commands, and variable enforcement strength per agent --
+                 explicitly deferred, not started, tracked as KD-24 (a
+                 feature direction, not a defect) for its own dedicated
+                 design pass.
+Tests Passing: 54/54 unchanged (no code touched in this entry -- pure
+               discovery/documentation)
+Rollback Ref: N/A -- no code changed in this entry
+```
+
+## Known Defects Register — addendum (2026-08-07, CL-0010 live findings)
+
+- **KD-18** (severity: highest — blocks all of root/service-user mode):
+  `deploy-agent-enforcer.sh` copies `node/` source but never runs
+  `npm install`/copies `node_modules` into the deployed location. Fix:
+  add `npm install --omit=dev --prefix "$INSTALL_LIB/node"` (or equivalent)
+  as a real step in the deploy script, after the source copy.
+- **KD-19**: Interactive wizard UX, itemized from drdeek's live use:
+  (1) inconsistent interaction style — numbered choice for privilege mode
+  vs. free-text typing for harness selection; (2) harness selection must
+  use the already-built `detectHarnesses()` and present "Detected: X, Y.
+  Add another?" instead of a blank prompt defaulting to hardcoded
+  "claude"; (3) nothing should be printed/asked about a harness that
+  wasn't actually detected; (4) the trailing "Install Agent Character Kit
+  / npm install -g" banner prints unconditionally even when already
+  running via a globally-installed copy — reconfirmed live twice tonight,
+  including after this entry's own recovery command; (5) Python companion
+  should be a contextual, per-harness prompt ("Hermes requires the Python
+  companion. Continue?") triggered only when a Python-needing harness is
+  actually selected, not asked generically. Plus a tone correction: wizard
+  prose must describe the CURRENT system as fact, never narrate that
+  something changed ("not two — pick..." reads like a changelog inside
+  the live product).
+- **KD-20**: `ack repair`'s daemon auto-activation doesn't check whether
+  ANY daemon (root-mode, service-user-mode, or another user-mode instance)
+  is already serving this agent before starting a new one — caused real,
+  confirmed, unwanted resource duplication live tonight. Fix: reuse the
+  same multi-socket check `ack status` already does before auto-activating
+  anything.
+- **KD-21**: Socket/directory naming (`main.sock`, `/run/agent-enforcer/`)
+  is too generic for a security-relevant enforcement point and doesn't
+  match the real project name anywhere. Needs an intentional rename —
+  likely under `agent-character-kit`, not the informal internal label
+  "agent-enforcer" — touching the daemon defaults, both deploy scripts,
+  docs, and any tests that hardcode the path.
+- **KD-22**: Root cause of claude-code-session's continued lockout even
+  after a session restart was never fully resolved/confirmed in this
+  session — the group-membership theory was the working hypothesis but a
+  restart alone did not fix it. What actually restored access was
+  recovering via the bypass-reachable `ack configure --yes` (a fresh
+  user-mode daemon + hook rewire), not the theorized fix. Needs real
+  investigation next session: was it actually a stale-group issue that
+  the "restart" (terminal tab vs. real re-login) didn't correctly trigger,
+  or something else entirely?
+- **KD-23**: No ACK-provided command cleanly reverses what
+  `deploy-agent-enforcer.sh`/service-user setup does. drdeek had to
+  manually disable and remove the systemd service himself tonight; there
+  is no equivalent of "undo root-mode" that removes the systemd units,
+  the dedicated service user (if created), the `ack-clients` group
+  memberships, and the system-owned directories. Needs a real
+  `ack uninstall --root` (or similar) that mirrors `preuninstall.js`'s
+  existing user-mode cleanup logic but for the systemd/service-user path.
+- **KD-24** (feature direction, not a defect): drdeek described a real TUI
+  for ACK — viewing which agent is linked to what daemon/workspace, how
+  it's configured, walking through building/editing habits interactively,
+  editing which commands/functions are allowed or blocked per agent, and
+  setting variable enforcement strength per agent (lighter on some,
+  stricter on others, depending on use case). Explicitly deferred tonight
+  in favor of finishing the KD-18 through KD-23 backlog first. Needs its
+  own dedicated design/scoping session — not started.
