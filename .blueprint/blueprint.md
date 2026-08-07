@@ -2080,3 +2080,26 @@ Rollback Ref: N/A -- no code changed in this entry
   stricter on others, depending on use case). Explicitly deferred tonight
   in favor of finishing the KD-18 through KD-23 backlog first. Needs its
   own dedicated design/scoping session — not started.
+
+## Known Defects Register — addendum (2026-08-07, found while fixing KD-20)
+
+- **KD-25** (feature gap, drdeek-flagged): the daemon's own acknowledgment
+  prompt text says "No filler, no reuse" but nothing tracks or enforces
+  habit reuse across a session -- `submitAck` accepts any
+  syntactically-valid "habit: X because Y" statement regardless of
+  whether that exact habit was already cited earlier in the same session.
+  Needs real tracking (e.g. a per-session set of already-acknowledged
+  habit names) and rejection of a repeat before the next hold's 2 slots
+  are considered filled.
+- **KD-26** (fixed same pass): `status` was silently gated behind
+  `ACK_AUTH_TOKEN` like every other RPC method, but the CLI commands that
+  most need to check liveness (`ack status`, `ack repair`, `ack doctor`)
+  run as fresh processes with no token in their own env -- so every
+  liveness check against a correctly-configured (tokened) daemon reported
+  false "dead" results. This is what made KD-20's first fix attempt
+  appear not to work when tested against a genuinely-alive daemon. Fixed
+  by exempting `status` specifically (safe -- its response carries no
+  secret). Duplicated in the second socket-server implementation (KD-16),
+  fixed there too. Verified live: a real isolated daemon + `ack repair`
+  against the same workspace now correctly reports reuse instead of
+  spawning a duplicate.
