@@ -91,6 +91,8 @@ We do **not** try to close those gaps. Decoding and deep-inspecting every comman
 These are dumb pipes to the CORE. They do not enforce anything; they ask the daemon and obey. If the daemon is unreachable, the client **blocks** (fail-closed).
 
 > **Break-glass exception.** Fail-closed on an unreachable daemon means the *commands that would fix it* — starting the daemon back up, `ack doctor`, `ack repair`, `ack status`, `ack configure` — are themselves blocked, with no way to recover from inside the session (found live, 2026-08-07: three real self-lockouts in one session, each needing a human to restart the daemon from outside the agent's own tool access). A narrow allowlist (`BOOTSTRAP_COMMAND_RE` in `character.js`'s `processToolCall`) exempts exactly those self-repair commands from the enforcer round-trip — nothing else. This does not weaken fail-closed for ordinary work; see `.blueprint/blueprint.md` CL-0008.
+>
+> **Always recover via `ack configure --yes`, never a bare `node agent_enforcer_daemon.js`.** The bypass matches both, but only `ack configure` also restores the monitor + watchdog. A bare daemon restart runs fully unsupervised — if it dies again, nothing catches it. Found live, same session (KD-15): every manual recovery used the bare command, leaving the daemon unsupervised each time.
 
 1. **Hermes plugin** (`python/hermes_plugin/`) — an EXAMPLE companion, for agents that load Python plugins (`pre_tool_call` → daemon → allow/deny). It is one of several interchangeable companions, not "the" way.
 2. **Generic `ack hook`** (`node/bin/ack.js hook <name>`) — for Claude / Cursor / Gemini / OpenCode / generic. Emits the framework's hook JSON; each call hits the daemon.
