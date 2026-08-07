@@ -2,6 +2,35 @@
 
 Append-only, newest entry on top. Never rewrite a past entry.
 
+## 1.4.0 — 2026-08-07
+
+**Fixed (security-relevant):**
+- The enforcer's unix socket was locked to `0600` (owner-only), which made
+  root-mode's stated design ("agent can use it, can't tamper with it")
+  impossible to actually use — a non-root agent could never connect to a
+  root-owned owner-only socket. Fixed to `0660`/`2750` (group-restricted via
+  a new shared `ack-clients` group); `ACK_AUTH_TOKEN` remains the real
+  authorization check. Same bug was independently duplicated in a second
+  socket-server implementation (multi-workspace mode) — fixed there too.
+- `package.json`'s `start` script pointed at a nonexistent path
+  (`bin/ack.js` instead of `node/bin/ack.js`) — `npm start` has been broken
+  since this script existed. Fixed and verified live.
+
+**Added:**
+- A real third privilege option: a dedicated, unprivileged service user
+  (default `ack-enforcer`) as an alternative to full root — same real
+  security boundary (different uid than the agent) without granting root.
+  Both systemd deploy scripts now accept `ACK_SERVICE_USER`.
+- The interactive `ack configure` wizard's privilege question — previously
+  a silent binary root/no-root prompt — is now an explicit 3-way choice
+  with real recommendations: system service (recommended), dedicated
+  service user (recommended if root is undesired), trust-the-agent
+  (explicitly labeled highly not recommended).
+
+**Known gap:** none of the privilege-mode work above has been live-verified
+end to end — no sudo access during development (see blueprint KD-17).
+Syntax-checked only; needs real verification with real sudo.
+
 ## 1.3.0 — 2026-08-07
 
 **Changed:**
