@@ -583,19 +583,31 @@ async function main(callerOpts) {
       console.log("recommended, per the warning above, but this is your call.\n");
     }
 
-    console.log("Which harness(es) do you use on this machine? You'll confirm a");
-    console.log("workspace for each one next (skipped in root mode — they all share");
-    console.log("the one root daemon above). Leave blank when you've added them all.");
+    // Auto-detect first -- never ask the user to type out something this
+    // process can already see for itself (KD-19 items 2/3). Only fall back
+    // to manual entry when nothing was actually found on this machine.
+    const detected = detectHarnesses();
     const harnesses = [];
-    while (true) {
-      const prompt = harnesses.length
-        ? "Another harness? [claude | cursor | gemini | opencode | hermes | generic] (blank = done)"
-        : "First harness [claude | cursor | gemini | opencode | hermes | generic]";
-      const h = (await ask(rl, prompt, harnesses.length ? "" : "claude")).toLowerCase().trim();
-      if (!h) break;
-      harnesses.push(h);
+    if (detected.length && detected[0] !== "generic") {
+      console.log(`\nDetected: ${detected.join(", ")}.`);
+      harnesses.push(...detected);
+      while (true) {
+        const h = (await ask(rl, "Add another harness? (blank = done)", "")).toLowerCase().trim();
+        if (!h) break;
+        harnesses.push(h);
+      }
+    } else {
+      console.log("\nNo known harness detected on this machine.");
+      while (true) {
+        const prompt = harnesses.length
+          ? "Another harness? (blank = done)"
+          : "Which harness? [claude | cursor | gemini | opencode | hermes | generic]";
+        const h = (await ask(rl, prompt, "")).toLowerCase().trim();
+        if (!h) break;
+        harnesses.push(h);
+      }
+      if (harnesses.length === 0) harnesses.push("generic");
     }
-    if (harnesses.length === 0) harnesses.push("generic");
 
     let doMonitorGlobal = false, doWatchdogGlobal = false;
     if (!asRootGlobal) {
