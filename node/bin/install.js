@@ -168,6 +168,23 @@ export function claudeSettingsPath() {
   return path.join(os.homedir(), ".claude", "settings.json");
 }
 
+// Single source of truth for harness auto-detection -- was duplicated
+// between install.js's --yes path (which had none, silently defaulting to
+// "generic") and postinstall.js's own copy (used only for the pointer
+// message, never reaching install.js after MOD-005/CL-0007 removed
+// postinstall's auto-configure branch). Exported so both call sites use
+// exactly one implementation.
+export function detectHarnesses() {
+  const home = os.homedir();
+  const candidates = [
+    { harness: "claude", marker: path.join(home, ".claude", "settings.json") },
+    { harness: "hermes", marker: path.join(home, ".hermes") },
+    { harness: "opencode", marker: path.join(home, ".config", "opencode") },
+  ];
+  const found = candidates.filter((c) => fs.existsSync(c.marker)).map((c) => c.harness);
+  return found.length ? found : ["generic"];
+}
+
 // Merge (not clobber) our PreToolUse + UserPromptSubmit entries into the
 // user's real settings.json. Re-running install replaces our own prior
 // entries (matched by the "bin/ack.js" marker) instead of appending
@@ -465,13 +482,18 @@ async function main(callerOpts) {
       doWireClaudeConfig: harness === "claude" && opts.writeClaudeConfig !== false,
     });
   } else if (opts.yes) {
-    // opts.harnesses (array) lets non-interactive callers (e.g.
-    // postinstall.js's auto-detection) set up several harnesses in one
-    // main() call, sharing the seenWorkspaces de-dupe below when they
-    // resolve to the same workspace -- one daemon/monitor/watchdog, not
-    // one per harness. Plain opts.harness (single string) still works
-    // unchanged for the existing --harness CLI flag.
-    const harnessList = (opts.harnesses && opts.harnesses.length) ? opts.harnesses : [opts.harness || "generic"];
+    // opts.harnesses (array) lets non-interactive callers set up several
+    // harnesses in one main() call, sharing the seenWorkspaces de-dupe
+    // below when they resolve to the same workspace -- one
+    // daemon/monitor/watchdog, not one per harness. Plain opts.harness
+    // (single string) still works unchanged for the existing --harness CLI
+    // flag. Neither given (the common `ack configure --yes` case): auto-detect
+    // what's actually present instead of silently defaulting to "generic" --
+    // this was a real regression once postinstall.js stopped forwarding a
+    // pre-detected array (CL-0007 removed that whole code path).
+    const harnessList = (opts.harnesses && opts.harnesses.length)
+      ? opts.harnesses
+      : (opts.harness ? [opts.harness] : detectHarnesses());
     for (const h of harnessList) {
       plannedInstalls.push({
         ws: opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace"),

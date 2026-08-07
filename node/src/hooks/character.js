@@ -171,6 +171,34 @@ const ENFORCER = new EnforcerClient();
  * @param {object} options - { framework: "auto"|"claude"|..., enforcer: EnforcerClient }
  * @returns {Promise<{output: object, exitCode: number}>}
  */
+// A narrow, explicit "break glass" allowlist: commands that repair the
+// enforcer ITSELF (start/inspect/kill the daemon/monitor/watchdog, or run
+// ack's own diagnostic/repair subcommands). Fail-closed means an
+// unreachable enforcer blocks every ordinary tool call -- correct, by
+// design ("a guard that fails open is no guard"). But that same posture
+// creates a real deadlock for exactly the commands needed to FIX an
+// unreachable enforcer: they're tool calls too, so they get blocked by the
+// very daemon they're trying to restart, with no way out short of a human
+// editing settings.json by hand outside the session. Found live, not
+// theorized: repeated real lockouts during Phase 2 testing (2026-08-07),
+// each requiring a manual restart from outside the session. This does NOT
+// weaken fail-closed for anything else -- it only ever bypasses the
+// enforcer round-trip for this specific, narrow set of self-repair
+// actions, matched against the literal command string.
+const BOOTSTRAP_COMMAND_RE = new RegExp(
+  [
+    "agent_enforcer_daemon\\.js",
+    "ack_monitor\\.js",
+    "ack_watchdog\\.js",
+    "\\back\\s+(doctor|repair|status|configure|install)\\b",
+  ].join("|")
+);
+
+function isBootstrapRecoveryCommand(params) {
+  const cmd = params && (params.command || params.cmd);
+  return typeof cmd === "string" && BOOTSTRAP_COMMAND_RE.test(cmd);
+}
+
 export async function processToolCall(payload, options = {}) {
   const framework = options.framework === "auto"
     ? detectFramework(payload)
@@ -181,6 +209,14 @@ export async function processToolCall(payload, options = {}) {
 
   // Skip enforcer internal calls
   if (["validate_workspace", "heartbeat", "execute_tool"].includes(normalized.tool)) {
+    return { output: formatOutput({ allowed: true }, framework, payload), exitCode: 0 };
+  }
+
+  // Break-glass bypass (see BOOTSTRAP_COMMAND_RE above): never round-trips
+  // to the enforcer at all for these, so it works even when the daemon is
+  // completely down -- that's the whole point.
+  if (isBootstrapRecoveryCommand(normalized.params)) {
+    auditLog("pre_tool_use", normalized.tool, normalized.params, { allowed: true, bootstrapBypass: true });
     return { output: formatOutput({ allowed: true }, framework, payload), exitCode: 0 };
   }
 

@@ -34,9 +34,10 @@
  *      not this repo's own working tree.
  */
 import fs from "fs";
-import os from "os";
 import path from "path";
+import os from "os";
 import { fileURLToPath } from "url";
+import { detectHarnesses } from "./install.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,17 +53,6 @@ function isRealNodeModulesInstall() {
   // component anywhere in that path. A real packed/published install
   // always lands under some node_modules/ tree.
   return __dirname.split(path.sep).includes("node_modules");
-}
-
-function detectHarnesses() {
-  const home = os.homedir();
-  const candidates = [
-    { harness: "claude", marker: path.join(home, ".claude", "settings.json") },
-    { harness: "hermes", marker: path.join(home, ".hermes") },
-    { harness: "opencode", marker: path.join(home, ".config", "opencode") },
-  ];
-  const found = candidates.filter((c) => fs.existsSync(c.marker)).map((c) => c.harness);
-  return found.length ? found : ["generic"];
 }
 
 function main() {
