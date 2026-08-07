@@ -288,12 +288,84 @@ export async function pickHabitPrompts(sessionId, enforcer) {
   return "AGENT CHARACTER HABITS (read before reasoning):\n" + lines.join("\n") + nudge;
 }
 
+// MOD-008: Claude transcript acknowledgment detector -- port of
+// hermes_plugin's VERIFIED-working _detect_ack() pattern (__init__.py:210,
+// called from _on_pre_llm_call every turn) to Claude Code's hook shape.
+// Same 3-layer design: this function only APPENDS a detected statement to
+// the external ACK_ACK_LOG; it never calls submit_ack itself. Only the
+// root-owned monitor (deploy/ack_monitor.js, already reading this exact
+// log format) may credit the daemon -- so a compromised or misbehaving
+// agent process still cannot forge its own acknowledgment.
+//
+// Deliberately BROADER than Hermes's literal regex: Hermes's pattern
+// (`resonates\s+true\s+because`) only matches one of the five closers the
+// daemon's real submitAck() grammar accepts (agent_enforcer_daemon.js:707
+// -- resonates true | why: | because | matters because | applies because).
+// A straight port of Hermes's narrower regex would silently miss valid
+// acknowledgments using any of the other four closers. This uses the
+// daemon's own real acceptance grammar instead, so nothing that would
+// actually be credited goes undetected.
+const ACK_STATEMENT_RE =
+  /habit:\s*\S+\s*(?:resonates\s+true|why:|because|matters\s+because|applies\s+because)\s*[-–:]?\s*.+/gi;
+
+/**
+ * Read the Claude Code transcript (JSONL, one line per event) at
+ * transcriptPath, find the most recent assistant message, and detect any
+ * real "Habit: <name> <closer> <reason>" statement in its text content.
+ * Verified against a real transcript file's actual schema before writing
+ * this (not assumed): { type: "assistant", message: { role, content: [
+ * {type:"text", text}, {type:"thinking",...}, {type:"tool_use",...} ] } }.
+ *
+ * Never throws -- logging must never break the call, same posture as
+ * Hermes's own `except Exception: pass` around _detect_ack's body.
+ */
+export function detectAckFromTranscript(transcriptPath, sessionId) {
+  if (!transcriptPath) return;
+  try {
+    if (!fs.existsSync(transcriptPath)) return;
+    const lines = fs.readFileSync(transcriptPath, "utf8").split("\n");
+    // Scan from the end -- the acknowledgment, if present, is in the most
+    // recent assistant turn, and transcripts can be large.
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      let entry;
+      try { entry = JSON.parse(line); } catch { continue; }
+      if (entry.type !== "assistant") continue;
+      const content = entry.message && entry.message.content;
+      if (!Array.isArray(content)) return; // found the last assistant turn, nothing to scan
+      const text = content
+        .filter((b) => b && b.type === "text" && typeof b.text === "string")
+        .map((b) => b.text)
+        .join("\n");
+      const matches = text.match(ACK_STATEMENT_RE);
+      if (matches && matches.length) {
+        const ackLog = process.env.ACK_ACK_LOG || "/tmp/agent-character-kit-ack.jsonl";
+        fs.mkdirSync(path.dirname(ackLog), { recursive: true });
+        for (const statement of matches) {
+          fs.appendFileSync(ackLog, JSON.stringify({
+            session_id: sessionId || "default",
+            statement: statement.trim(),
+          }) + "\n");
+        }
+      }
+      return; // only the most recent assistant turn is checked, matching
+              // Hermes's per-turn (not whole-history) detection scope
+    }
+  } catch { /* logging must never break the call */ }
+}
+
 /**
  * Process a pre-LLM-turn hook, injecting rotating habit prompts into context.
  * Mirrors processToolCall's shape (framework detection, {output, exitCode})
  * but never blocks — this is a reminder channel, not a gate.
  */
 export async function processPromptSubmit(payload, options = {}) {
+  // MOD-008: detect an acknowledgment BEFORE injecting the next batch of
+  // habit prompts, mirroring Hermes's _on_pre_llm_call ordering
+  // (_detect_ack runs first, injection second, __init__.py:353-354).
+  detectAckFromTranscript(payload.transcript_path, payload.session_id || payload.sessionId);
+
   const framework = options.framework === "auto"
     ? detectFramework(payload)
     : (options.framework || "generic");

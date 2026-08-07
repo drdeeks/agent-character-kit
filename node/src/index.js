@@ -11,7 +11,7 @@
 // ─── Core: Character Enforcement ─────────────────────────────────────────────
 
 export { EnforcerClient } from "./enforcer/client.js";
-export { processToolCall, processPromptSubmit, generateConfig } from "./hooks/character.js";
+export { processToolCall, processPromptSubmit, generateConfig, detectAckFromTranscript } from "./hooks/character.js";
 
 // ─── Secondary: Knowledge & Memory ──────────────────────────────────────────
 

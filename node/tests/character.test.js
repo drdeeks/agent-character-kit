@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { processToolCall, processPromptSubmit, generateConfig } from "../src/index.js";
+import { processToolCall, processPromptSubmit, generateConfig, detectAckFromTranscript } from "../src/index.js";
 import { DocumentIndexer } from "../src/knowledge/indexer.js";
 import fs from "fs";
 import os from "os";
@@ -129,4 +129,147 @@ test("indexer excludes agent-internal files (SOUL.md, constitution)", async () =
   const res = await idx.indexDirectory(dir, {});
   assert.equal(res.indexed, 1);
   assert.ok(Object.keys(idx.index.documents).some((k) => k.endsWith("userdoc")));
+});
+
+// ─── MOD-008: Claude transcript acknowledgment detector ───────────────────────
+
+function writeTranscriptLine(filePath, obj) {
+  fs.appendFileSync(filePath, JSON.stringify(obj) + "\n");
+}
+
+function assistantTextEntry(text) {
+  // Matches the REAL schema, verified against an actual Claude Code
+  // transcript file on this machine before writing detectAckFromTranscript
+  // (not assumed): { type: "assistant", message: { role: "assistant",
+  // content: [{ type: "text", text }] } }.
+  return { type: "assistant", message: { role: "assistant", content: [{ type: "text", text }] } };
+}
+
+test("detectAckFromTranscript: detects a real 'resonates true' statement and logs it in ack_monitor.js's exact format", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ack-transcript-"));
+  const transcript = path.join(dir, "session.jsonl");
+  const ackLog = path.join(dir, "ack.jsonl");
+  const origAckLog = process.env.ACK_ACK_LOG;
+  process.env.ACK_ACK_LOG = ackLog;
+  try {
+    writeTranscriptLine(transcript, { type: "user", message: { role: "user", content: "hello" } });
+    writeTranscriptLine(transcript, assistantTextEntry(
+      "Habit: no_credential_leak resonates true — it applies because this exact test never emits a real secret."
+    ));
+
+    detectAckFromTranscript(transcript, "test-session");
+
+    assert.ok(fs.existsSync(ackLog), "must create the ack log");
+    const lines = fs.readFileSync(ackLog, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    const entry = JSON.parse(lines[0]);
+    assert.equal(entry.session_id, "test-session");
+    assert.match(entry.statement, /no_credential_leak/);
+    assert.match(entry.statement, /resonates true/i);
+  } finally {
+    process.env.ACK_ACK_LOG = origAckLog;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("detectAckFromTranscript: detects the other four closers the narrower Hermes-style regex would miss", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ack-transcript-closers-"));
+  const transcript = path.join(dir, "session.jsonl");
+  const ackLog = path.join(dir, "ack.jsonl");
+  const origAckLog = process.env.ACK_ACK_LOG;
+  process.env.ACK_ACK_LOG = ackLog;
+  try {
+    writeTranscriptLine(transcript, assistantTextEntry(
+      "Habit: due_diligence why: I actually ran the test suite before claiming this works."
+    ));
+    detectAckFromTranscript(transcript, "s1");
+    const entry = JSON.parse(fs.readFileSync(ackLog, "utf8").trim());
+    assert.match(entry.statement, /due_diligence/);
+    assert.match(entry.statement, /why:/i);
+  } finally {
+    process.env.ACK_ACK_LOG = origAckLog;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("detectAckFromTranscript: no false positive on ordinary text mentioning the word 'habit'", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ack-transcript-noise-"));
+  const transcript = path.join(dir, "session.jsonl");
+  const ackLog = path.join(dir, "ack.jsonl");
+  const origAckLog = process.env.ACK_ACK_LOG;
+  process.env.ACK_ACK_LOG = ackLog;
+  try {
+    writeTranscriptLine(transcript, assistantTextEntry(
+      "I have a habit of double-checking my work, but I'm not stating a formal acknowledgment here."
+    ));
+    detectAckFromTranscript(transcript, "s1");
+    assert.equal(fs.existsSync(ackLog), false, "must not create a log entry for text that isn't a real acknowledgment statement");
+  } finally {
+    process.env.ACK_ACK_LOG = origAckLog;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("detectAckFromTranscript: only scans the MOST RECENT assistant turn, not the whole history", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ack-transcript-recency-"));
+  const transcript = path.join(dir, "session.jsonl");
+  const ackLog = path.join(dir, "ack.jsonl");
+  const origAckLog = process.env.ACK_ACK_LOG;
+  process.env.ACK_ACK_LOG = ackLog;
+  try {
+    // An OLD acknowledgment several turns back...
+    writeTranscriptLine(transcript, assistantTextEntry(
+      "Habit: due_diligence why: an old statement from several turns ago, should not be re-detected."
+    ));
+    writeTranscriptLine(transcript, { type: "user", message: { role: "user", content: "next question" } });
+    // ...and the most recent turn has no acknowledgment at all.
+    writeTranscriptLine(transcript, assistantTextEntry("Just a normal reply, no acknowledgment here."));
+
+    detectAckFromTranscript(transcript, "s1");
+    assert.equal(fs.existsSync(ackLog), false, "an old acknowledgment buried earlier in history must not be re-detected on every later turn");
+  } finally {
+    process.env.ACK_ACK_LOG = origAckLog;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("detectAckFromTranscript: never throws on a missing/nonexistent transcript path", () => {
+  assert.doesNotThrow(() => detectAckFromTranscript("/nonexistent/path/session.jsonl", "s1"));
+  assert.doesNotThrow(() => detectAckFromTranscript(undefined, "s1"));
+  assert.doesNotThrow(() => detectAckFromTranscript(null, "s1"));
+});
+
+test("detectAckFromTranscript: never throws on a malformed (non-JSON) transcript line", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ack-transcript-malformed-"));
+  const transcript = path.join(dir, "session.jsonl");
+  try {
+    fs.writeFileSync(transcript, "not valid json at all\n{\"partial\":\n");
+    assert.doesNotThrow(() => detectAckFromTranscript(transcript, "s1"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("processPromptSubmit: calls the transcript detector when payload.transcript_path is present", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ack-e2e-prompt-"));
+  const transcript = path.join(dir, "session.jsonl");
+  const ackLog = path.join(dir, "ack.jsonl");
+  const origAckLog = process.env.ACK_ACK_LOG;
+  process.env.ACK_ACK_LOG = ackLog;
+  try {
+    writeTranscriptLine(transcript, assistantTextEntry(
+      "Habit: shippable_pride matters because — I would ship this test as-is."
+    ));
+    await processPromptSubmit(
+      { hook_event_name: "UserPromptSubmit", session_id: "e2e-session", transcript_path: transcript },
+      { framework: "claude", enforcer: { pickPrompt: async () => ({ prompts: [] }) } }
+    );
+    assert.ok(fs.existsSync(ackLog), "processPromptSubmit must trigger real detection when transcript_path is in the payload");
+    const entry = JSON.parse(fs.readFileSync(ackLog, "utf8").trim());
+    assert.equal(entry.session_id, "e2e-session");
+    assert.match(entry.statement, /shippable_pride/);
+  } finally {
+    process.env.ACK_ACK_LOG = origAckLog;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
