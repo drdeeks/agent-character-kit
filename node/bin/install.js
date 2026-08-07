@@ -31,6 +31,13 @@ import { normalizeHabitName, buildHabitYaml, VALID_LEVELS } from "../src/habits/
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root
+// Same test postinstall.js uses: a real global/packed install always lands
+// under some node_modules/ tree; a local dev checkout never does. Used to
+// stop telling someone "install the package" when this exact invocation is
+// already running from an installed copy -- reconfirmed live twice
+// tonight, 2026-08-07 (KD-19 item 4): the banner printed unconditionally
+// even right after `ack configure --yes` ran through the global binary.
+const IS_GLOBAL_INSTALL = __dirname.split(path.sep).includes("node_modules");
 const DAEMON = path.join(REPO, "node", "enforcer", "agent_enforcer_daemon.js");
 // Node-native monitor + watchdog -- the daemon/monitor/watchdog trio is
 // Node-only by default. Python (deploy/ack_monitor.py, ack_watchdog.py)
@@ -934,9 +941,13 @@ async function main(callerOpts) {
     );
   }
 
-  // 7. ACK install prompt (do NOT auto-run npm/pip — visibility first)
-  // The user installs the package explicitly; we surface the exact
-  // command rather than running post-install scripts silently.
+  // 7. ACK install prompt (do NOT auto-run npm/pip — visibility first).
+  // Only when this invocation is genuinely running from a LOCAL dev
+  // checkout, not an already-global/packed install -- see
+  // IS_GLOBAL_INSTALL above. Printing "install the package" right after
+  // this exact command ran through the global binary is nonsense, not
+  // helpful (KD-19 item 4).
+  if (!IS_GLOBAL_INSTALL) {
   console.log("\n─── Install Agent Character Kit (ACK) ───");
   console.log("  The CLI is installed locally. To make `ack` available");
   console.log("  system-wide (or in another project), install the package:");
