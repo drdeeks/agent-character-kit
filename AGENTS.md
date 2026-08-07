@@ -269,6 +269,12 @@ harness as the companion; every other harness only ever touches Node.
 `npm i -g @character-kit && ack configure`) sets up ALL FOUR components — daemon,
 companion, monitor, watchdog — in one flow and writes a single `.env`
 (`AGENT_WORKSPACE` / `ENFORCER_SOCKET` / `ACK_ACK_LOG`) every component reads.
+`ack configure --yes` is idempotent (fixed 2026-08-07, CL-0008): re-running
+it against an already-configured workspace pings the existing daemon first
+and reuses it instead of spawning a second one that would silently steal
+the socket. Requires `ACK_AUTH_TOKEN` to be read from the workspace's
+existing `.env` rather than regenerated — do not change that back to an
+unconditional `crypto.randomUUID()` without re-breaking this.
 For a root-owned system-wide deploy, `deploy/deploy-ack-services.sh` installs
 and starts the monitor + watchdog as systemd units instead.
 
