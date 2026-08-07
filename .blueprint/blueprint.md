@@ -2103,3 +2103,14 @@ Rollback Ref: N/A -- no code changed in this entry
   fixed there too. Verified live: a real isolated daemon + `ack repair`
   against the same workspace now correctly reports reuse instead of
   spawning a duplicate.
+
+## Known Defects Register — resolution update (2026-08-07, backlog session)
+
+- **KD-18**: FIXED. `deploy-agent-enforcer.sh` now runs `npm install --omit=dev` after the source copy. Not live-verified (no sudo this session) -- syntax-checked only.
+- **KD-19**: FIXED, all 5 items + tone correction. Interactive wizard now auto-detects harnesses (detectHarnesses(), pre-populates + confirms rather than forcing free-text with a hardcoded default), Python companion prompt is contextual (only asked when Hermes is actually selected), privilege-mode prompt describes current state without narrating that it changed. Item 4 (redundant install banner) fixed separately below.
+- **KD-19 item 4 / redundant banner**: FIXED. `install.js` now checks `IS_GLOBAL_INSTALL` (same node_modules-path test postinstall.js already used) and only prints the "install the package" banner from a genuine local dev checkout, never when already running through a global/packed install.
+- **KD-20**: FIXED, but required a second, deeper fix to actually work -- see KD-26.
+- **KD-26**: FIXED (new defect found while verifying KD-20). `status` was silently gated behind ACK_AUTH_TOKEN like every other RPC method, so any fresh CLI invocation (no token in its own env) got a false "dead" reading against a healthy, correctly-tokened daemon. Exempted `status` specifically; verified live end to end (real isolated daemon + `ack repair` against it correctly reports reuse, no duplicate spawned).
+- **KD-21, KD-23, KD-24, KD-25**: still open, not touched this pass.
+
+Commits this pass: 8c90a38, bc016fa, 02c47c0, 5ead336, 18bffb5, ab1c6cc, cb14f03, f145df0.
