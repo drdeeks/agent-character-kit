@@ -90,7 +90,14 @@ function rpc(sock, method, params, token) {
 test("daemon: reuse-window rejects the previous two habits", { timeout: 25000 }, async () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "ackrw-"));
   const sock = path.join(ws, ".agent", "enforcer.sock");
-  const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, HOME: os.homedir() };
+  // This test's whole point is exercising a 2-item window shifting after a
+  // 3rd distinct ack -- the real default is now 10 (KD-25, fixed
+  // 2026-08-07: a hardcoded window of 2 meant alternating between exactly
+  // two habits never tripped the guard, which is exactly what happened
+  // live). Overriding it back to 2 here keeps this test's original intent
+  // intact rather than rewriting it to need 11 real distinct habits; the
+  // real default is covered by the new test right after this one.
+  const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, HOME: os.homedir(), ACK_MAX_HABIT_NAME_HISTORY: "2" };
   fs.mkdirSync(path.join(ws, ".agent", "habits"), { recursive: true });
 
   const { spawn } = await import("node:child_process");
