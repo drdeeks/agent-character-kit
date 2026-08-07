@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
-import { resolveSocket, discoverAgentWorkspaces } from "../bin/install.js";
+import { resolveSocket, discoverAgentWorkspaces, writeClaudeHookConfig, claudeSettingsPath } from "../bin/install.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root, regardless of CWD
@@ -143,5 +143,48 @@ test("daemon: reuse-window rejects the previous two habits", { timeout: 25000 },
     try { process.kill(-child.pid, "SIGKILL"); } catch {}
     try { child.kill("SIGKILL"); } catch {}
     fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+// ─── writeClaudeHookConfig (MOD-003: both PreToolUse + UserPromptSubmit) ──────
+
+test("writeClaudeHookConfig wires both PreToolUse and UserPromptSubmit, preserves unrelated settings", () => {
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "ack-claude-home-"));
+  const realHome = os.homedir;
+  const origHomeEnv = process.env.HOME;
+  process.env.HOME = tmpHome;
+  try {
+    const settingsDir = path.join(tmpHome, ".claude");
+    fs.mkdirSync(settingsDir, { recursive: true });
+    const settingsPath = path.join(settingsDir, "settings.json");
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      someUnrelatedKey: "must-survive",
+      hooks: { SomeOtherPlugin: [{ hooks: [{ type: "command", command: "not-ack" }] }] },
+    }, null, 2));
+
+    const cmd = `node '${path.join(REPO, "node", "bin", "ack.js")}' hook claude`;
+    const written = writeClaudeHookConfig(cmd);
+    assert.equal(written, claudeSettingsPath());
+
+    const result = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    assert.equal(result.someUnrelatedKey, "must-survive", "unrelated top-level key must survive");
+    assert.deepEqual(result.hooks.SomeOtherPlugin, [{ hooks: [{ type: "command", command: "not-ack" }] }],
+      "unrelated hook entry must survive");
+    assert.ok(Array.isArray(result.hooks.PreToolUse) && result.hooks.PreToolUse.length === 1);
+    assert.ok(Array.isArray(result.hooks.UserPromptSubmit) && result.hooks.UserPromptSubmit.length === 1,
+      "MOD-003: UserPromptSubmit must be wired, not just PreToolUse");
+    assert.equal(result.hooks.PreToolUse[0].hooks[0].command, cmd);
+    assert.equal(result.hooks.UserPromptSubmit[0].hooks[0].command, cmd);
+
+    // Re-running must replace our own entry, not duplicate it (idempotent re-install)
+    writeClaudeHookConfig(cmd);
+    const result2 = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+    assert.equal(result2.hooks.PreToolUse.length, 1, "re-install must not duplicate PreToolUse entries");
+    assert.equal(result2.hooks.UserPromptSubmit.length, 1, "re-install must not duplicate UserPromptSubmit entries");
+    assert.deepEqual(result2.hooks.SomeOtherPlugin, [{ hooks: [{ type: "command", command: "not-ack" }] }],
+      "unrelated hook entry must still survive after re-install");
+  } finally {
+    process.env.HOME = origHomeEnv;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 });

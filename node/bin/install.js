@@ -160,28 +160,46 @@ function buildSelfContainedHookCommand(rawCmd, envFilePath) {
   return `bash -lc 'set -a; source ${shellQuote(envFilePath)} 2>/dev/null; set +a; ${rawCmd}'`;
 }
 
-function claudeSettingsPath() {
+export function claudeSettingsPath() {
   return path.join(os.homedir(), ".claude", "settings.json");
 }
 
-// Merge (not clobber) our PreToolUse entry into the user's real settings.json.
-// Re-running install replaces our own prior entry (matched by the "bin/ack.js"
-// marker) instead of appending a duplicate every time.
-function writeClaudeHookConfig(cmdString) {
+// Merge (not clobber) our PreToolUse + UserPromptSubmit entries into the
+// user's real settings.json. Re-running install replaces our own prior
+// entries (matched by the "bin/ack.js" marker) instead of appending
+// duplicates every time. Exported for direct testing, same convention as
+// resolveSocket/discoverAgentWorkspaces below.
+export function writeClaudeHookConfig(cmdString) {
+  // MOD-003: both PreToolUse (the gate) and UserPromptSubmit (the habit
+  // injection channel) must be wired, or the injection half of the
+  // enforcement loop never reaches a live session even though the daemon
+  // and character.js's pickHabitPrompts()/generateConfig() logic for it
+  // already exist and work (blueprint.md KD-07). Both hook types use the
+  // exact same command string -- ack.js routes on hook_event_name at
+  // runtime (ack.js:680) -- so this writes one string into two arrays.
   const p = claudeSettingsPath();
   let settings = {};
   if (fs.existsSync(p)) {
     try { settings = JSON.parse(fs.readFileSync(p, "utf8")); } catch { settings = {}; }
   }
   settings.hooks = settings.hooks || {};
-  settings.hooks.PreToolUse = (settings.hooks.PreToolUse || []).filter(
+
+  const stripAckEntries = (arr) => (arr || []).filter(
     (entry) => !(entry && Array.isArray(entry.hooks) &&
       entry.hooks.some((h) => h && typeof h.command === "string" && h.command.includes("bin/ack.js")))
   );
+
+  settings.hooks.PreToolUse = stripAckEntries(settings.hooks.PreToolUse);
   settings.hooks.PreToolUse.push({
     matcher: "*",
     hooks: [{ type: "command", command: cmdString }],
   });
+
+  settings.hooks.UserPromptSubmit = stripAckEntries(settings.hooks.UserPromptSubmit);
+  settings.hooks.UserPromptSubmit.push({
+    hooks: [{ type: "command", command: cmdString }],
+  });
+
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, JSON.stringify(settings, null, 2) + "\n");
   return p;
@@ -700,7 +718,7 @@ async function main(callerOpts) {
         if (doWireClaudeConfig) {
           const wrapped = config.hooks.PreToolUse[0].hooks[0].command;
           const settingsPath = writeClaudeHookConfig(wrapped);
-          companionMsg += `\n\nWired into ${settingsPath} (PreToolUse hook, merged with existing config).`;
+          companionMsg += `\n\nWired into ${settingsPath} (PreToolUse + UserPromptSubmit hooks, merged with existing config).`;
         } else {
           companionMsg += `\n\nNot wired automatically (declined) -- add the above to ${claudeSettingsPath()} yourself, or re-run install.`;
         }

@@ -80,7 +80,19 @@ async function main() {
   const write = (line) => {
     try { fs.appendFileSync(log, line + "\n"); } catch { /* best-effort */ }
   };
-  write(`ack postinstall: auto-detected harness(es): ${harnesses.join(", ")}`);
+  // console.log/error here reach the user's actual terminal during
+  // `npm install -g` -- npm streams lifecycle-script stdout/stderr live by
+  // default. The tmp log above stays too (useful after the terminal's
+  // scrolled away), but it must never be the ONLY place this is recorded --
+  // that was the bug: setup could silently fail (or silently need a manual
+  // follow-up, e.g. root mode) and nothing ever told the person who just
+  // ran the install.
+  const say = (line) => { console.log(line); write(line); };
+  const warn = (line) => { console.error(line); write(line); };
+
+  say(`\n[agent-character-kit] postinstall: detected ${harnesses.join(", ")} -- setting up automatically...`);
+
+  const isRootUser = typeof process.getuid === "function" && process.getuid() === 0;
 
   const { main: installMain } = await import("./install.js");
   try {
@@ -101,11 +113,19 @@ async function main() {
       start: true,
       writeClaudeConfig: true,
     });
-    write(`ack postinstall: set up ${harnesses.join(", ")} successfully`);
+    say(`[agent-character-kit] ✓ set up ${harnesses.join(", ")} successfully. \`ack status\` is live now -- nothing further to install.`);
+    if (isRootUser) {
+      say(`[agent-character-kit] Note: installed in USER mode even though this ran as root/sudo -- root/system-wide`);
+      say(`  daemon setup is a separate, explicit step (needs your sudo password, which an unattended`);
+      say(`  install script must never assume): run \`ack install --root\` if you want that instead.`);
+    }
+    say(`[agent-character-kit] To customize (different workspace, harness, or options): \`ack install\`.`);
   } catch (e) {
-    write(`ack postinstall: setup failed: ${e.message}`);
+    warn(`[agent-character-kit] ✗ automatic setup FAILED: ${e.message}`);
+    warn(`[agent-character-kit] Nothing is configured. Run \`ack install\` to set up manually (interactive,`);
+    warn(`  will explain each step), or \`ack doctor\` for a full diagnostic of what's missing.`);
   }
-  write("ack postinstall: done. Run `ack status` to verify, `ack install` to customize.");
+  write("ack postinstall: done.");
 }
 
 main();

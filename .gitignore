@@ -28,6 +28,16 @@ node/memory/daily/*.yaml
 node/memory/weekly/*.yaml
 knowledge/vectors/vectors.json
 
+# ===== enterprise-blueprint runtime / generated =====
+# blueprint.md is the source of truth; everything below is mechanically
+# regenerated from it via generate_checklist.py, same convention as the
+# Agent Character Kit runtime files above.
+.blueprint/checklist.md
+.blueprint/checklist-data.json
+.blueprint/.blueprint-chain/
+.blueprint/.chain/
+.blueprint/.blueprint-lock.json
+
 # ===== Node =====
 node/*.log
 npm-debug.log*

@@ -279,7 +279,13 @@ export async function pickHabitPrompts(sessionId, enforcer) {
     if (reason) lines.push("    why: " + reason);
   }
   _logInjection(prompts.map((h) => h.prompt));
-  return "AGENT CHARACTER HABITS (read before reasoning):\n" + lines.join("\n");
+  // MOD-002: a vague, non-specific locational nudge -- enough to shorten a
+  // search, never enough to skip it. Deliberately does NOT name a habit,
+  // a filename, or the exact `.agent/habits/` path (Guiding Principle 2,
+  // blueprint.md Part I/1.4) -- an agent that wants to acknowledge one of
+  // these by name still has to go look in its own workspace for it.
+  const nudge = "\n\n(these live somewhere in your own workspace's hidden agent configuration -- go find the real file before you cite one)";
+  return "AGENT CHARACTER HABITS (read before reasoning):\n" + lines.join("\n") + nudge;
 }
 
 /**

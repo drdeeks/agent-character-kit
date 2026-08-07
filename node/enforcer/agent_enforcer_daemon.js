@@ -683,7 +683,7 @@ export class Enforcer {
       }
       return {
         hold: true,
-        reason: "acknowledge 2 habits.",
+        reason: "state two habit names, and how they apply to the work you've been doing.",
       };
     }
     return { hold: false };

@@ -10,7 +10,7 @@
 #        mv to .trash/ costs nothing and keeps a recovery path. The daemon still
 #        hard-blocks rm -rf / as a floor; this habit makes the safe path the default.
 name: "safe_deletion_via_trash"
-prompt: "Before deleting anything, move it to .trash/ at project root (mv <file> .trash/) — never rm -rf."
+prompt: "Am I about to delete something instead of moving it to .trash/ at project root?"
 enforcement:
   level: "reminder"
 behavior:

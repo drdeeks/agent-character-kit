@@ -12,7 +12,8 @@
     "test": "node --test node/tests/*.test.js",
     "start": "node bin/ack.js",
     "ack-install": "node node/bin/install.js",
-    "postinstall": "node node/bin/postinstall.js"
+    "postinstall": "node node/bin/postinstall.js",
+    "preuninstall": "node node/bin/preuninstall.js"
   },
   "keywords": [
     "agent",

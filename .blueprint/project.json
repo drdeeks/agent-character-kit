@@ -1,0 +1,16 @@
+{
+  "project": "ACK Enforcement Repair",
+  "slug": "ack-enforcement-repair",
+  "scope": "project",
+  "phases": [
+    "Phase 0: Foundation & Quick Fixes",
+    "Phase 1: Enforcement Loop & Verification",
+    "Phase 2: Testing & Hardening"
+  ],
+  "version": "1.0",
+  "created_at": "2026-08-07T01:36:43.255977+00:00",
+  "blueprint": "/home/drdeek/projects/agent-character-kit/.blueprint/blueprint.md",
+  "checklist": "/home/drdeek/projects/agent-character-kit/.blueprint/checklist.md",
+  "changelog": "/home/drdeek/projects/agent-character-kit/.blueprint/CHANGELOG.md",
+  "assignments": "/home/drdeek/projects/agent-character-kit/.blueprint/assignments.json"
+}
