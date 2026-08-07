@@ -265,7 +265,7 @@ identifiable file (e.g. `Bash`) still count toward the cycle dimension.
    `rigorous-commits-no-push` and match the file `name: rigorous_commits_no_push`.
 2. **Companion** (`ack hook`, or `python/hermes_plugin/` for Hermes) — on each
    tool call asks the daemon `tool_tick` and obeys the hold; records any
-   `Habit: <name> <resonates true | why: | because | …> <reason>` the agent
+   `Habit: <name> <why: | because | matters because | applies because> <real work attribution>` the agent
    states into the **external ACK LOG** (`/tmp/agent-character-kit-ack.jsonl`).
    The companion does **not** self-credit — it cannot forge acknowledgments.
 3. **Monitor** (`deploy/ack_monitor.js`, root-owned systemd
