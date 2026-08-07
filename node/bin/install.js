@@ -49,7 +49,7 @@ const ACK_BIN = path.join(REPO, "node", "bin", "ack.js");
 
 // ─── arg parsing (non-interactive) ────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null, habitEvidence: null, habitLevel: null, all: false, hookCommand: null, python: null, start: true, writeClaudeConfig: true };
+  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null, habitEvidence: null, habitLevel: null, all: false, hookCommand: null, python: null, vectors: false, start: true, writeClaudeConfig: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--workspace") out.workspace = argv[++i];
@@ -71,6 +71,8 @@ function parseArgs(argv) {
     else if (a === "--hook-command") out.hookCommand = argv[++i];
     else if (a === "--python") out.python = true;
     else if (a === "--no-python") out.python = false;
+    else if (a === "--vectors") out.vectors = true;
+    else if (a === "--no-vectors") out.vectors = false;
     else if (a === "--start") out.start = true;
     else if (a === "--no-start") out.start = false;
     else if (a === "--claude-config") out.writeClaudeConfig = true;
@@ -1000,36 +1002,44 @@ async function main(callerOpts) {
   // real `ack configure` run (the normal case) never told anyone to
   // install it at all.
   if (anyPython) {
-    const pyDir = path.join(REPO, "python");
-    const target = pyDir + (anyVectors ? "[vectors]" : "");
-    if (fs.existsSync(path.join(pyDir, "pyproject.toml"))) {
-      if (anyRoot) {
-        // Root already owns this machine's enforcement stack -- running
-        // pip on its own behalf here is the same trust boundary as
-        // everything else deploy-agent-enforcer.sh already does
-        // unattended. User-mode never does this: silently touching a
-        // non-root user's Python environment without them running the
-        // command themselves is a different, unwanted kind of surprise.
-        console.log("\n─── Python companion (root) ───");
-        console.log(`  Installing: pip3 install ${target}`);
-        let result = spawnSync("pip3", ["install", target], { stdio: "inherit" });
-        if (result.status !== 0) {
-          console.log("  Retrying with --break-system-packages (PEP 668 guard)...");
-          result = spawnSync("pip3", ["install", "--break-system-packages", target], { stdio: "inherit" });
-        }
-        if (result.status === 0) {
-          console.log("  Python companion installed.");
-        } else {
-          console.log("  Python companion install FAILED -- run manually:");
-          console.log(`    pip3 install --break-system-packages ${target}`);
-        }
-      } else {
-        console.log("\n  Python bindings (optional, for Python-plugin companions):");
-        console.log("    pip3 install " + target);
-        console.log("    # or, if Debian-guarded (PEP 668): pip3 install --break-system-packages " + target);
-      }
-    }
+    installPythonCompanion({ pyDir: path.join(REPO, "python"), anyVectors, anyRoot });
   }
+}
+
+// Extracted for direct testing (spawnSync/print behavior, no readline, no
+// sudo/deploy path) -- see node/tests/install.test.js's PATH-shadowed
+// fake-pip3 tests. `spawnSyncFn` is injectable so tests never need a real
+// pip3 on PATH, but defaults to the real child_process.spawnSync in
+// production.
+function installPythonCompanion({ pyDir, anyVectors, anyRoot }, spawnSyncFn = spawnSync) {
+  const target = pyDir + (anyVectors ? "[vectors]" : "");
+  if (!fs.existsSync(path.join(pyDir, "pyproject.toml"))) return { ran: false };
+  if (anyRoot) {
+    // Root already owns this machine's enforcement stack -- running pip
+    // on its own behalf here is the same trust boundary as everything
+    // else deploy-agent-enforcer.sh already does unattended. User-mode
+    // never does this: silently touching a non-root user's Python
+    // environment without them running the command themselves is a
+    // different, unwanted kind of surprise.
+    console.log("\n─── Python companion (root) ───");
+    console.log(`  Installing: pip3 install ${target}`);
+    let result = spawnSyncFn("pip3", ["install", target], { stdio: "inherit" });
+    if (result.status !== 0) {
+      console.log("  Retrying with --break-system-packages (PEP 668 guard)...");
+      result = spawnSyncFn("pip3", ["install", "--break-system-packages", target], { stdio: "inherit" });
+    }
+    if (result.status === 0) {
+      console.log("  Python companion installed.");
+      return { ran: true, ok: true, target };
+    }
+    console.log("  Python companion install FAILED -- run manually:");
+    console.log(`    pip3 install --break-system-packages ${target}`);
+    return { ran: true, ok: false, target };
+  }
+  console.log("\n  Python bindings (optional, for Python-plugin companions):");
+  console.log("    pip3 install " + target);
+  console.log("    # or, if Debian-guarded (PEP 668): pip3 install --break-system-packages " + target);
+  return { ran: false, printed: true, target };
 }
 
 const __isCLI = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
@@ -1040,4 +1050,4 @@ if (__isCLI) {
   });
 }
 
-export { parseArgs, resolveSocket, main, launchDaemon, seedHabits, writeConstitution, discoverAgentWorkspaces };
+export { parseArgs, resolveSocket, main, launchDaemon, seedHabits, writeConstitution, discoverAgentWorkspaces, installPythonCompanion };

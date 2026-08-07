@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
-import { resolveSocket, discoverAgentWorkspaces, writeClaudeHookConfig, claudeSettingsPath } from "../bin/install.js";
+import { resolveSocket, discoverAgentWorkspaces, writeClaudeHookConfig, claudeSettingsPath, parseArgs, installPythonCompanion, main as installMain } from "../bin/install.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root, regardless of CWD
@@ -465,4 +465,144 @@ test("verifyLiveness: allAlive=true end-to-end when daemon/monitor/watchdog are 
     }
     fs.rmSync(ws, { recursive: true, force: true });
   }
+});
+
+// ─── Python companion vectors extra (drdeek: prompt on demand, root auto-runs pip) ──
+
+function captureConsoleLog(fn) {
+  const lines = [];
+  const orig = console.log;
+  console.log = (...args) => lines.push(args.join(" "));
+  try {
+    fn();
+  } finally {
+    console.log = orig;
+  }
+  return lines.join("\n");
+}
+
+test("parseArgs: recognizes --vectors and --no-vectors, defaults to false", () => {
+  assert.equal(parseArgs([]).vectors, false, "default (no flag) must be false, never auto-on");
+  assert.equal(parseArgs(["--vectors"]).vectors, true);
+  assert.equal(parseArgs(["--no-vectors"]).vectors, false);
+});
+
+test("installPythonCompanion: user-mode (anyRoot=false) only prints instructions, never spawns pip", () => {
+  const pyDir = path.join(REPO, "python");
+  let spawnCalls = 0;
+  const fakeSpawn = () => { spawnCalls++; return { status: 0 }; };
+
+  const out = captureConsoleLog(() => {
+    const result = installPythonCompanion({ pyDir, anyVectors: false, anyRoot: false }, fakeSpawn);
+    assert.deepEqual(result, { ran: false, printed: true, target: pyDir });
+  });
+  assert.equal(spawnCalls, 0, "user-mode must never touch a non-root user's Python env automatically");
+  assert.match(out, /pip3 install/);
+  assert.match(out, /break-system-packages/i);
+});
+
+test("installPythonCompanion: user-mode target string includes [vectors] when anyVectors is true", () => {
+  const pyDir = path.join(REPO, "python");
+  const out = captureConsoleLog(() => {
+    installPythonCompanion({ pyDir, anyVectors: true, anyRoot: false }, () => ({ status: 0 }));
+  });
+  assert.match(out, /pip3 install .*\[vectors\]/);
+});
+
+test("installPythonCompanion: root mode actually runs pip3 install via the injected spawn function", () => {
+  const pyDir = path.join(REPO, "python");
+  const calls = [];
+  const fakeSpawn = (cmd, args) => { calls.push([cmd, ...args]); return { status: 0 }; };
+
+  const out = captureConsoleLog(() => {
+    const result = installPythonCompanion({ pyDir, anyVectors: true, anyRoot: true }, fakeSpawn);
+    assert.deepEqual(result, { ran: true, ok: true, target: pyDir + "[vectors]" });
+  });
+  assert.equal(calls.length, 1, "success on first attempt must not retry");
+  assert.deepEqual(calls[0], ["pip3", "install", pyDir + "[vectors]"]);
+  assert.match(out, /Python companion installed/);
+});
+
+test("installPythonCompanion: root mode retries with --break-system-packages on PEP 668 failure, then succeeds", () => {
+  const pyDir = path.join(REPO, "python");
+  const calls = [];
+  const fakeSpawn = (cmd, args) => {
+    calls.push([cmd, ...args]);
+    // First call (plain install) fails; second (with the guard flag) succeeds.
+    return { status: calls.length === 1 ? 1 : 0 };
+  };
+
+  const out = captureConsoleLog(() => {
+    const result = installPythonCompanion({ pyDir, anyVectors: false, anyRoot: true }, fakeSpawn);
+    assert.deepEqual(result, { ran: true, ok: true, target: pyDir });
+  });
+  assert.equal(calls.length, 2, "must retry exactly once after a PEP 668 failure");
+  assert.deepEqual(calls[0], ["pip3", "install", pyDir]);
+  assert.deepEqual(calls[1], ["pip3", "install", "--break-system-packages", pyDir]);
+  assert.match(out, /Retrying with --break-system-packages/);
+  assert.match(out, /Python companion installed/);
+});
+
+test("installPythonCompanion: root mode reports failure (not a silent skip) if both pip attempts fail", () => {
+  const pyDir = path.join(REPO, "python");
+  const calls = [];
+  const fakeSpawn = (cmd, args) => { calls.push([cmd, ...args]); return { status: 1 }; };
+
+  const out = captureConsoleLog(() => {
+    const result = installPythonCompanion({ pyDir, anyVectors: false, anyRoot: true }, fakeSpawn);
+    assert.deepEqual(result, { ran: true, ok: false, target: pyDir });
+  });
+  assert.equal(calls.length, 2, "both the plain and guarded attempts must have run");
+  assert.match(out, /install FAILED -- run manually/);
+});
+
+test("installPythonCompanion: no pyproject.toml at the target path -> no-op, no spawn calls at all", () => {
+  const fakePyDir = path.join(os.tmpdir(), "no-such-python-dir-" + Date.now());
+  let spawnCalls = 0;
+  const result = installPythonCompanion(
+    { pyDir: fakePyDir, anyVectors: false, anyRoot: true },
+    () => { spawnCalls++; return { status: 0 }; }
+  );
+  assert.deepEqual(result, { ran: false });
+  assert.equal(spawnCalls, 0);
+});
+
+test("main() end-to-end (user-mode, no sudo): --yes --harness hermes --python --vectors threads anyVectors through to the printed pip target", { timeout: 20000 }, async () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "ack-vectors-e2e-"));
+  const sock = path.join(ws, ".agent", "enforcer.sock");
+  const origArgv = process.argv;
+  const origLog = console.log;
+  const lines = [];
+  console.log = (...args) => lines.push(args.join(" "));
+  try {
+    await installMain({
+      yes: true,
+      root: false,
+      workspace: ws,
+      socket: "unix",
+      harness: "hermes",
+      python: true,
+      vectors: true,
+      monitor: false,
+      watchdog: false,
+      companion: true,
+      start: true,
+      writeClaudeConfig: false,
+    });
+  } finally {
+    console.log = origLog;
+    process.argv = origArgv;
+    // AGENT_WORKSPACE only ever reaches the spawned daemon via env, never
+    // argv, so pkill -f <workspace> can never match it -- same real bug
+    // documented in ack-configure.test.js. Scan /proc/<pid>/environ instead.
+    for (const pidDir of fs.readdirSync("/proc").filter((n) => /^\d+$/.test(n))) {
+      try {
+        const environ = fs.readFileSync(`/proc/${pidDir}/environ`, "utf8");
+        if (environ.includes(`AGENT_WORKSPACE=${ws}\0`)) process.kill(Number(pidDir), "SIGKILL");
+      } catch { /* process gone, or unreadable -- fine, skip */ }
+    }
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+  const out = lines.join("\n");
+  assert.match(out, /pip3 install .*\[vectors\]/, "anyVectors must reach installPythonCompanion through main()'s real accumulation logic, not just the isolated unit test");
 });

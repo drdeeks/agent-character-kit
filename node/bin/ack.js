@@ -706,6 +706,7 @@ program
   .option("--harness <name>", "Harness: claude | cursor | gemini | opencode | hermes | generic")
   .option("--python", "Also install Python ACK bindings (auto with --all)")
   .option("--no-python", "Skip Python ACK bindings")
+  .option("--vectors", "Also install the optional 'vectors' extra (numpy + sentence-transformers, semantic search) -- needs --python, root auto-runs pip")
   .option("--no-monitor", "Skip acknowledgment monitor")
   .option("--no-watchdog", "Skip monitor watchdog")
   .option("--no-companion", "Skip companion hook config")
