@@ -522,8 +522,8 @@ async function main(callerOpts) {
     console.log("and the acknowledgment monitor/watchdog. Every step is optional");
     console.log("to skip; press Enter to accept the default.\n");
 
-    console.log("\n⚠ SECURITY-RELEVANT — read before answering. Three real options,");
-    console.log("  not two — pick the privilege boundary for the daemon/monitor/watchdog:");
+    console.log("\n⚠ SECURITY-RELEVANT — read before answering. Pick the privilege");
+    console.log("  boundary for the daemon/monitor/watchdog:");
     console.log("");
     console.log("  [1] System service (root, via systemd)  — RECOMMENDED");
     console.log("      Daemon + monitor + watchdog run as root. Strongest boundary: the");
