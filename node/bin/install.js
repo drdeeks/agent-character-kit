@@ -966,6 +966,7 @@ async function main(callerOpts) {
   }
   console.log("");
   console.log("  Run `ack --help` to see all commands once installed.");
+  }
 }
 
 const __isCLI = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
