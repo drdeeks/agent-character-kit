@@ -50,6 +50,44 @@ test("hook denies an allowed call that the daemon HOLDS (habit ack required)", a
   assert.equal(exitCode, 2);
 });
 
+// ─── Bootstrap/self-repair bypass (found live during Phase 2 testing) ────────
+
+test("bootstrap bypass: daemon start command is allowed even when the enforcer stub would deny/throw", async () => {
+  const enforcer = {
+    validateTool: async () => { throw new Error("must never be called for a bootstrap command"); },
+    toolTick: async () => { throw new Error("must never be called for a bootstrap command"); },
+  };
+  const { output, exitCode } = await processToolCall(
+    { tool_name: "Bash", tool_input: { command: "node /x/node/enforcer/agent_enforcer_daemon.js" }, hook_event_name: "PreToolUse" },
+    { framework: "claude", enforcer }
+  );
+  assert.equal(output.hookSpecificOutput.permissionDecision, "allow");
+  assert.equal(exitCode, 0);
+});
+
+test("bootstrap bypass: ack doctor/repair/status/configure/install are allowed even when the enforcer is unreachable", async () => {
+  const enforcer = { validateTool: async () => ({ allowed: false, error: true, reason: "down" }) };
+  for (const sub of ["doctor", "repair", "status", "configure", "install"]) {
+    const { output, exitCode } = await processToolCall(
+      { tool_name: "Bash", tool_input: { command: `ack ${sub}` }, hook_event_name: "PreToolUse" },
+      { framework: "claude", enforcer }
+    );
+    assert.equal(output.hookSpecificOutput.permissionDecision, "allow", `ack ${sub} should bypass`);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("bootstrap bypass: an ordinary command mentioning 'ack' in passing is NOT bypassed -- still fails closed", async () => {
+  const enforcer = { validateTool: async () => ({ allowed: false, error: true, reason: "down" }) };
+  const { output, exitCode } = await processToolCall(
+    { tool_name: "Bash", tool_input: { command: "cat ack-notes.txt" }, hook_event_name: "PreToolUse" },
+    { framework: "claude", enforcer }
+  );
+  assert.equal(output.hookSpecificOutput.permissionDecision, "deny",
+    "the bypass regex is scoped to real ack subcommands (\\back\\s+(doctor|...)\\b), not any string containing 'ack'");
+  assert.equal(exitCode, 2);
+});
+
 test("processPromptSubmit injects rotating habit prompts, never a habit name", async () => {
   const { output } = await processPromptSubmit(
     { hook_event_name: "UserPromptSubmit", session_id: "s1" },
