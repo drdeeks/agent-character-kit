@@ -25,16 +25,22 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_LIB="/usr/local/lib/agent-character-kit"
 MON_BIN="$INSTALL_LIB/ack_monitor.js"
 WATCH_BIN="$INSTALL_LIB/ack_watchdog.js"
+SERVICE_USER="${ACK_SERVICE_USER:-root}"
+SERVICE_GROUP="${ACK_SERVICE_GROUP:-$SERVICE_USER}"
 
 [ "$(id -u)" -eq 0 ] || { echo "ERROR: run as root (sudo bash $0)"; exit 1; }
 
-echo ">> Installing ACK monitor + watchdog (root-owned, self-healing)..."
+echo ">> Installing ACK monitor + watchdog (service user: $SERVICE_USER, self-healing)..."
 
-install -d -o root -g root -m 0755 "$INSTALL_LIB"
-install -o root -g root -m 0644 "$SRC_DIR/deploy/ack_monitor.js" "$MON_BIN"
-install -o root -g root -m 0644 "$SRC_DIR/deploy/ack_watchdog.js" "$WATCH_BIN"
-install -o root -g root -m 0644 "$SRC_DIR/deploy/agent-character-monitor.service" /etc/systemd/system/agent-character-monitor.service
-install -o root -g root -m 0644 "$SRC_DIR/deploy/agent-character-watchdog.service" /etc/systemd/system/agent-character-watchdog.service
+install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$INSTALL_LIB"
+install -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0640 "$SRC_DIR/deploy/ack_monitor.js" "$MON_BIN"
+install -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0640 "$SRC_DIR/deploy/ack_watchdog.js" "$WATCH_BIN"
+sed -e "s/^User=root$/User=$SERVICE_USER/" -e "s/^Group=root$/Group=$SERVICE_GROUP/" \
+  "$SRC_DIR/deploy/agent-character-monitor.service" > /etc/systemd/system/agent-character-monitor.service
+sed -e "s/^User=root$/User=$SERVICE_USER/" -e "s/^Group=root$/Group=$SERVICE_GROUP/" \
+  "$SRC_DIR/deploy/agent-character-watchdog.service" > /etc/systemd/system/agent-character-watchdog.service
+chown root:root /etc/systemd/system/agent-character-monitor.service /etc/systemd/system/agent-character-watchdog.service
+chmod 0644 /etc/systemd/system/agent-character-monitor.service /etc/systemd/system/agent-character-watchdog.service
 
 systemctl daemon-reload
 systemctl enable --now agent-character-monitor.service
