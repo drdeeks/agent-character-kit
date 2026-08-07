@@ -851,14 +851,30 @@ function startSocketServer(enforcer) {
   if (isTcp) {
     server.listen(tcpPort, tcpHost, onListening);
   } else {
-    // Secure the socket: 0600 (owner-only) + 0700 on the dir so no other
-    // local uid can connect to or even see the enforcement socket. World-666
-    // (the old default) let ANY process on the host talk to the enforcer.
+    // Secure the socket: group-restricted, not owner-only and not world.
+    // 0600/0700 (owner-only) was the prior hardening, but it silently broke
+    // root-mode and any future service-user mode: the daemon (root, or a
+    // dedicated service user) and the AGENT client are different uids by
+    // design in those modes, so an owner-only socket makes it physically
+    // impossible for the agent to ever connect at all -- found live,
+    // 2026-08-07, tracing why root-mode's stated "agent can use it but not
+    // tamper with it" design couldn't actually work as coded.
+    // 0660 + 0750 (setgid dir, set by the deploy script/installer so files
+    // created here inherit the group) lets members of the shared client
+    // group (root-mode/service-user-mode: daemon user + agent user; plain
+    // user-mode: same uid either way, this is a no-op) open a connection --
+    // but a raw connection alone does nothing. ACK_AUTH_TOKEN (MOD-006) is
+    // the actual authorization boundary for every RPC method; group access
+    // to the socket is deliberately weaker than that on purpose (defense in
+    // depth, not the primary gate). World-666 (rejected before, still
+    // rejected) let ANY process on the host both connect AND -- without a
+    // token check -- would have been a real hole; group-scoped connect +
+    // mandatory token auth is not the same risk.
     const sockDir = path.dirname(raw);
-    try { fssync.mkdirSync(sockDir, { recursive: true, mode: 0o700 }); } catch {}
-    try { fssync.chmodSync(sockDir, 0o700); } catch {}
+    try { fssync.mkdirSync(sockDir, { recursive: true, mode: 0o750 }); } catch {}
+    try { fssync.chmodSync(sockDir, 0o750); } catch {}
     server.listen(raw, () => {
-      try { fssync.chmodSync(raw, 0o600); } catch {}
+      try { fssync.chmodSync(raw, 0o660); } catch {}
       onListening();
     });
   }
@@ -872,7 +888,7 @@ function startSocketServer(enforcer) {
     if (err.code === "EADDRINUSE" && !isTcp) {
       try {
         fssync.unlinkSync(raw);
-        server.listen(raw, () => { try { fssync.chmodSync(raw, 0o600); } catch {} onListening(); });
+        server.listen(raw, () => { try { fssync.chmodSync(raw, 0o660); } catch {} onListening(); });
         return;
       } catch {}
     }
@@ -1059,11 +1075,18 @@ function startMultiWorkspaceDaemon(workspaces) {
         console.log(`ACK Enforcer daemon v${ACK_VERSION} listening on ${sock} [workspace: ${ws}]`);
       });
     } else {
+      // Same fix as startSocketServer() above: group-restricted (0660/0750),
+      // not owner-only (0600/0700) -- these two functions independently
+      // implement the same socket-security logic and had drifted apart in
+      // permission-hardening history exactly as duplicated code predicts
+      // (KD-16, blueprint.md). Not collapsed into one shared helper tonight
+      // -- too invasive a refactor to risk this late in the session -- but
+      // both copies must carry the same real fix.
       const sockDir = path.dirname(sock);
-      try { fssync.mkdirSync(sockDir, { recursive: true, mode: 0o700 }); } catch {}
-      try { fssync.chmodSync(sockDir, 0o700); } catch {}
+      try { fssync.mkdirSync(sockDir, { recursive: true, mode: 0o750 }); } catch {}
+      try { fssync.chmodSync(sockDir, 0o750); } catch {}
       server.listen(sock, () => {
-        try { fssync.chmodSync(sock, 0o600); } catch {}
+        try { fssync.chmodSync(sock, 0o660); } catch {}
         console.log(`ACK Enforcer daemon v${ACK_VERSION} listening on ${sock} [workspace: ${ws}]`);
       });
     }
@@ -1073,7 +1096,7 @@ function startMultiWorkspaceDaemon(workspaces) {
         try {
           fssync.unlinkSync(sock);
           server.listen(sock, () => {
-            try { fssync.chmodSync(sock, 0o600); } catch {}
+            try { fssync.chmodSync(sock, 0o660); } catch {}
             console.log(`ACK Enforcer daemon v${ACK_VERSION} listening on ${sock} [workspace: ${ws}]`);
           });
           return;
