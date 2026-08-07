@@ -196,8 +196,17 @@ export class Enforcer {
     this.requiredAcks = _num("ACK_REQUIRED_ACKS", "required_acks", 2);
     // Minimum character length for ack reasons (prevents filler).
     this.minAckReasonChars = _num("ACK_MIN_ACK_REASON_CHARS", "min_ack_reason_chars", 12);
-    // Max remembered ack reasons for reuse guard (rolling window).
-    this.maxAckReasonHistory = _num("ACK_MAX_ACK_REASON_HISTORY", "max_ack_reason_history", 8);
+    // Max remembered ack reasons for reuse guard (rolling window). Kept
+    // equal to maxHabitNameHistory below on purpose -- these two dedup
+    // windows used to disagree (8 vs a hardcoded 2), which is exactly the
+    // kind of drift a single agreed-upon number prevents.
+    this.maxAckReasonHistory = _num("ACK_MAX_ACK_REASON_HISTORY", "max_ack_reason_history", 10);
+    // How many distinct habit NAMES must be cited before any one can repeat
+    // (rolling window, not just "not the immediately previous one"). Was
+    // hardcoded to 2 (st.lastTwo, .slice(-2)) -- found live, 2026-08-07:
+    // a window of 2 means alternating between exactly two habits never
+    // trips the guard, which is exactly what happened across this session.
+    this.maxHabitNameHistory = _num("ACK_MAX_HABIT_NAME_HISTORY", "max_habit_name_history", 10);
     // Heartbeat staleness threshold in seconds (watchdog).
     this.heartbeatStaleSeconds = _num("ACK_HEARTBEAT_STALE_SECONDS", "heartbeat_stale_seconds", 600);
     // Watchdog validation interval in milliseconds.
@@ -577,7 +586,7 @@ export class Enforcer {
   _holdState(session) {
     if (!this.HOLD_STATE.has(session)) {
       this.HOLD_STATE.set(session, {
-        count: 0, acked: 0, lastTwo: [], reasons: [],
+        count: 0, acked: 0, usedHabitNames: [], reasons: [],
         // Distinct files touched since the last satisfied commit gate (a
         // Set, not a counter — 27 edits to one file is one file).
         filesTouched: new Set(),
@@ -716,9 +725,16 @@ export class Enforcer {
     // Require a substantive, engaged reason — not filler.
     if (reason.length < this.minAckReasonChars) return { ok: false, error: "reason too short — state WHY this habit governs this action (specific, situation-tied)" };
     const st = this._holdState(session);
-    // No reuse of either of the two most-recent habits (rolling window).
-    if (st.lastTwo.includes(norm)) {
-      return { ok: false, error: "already acknowledged recently — state a DIFFERENT habit (not one of the previous two)" };
+    // No reuse of any of the last N distinct habits (rolling window, N =
+    // maxHabitNameHistory, default 10, configurable via
+    // ACK_MAX_HABIT_NAME_HISTORY / max_habit_name_history). Was a
+    // hardcoded window of 2 -- found live, 2026-08-07: alternating between
+    // exactly two habits never tripped a window that short. A real fix,
+    // not a patch, means the window itself has to be wide enough that
+    // genuinely cycling through the habit pool is the only way through,
+    // not something two names can satisfy forever.
+    if (st.usedHabitNames.includes(norm)) {
+      return { ok: false, error: `already acknowledged recently — cite a habit not in your last ${this.maxHabitNameHistory} distinct acknowledgments` };
     }
     // No reuse of a prior ack's exact reason for this session (forces real engagement).
     if (st.reasons.includes(reason.toLowerCase())) {
@@ -726,8 +742,8 @@ export class Enforcer {
     }
     // Every accepted acknowledgment shifts the rolling window — including ones
     // that arrive after the hold is already satisfied — so the agent can never
-    // freeze the "previous two" and keep reusing everything else.
-    st.lastTwo = [...st.lastTwo, norm].slice(-2);
+    // freeze a short list and keep reusing everything else.
+    st.usedHabitNames = [...st.usedHabitNames, norm].slice(-this.maxHabitNameHistory);
     st.reasons.push(reason.toLowerCase());
     if (st.reasons.length > this.maxAckReasonHistory) st.reasons.shift();
     st.acked += 1;
