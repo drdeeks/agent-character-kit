@@ -334,15 +334,17 @@ export async function pickHabitPrompts(sessionId, enforcer) {
 // agent process still cannot forge its own acknowledgment.
 //
 // Deliberately BROADER than Hermes's literal regex: Hermes's pattern
-// (`resonates\s+true\s+because`) only matches one of the five closers the
-// daemon's real submitAck() grammar accepts (agent_enforcer_daemon.js:707
-// -- resonates true | why: | because | matters because | applies because).
-// A straight port of Hermes's narrower regex would silently miss valid
-// acknowledgments using any of the other four closers. This uses the
-// daemon's own real acceptance grammar instead, so nothing that would
-// actually be credited goes undetected.
+// (`resonates\s+true\s+because`) is a stale closer the daemon's real
+// submitAck() grammar (agent_enforcer_daemon.js:708) no longer accepts as
+// of 2026-08-07 -- "resonates true" framed the statement as an abstract
+// truth-claim instead of attribution to real work, so it was dropped. The
+// live acceptance grammar is now: why: | because | matters because |
+// applies because, AND the reason itself must attribute to concrete work
+// (see WORK_ATTRIBUTION_RE in the daemon) -- this detector only needs to
+// catch candidate statements for the monitor to relay, so it stays
+// deliberately loose on content and just matches the connector shape.
 const ACK_STATEMENT_RE =
-  /habit:\s*\S+\s*(?:resonates\s+true|why:|because|matters\s+because|applies\s+because)\s*[-–:]?\s*.+/gi;
+  /habit:\s*\S+\s*(?:why:|because|matters\s+because|applies\s+because)\s*[-–:]?\s*.+/gi;
 
 /**
  * Read the Claude Code transcript (JSONL, one line per event) at

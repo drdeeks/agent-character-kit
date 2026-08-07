@@ -110,6 +110,14 @@ function loadYaml(file) {
 // habits required. These embedded values ARE the default character; files on disk
 // OVERRIDE (merge on top of) them. A user who pulls the daemon gets sane, safe
 // enforcement immediately — zero config, zero "additional bullshit".
+// Structural half of the "<habit> <connector> <real work attribution>"
+// acknowledgment grammar (see submitAck below): the reason must point at
+// something concrete -- a file/code reference, a past-tense action actually
+// taken, or a stated future effect -- not a generic truth-claim about why
+// the habit matters in the abstract.
+const WORK_ATTRIBUTION_RE =
+  /\.[a-zA-Z0-9]{1,10}\b|\/[\w.\-]+\/[\w.\-]+|`[^`]+`|\b(wrote|fixed|changed|edited|added|removed|renamed|moved|committed|refactored|deleted|created|updated|broke|caught|found|touched|reverted)\b|\bwill\s+(affect|prevent|break|help|catch|stop|avoid)\b|\bnext\s+(time|turn|session)\b|\bthis\s+(commit|change|session|turn|edit|file|function|test)\b/i;
+
 const DEFAULT_CONSTITUTION = {
   agent: { id: "ack-enforcer", name: "Agent Character Kit Enforcer" },
   core_values: [
@@ -709,13 +717,17 @@ export class Enforcer {
     if (!statement || typeof statement !== "string") {
       return { ok: false, error: "no statement" };
     }
-    // Variable closer — NOT hardwired to "resonates true". Accepted closers:
-    //   resonates true | why: | because | matters because | applies because
-    // (case-insensitive; tolerant of em-dash/hyphen around the closer).
+    // Grammar: <habit> <connector> <real work attribution>. Deliberately
+    // dropped "resonates true" (2026-08-07) — that closer framed the
+    // statement as an abstract truth-claim ("this is true because...")
+    // when the point was never truth, it was attribution: tie the habit to
+    // the actual work just done or its concrete future effect. The
+    // remaining connectors just link name to reason; WORK_ATTRIBUTION_RE
+    // below is what actually enforces the attribution requirement.
     const m = statement.match(
-      /^habit:\s*(\S+)\s*(?:resonates\s+true|why:|because|matters\s+because|applies\s+because)\s*[-–:]?\s*(.+)$/i
+      /^habit:\s*(\S+)\s*(?:why:|because|matters\s+because|applies\s+because)\s*[-–:]?\s*(.+)$/i
     );
-    if (!m) return { ok: false, error: "bad format — use: Habit: <name> <closer: resonates true | why: | because | …> <engaged reason>" };
+    if (!m) return { ok: false, error: "bad format — use: Habit: <name> <connector: why: | because | matters because | applies because> <how it applies to work you did or will affect>" };
     const name = m[1];
     const reason = m[2].trim();
     const norm = this._normName(name);
@@ -724,6 +736,19 @@ export class Enforcer {
     }
     // Require a substantive, engaged reason — not filler.
     if (reason.length < this.minAckReasonChars) return { ok: false, error: "reason too short — state WHY this habit governs this action (specific, situation-tied)" };
+    // Require the reason to attribute to REAL work — a concrete file/code
+    // reference, a past-tense action actually taken, or a stated future
+    // effect — not a generic truth-claim about the habit ("it's important
+    // because it prevents bugs" passes the length check but attributes to
+    // nothing real). This is the structural half of "habit connector real
+    // work attribution": regex can't verify the claim is true, but it can
+    // reject reasons that don't even attempt to point at concrete work.
+    if (!WORK_ATTRIBUTION_RE.test(reason)) {
+      return {
+        ok: false,
+        error: "reason doesn't attribute to real work — reference the actual file/change/action from this session, or state how it will affect future work (not just why the habit is generically true)",
+      };
+    }
     const st = this._holdState(session);
     // No reuse of any of the last N distinct habits (rolling window, N =
     // maxHabitNameHistory, default 10, configurable via
