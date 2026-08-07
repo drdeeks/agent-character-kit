@@ -183,7 +183,7 @@ function assistantTextEntry(text) {
   return { type: "assistant", message: { role: "assistant", content: [{ type: "text", text }] } };
 }
 
-test("detectAckFromTranscript: detects a real 'resonates true' statement and logs it in ack_monitor.js's exact format", () => {
+test("detectAckFromTranscript: detects a real work-attributed acknowledgment and logs it in ack_monitor.js's exact format", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ack-transcript-"));
   const transcript = path.join(dir, "session.jsonl");
   const ackLog = path.join(dir, "ack.jsonl");
@@ -192,7 +192,7 @@ test("detectAckFromTranscript: detects a real 'resonates true' statement and log
   try {
     writeTranscriptLine(transcript, { type: "user", message: { role: "user", content: "hello" } });
     writeTranscriptLine(transcript, assistantTextEntry(
-      "Habit: no_credential_leak resonates true — it applies because this exact test never emits a real secret."
+      "Habit: no_credential_leak because this exact fix in agent_enforcer_daemon.js never emits a real secret."
     ));
 
     detectAckFromTranscript(transcript, "test-session");
@@ -203,14 +203,14 @@ test("detectAckFromTranscript: detects a real 'resonates true' statement and log
     const entry = JSON.parse(lines[0]);
     assert.equal(entry.session_id, "test-session");
     assert.match(entry.statement, /no_credential_leak/);
-    assert.match(entry.statement, /resonates true/i);
+    assert.match(entry.statement, /because/i);
   } finally {
     process.env.ACK_ACK_LOG = origAckLog;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("detectAckFromTranscript: detects the other four closers the narrower Hermes-style regex would miss", () => {
+test("detectAckFromTranscript: detects all four accepted connectors, not just Hermes's narrower single pattern", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ack-transcript-closers-"));
   const transcript = path.join(dir, "session.jsonl");
   const ackLog = path.join(dir, "ack.jsonl");
