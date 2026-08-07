@@ -1739,3 +1739,104 @@ Tests Passing: 50/50 (was 48/48; +2 new in ack-configure.test.js), stable
                across repeated runs
 Rollback Ref: git diff against the commit prior to this entry
 ```
+
+## CL-0008 — Real Phase-2-adjacent testing surfaced 4 genuine bugs, all fixed and live-verified
+
+```
+Date        : 2026-08-07 19:20 UTC
+Contributor : claude-code-session
+Modules     : [MOD-005, MOD-006, MOD-007]
+Section Tags: [[MODULE-REGISTRY-v2], [SPECS-v2], [PHASE-2-v2]]
+Files Changed: [node/src/hooks/character.js, node/bin/install.js,
+                node/enforcer/agent_enforcer_daemon.js,
+                node/tests/character.test.js, node/tests/ack-configure.test.js,
+                .blueprint/blueprint.md]
+Description : Began real PHASE-2.1/2.2 external-check testing against the
+              actual global install (not just isolated tmp-workspace test
+              fixtures) at drdeek's direct request after credit-budget
+              pressure made "verify it for real now, not later" the
+              explicit priority. This surfaced four genuine, previously
+              undetected bugs -- each found by actually running the
+              system, not by reading the code:
+
+              BUG 1 (severe): PreToolUse fails closed when the enforcer is
+              unreachable (deliberate, correct design -- "a guard that
+              fails open is no guard"). But this created a real deadlock:
+              the commands needed to RESTART an unreachable daemon are
+              themselves tool calls, blocked by the very daemon they're
+              trying to fix. Hit this live three separate times in one
+              session, each requiring a manual daemon restart from OUTSIDE
+              the session (the in-session agent had zero working tools).
+              Fixed with a narrow "break glass" allowlist
+              (BOOTSTRAP_COMMAND_RE in character.js's processToolCall):
+              commands matching the daemon/monitor/watchdog script paths or
+              `ack doctor|repair|status|configure|install` skip the
+              enforcer round-trip entirely, working even when the daemon
+              is fully down. Does not weaken fail-closed for anything else.
+
+              BUG 2: launchDaemon() had no liveness check -- a second
+              `ack configure --yes` against an already-configured
+              workspace spawned a SECOND daemon that stole the unix socket
+              from the first via unlink+rebind (confirmed live via lsof:
+              two LISTEN fds on the same path, different inodes). The
+              original was left running but unreachable. Fixed by pinging
+              the target socket before launching; reuse if alive.
+
+              BUG 3: the fix for BUG 2 didn't work at first because
+              ACK_AUTH_TOKEN was crypto.randomUUID()'d fresh on every run
+              with no attempt to read an existing one -- the reuse-ping
+              used a token that didn't match what the running daemon was
+              actually launched with, auth-failed, and silently fell
+              through to spawning a duplicate anyway. Fixed by reading
+              ACK_AUTH_TOKEN from the workspace's existing .env first.
+
+              BUG 4 (systemic, found opportunistically): nearly every test
+              file in this repo that spawns a real daemon/monitor/watchdog
+              cleans up via `pkill -f <workspace-tmpdir>` -- which can
+              never match, because AGENT_WORKSPACE only ever reaches the
+              child process as an environment variable, never a literal
+              CLI argument, and pkill -f only matches argv. This had been
+              silently leaking orphaned processes across every test run,
+              all session, undetected until `ps aux` was checked directly
+              during BUG 2/3 investigation (dozens of orphans found at
+              once). Fixed in the two ack-configure.test.js tests that
+              actually spawn real processes, using /proc/<pid>/environ
+              scanning (the same real technique MOD-006's tests already
+              used). NOT yet fixed in install.test.js or
+              preuninstall.test.js -- same bug likely present there too;
+              out of scope for tonight, flagged below as KD-13.
+
+              Live-verified end to end on the real global install (not
+              just isolated fixtures): repacked and reinstalled the fixed
+              package globally, ran `ack configure --yes` for real,
+              confirmed settings.json gained both real Claude hooks,
+              confirmed the daemon answered a real status RPC, deliberately
+              killed the real daemon and confirmed the self-lockout
+              (proving BUG 1 was real before the fix), recovered manually,
+              reinstalled the fixed package, and confirmed 3/3 new unit
+              tests plus the full 54/54 suite pass, with zero orphaned
+              processes after a full run.
+Tests Passing: 54/54 (was 50/50 before tonight's Phase-2 testing began),
+               stable, zero orphaned processes confirmed via ps aux
+Rollback Ref: git diff against the commit prior to this entry -- four
+              separate commits, each independently revertable:
+              f46ae88 (BUG 1), 9eeef3c (BUG 2), 594031c (BUG 3),
+              fa269dc + 043a5eb (BUG 4, partial)
+```
+
+## Known Defects Register — addendum (2026-08-07, post-CL-0008)
+
+- **KD-12**: `install.test.js` and `preuninstall.test.js` likely have the
+  same `pkill -f <workspace>` cleanup bug documented in CL-0008's BUG 4 --
+  not yet verified or fixed. Check for orphaned processes via `ps aux`
+  after running each file in isolation; if found, apply the same
+  `/proc/<pid>/environ` scan used in `ack-configure.test.js`.
+- **KD-13**: PHASE-2.1 and PHASE-2.2's checklist item text still describes
+  the pre-CL-0007 `ACK_YES` bypass flow. Needs rewording to `ack configure`
+  / `ack configure --yes` before those items can be honestly checked off.
+- **KD-14**: The `--all` install flag (root mode, all components) still
+  defaults harness to `opts.harness || "generic"` with no auto-detection,
+  unlike the plain `--yes` path fixed tonight. Not confirmed broken --
+  `--all`'s own contract never claimed auto-detection -- but worth an
+  explicit decision on whether it should match the `--yes` path's behavior
+  now that they've diverged.
