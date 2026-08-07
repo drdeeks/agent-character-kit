@@ -2114,3 +2114,117 @@ Rollback Ref: N/A -- no code changed in this entry
 - **KD-21, KD-23, KD-24, KD-25**: still open, not touched this pass.
 
 Commits this pass: 8c90a38, bc016fa, 02c47c0, 5ead336, 18bffb5, ab1c6cc, cb14f03, f145df0.
+
+## Known Defects Register — correction (2026-08-07, post-CL-0010 backlog continued)
+
+- **KD-25**: the "still open" line above is now STALE. Fixed for real in
+  commit `e3be262` ("Fix KD-25: habit-name dedup window was 2, alternating
+  2 names always passed"), in the same session immediately following the
+  resolution-update entry above but before this blueprint was updated to
+  reflect it. drdeek caught live, repeated citation of exactly the same 2
+  habit names all session. The rolling reuse-window (`st.lastTwo`, hardcoded
+  to the 2 most recent) let exactly 2 alternating names pass forever --
+  renamed to `st.usedHabitNames`, window widened to a configurable default
+  of 10 (`ACK_MAX_HABIT_NAME_HISTORY` / `max_habit_name_history`), same
+  treatment given to `maxAckReasonHistory` (8 -> 10 default). Also
+  corrects an earlier unverified claim of my own: I had told drdeek
+  "nothing tracks reuse at all," which was wrong -- tracking existed, the
+  window was just too narrow. That was an assumption I never checked
+  against the actual code before stating it as fact.
+- **Follow-up test regression**: `install.test.js`'s
+  "daemon: reuse-window rejects the previous two habits" test hardcoded
+  the old window-of-2 behavior. Rather than rewriting it to need 11 real
+  distinct habits, pinned it to `ACK_MAX_HABIT_NAME_HISTORY=2` via spawn
+  env so its original intent (proving the window shifts after a 3rd
+  distinct ack) stays intact under the new default.
+
+## CL-0011 — Real work-attribution grammar: "<habit> <connector> <real work attribution>"
+
+```
+Date        : 2026-08-07
+Contributor : claude-code-session
+Modules     : [MOD-005 area -- submitAck / ack detection / docs]
+Files Changed: node/enforcer/agent_enforcer_daemon.js,
+               node/src/hooks/character.js,
+               node/tests/character.test.js, node/tests/install.test.js,
+               python/hermes_plugin/__init__.py, deploy/ack_monitor.py,
+               HABIT_POLICY.md, AGENTS.md
+Description : drdeek stated a specific, repeated frustration -- described
+              to at least two prior agents before this session -- that the
+              ack grammar should never have been "resonates true because
+              X" (an abstract truth-claim ritual). It should be
+              "<habit> <connector> <real work attribution>": the reason
+              must tie to work actually done, or its concrete effect on
+              future work, not an assertion that the habit is generically
+              true.
+
+              Verified via full git archaeology, at drdeek's explicit
+              request, that this formula was never actually implemented
+              anywhere -- not a regression, never built:
+              - This repo's entire history, from the very first commit
+                that introduced submitAck (d22d6dc) through today, used
+                "resonates true because <reason>" or its later
+                variable-closer form (1d3d776) -- always an abstract
+                truth-claim shape, never attribution.
+              - The agent-identity-architecture skill (the "grandfather of
+                ACK", per drdeek) has no self-reported acknowledgment
+                statement at all -- its habits are pure structural YAML
+                (logic/evidence fields) gated by the enforcer directly.
+              - The archived github.com/drdeeks/agent-identity-kit repo
+                (pre-rename ancestor) is the same: structural YAML habits,
+                no self-reported statement grammar, no "resonates true",
+                no connector/attribution concept anywhere in its 6-commit
+                history.
+              Conclusion given to drdeek directly: the formula is real and
+              worth building, but it was always a stated design that never
+              made it into code across two prior agents -- not something
+              this session broke or lost.
+
+              Implemented for real:
+              - submitAck (agent_enforcer_daemon.js): dropped "resonates
+                true" from the accepted connectors (why: / because /
+                matters because / applies because remain). Added
+                WORK_ATTRIBUTION_RE: the reason must now contain a
+                concrete marker -- a file/code reference (path,
+                `backtick-quoted` name, or .extension), a past-tense
+                action actually taken (wrote/fixed/changed/edited/
+                added/removed/renamed/moved/committed/refactored/
+                deleted/created/updated/broke/caught/found/touched/
+                reverted), or a stated future effect (will affect/
+                prevent/break/help/catch/stop/avoid, next time/turn/
+                session, this commit/change/session/turn/edit/file/
+                function/test) -- or the ack is rejected. Regex cannot
+                verify the claim is TRUE, only that it attempts real
+                attribution instead of a generic truth-claim.
+              - character.js's ACK_STATEMENT_RE (transcript ack detector)
+                mirrored the dropped connector so candidate-matching
+                stays aligned with what the daemon will actually accept.
+              - Found and fixed a real, PRE-EXISTING latent bug while
+                updating python/hermes_plugin/__init__.py's _detect_ack:
+                its regex was already narrower than the daemon's real
+                grammar before today (per character.js's own comment
+                documenting the gap) -- it only ever matched the single
+                literal "resonates true because" phrasing, meaning any
+                Hermes-based companion silently never logged acks using
+                why:/because/matters because/applies because at all. Now
+                aligned with the daemon's real 4-connector grammar.
+              - Updated HABIT_POLICY.md, AGENTS.md, deploy/ack_monitor.py's
+                docstring, and test fixtures in character.test.js /
+                install.test.js that used the dropped closer or lacked a
+                work-attribution marker in their reason text.
+Tests Passing: 54/54 (node/tests, full suite) + Hermes plugin's own
+               test_plugin.py (3/3: block/fail-closed/manifest -- none of
+               these exercise _detect_ack directly, so they only confirm
+               nothing else broke, not the new regex itself).
+Known gap    : No dedicated automated test yet asserts WORK_ATTRIBUTION_RE
+               rejects a generic truth-claim reason ("it's important
+               because it prevents bugs") or accepts each of the three
+               attribution categories (file-ref / past action / future
+               effect) individually. Verified by manual regex trace during
+               this session, not by a committed test. Should be added
+               before this is considered fully proven, not just
+               implemented.
+Rollback Ref : 29fa0e6 (core grammar change), 0378989, f968891, 602b914,
+               08b8851, d71e42e, c1002fa, aacdc58, 2c062a0 (propagation to
+               tests/docs/Hermes plugin)
+```
