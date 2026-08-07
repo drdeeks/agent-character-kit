@@ -1840,3 +1840,22 @@ Rollback Ref: git diff against the commit prior to this entry -- four
   `--all`'s own contract never claimed auto-detection -- but worth an
   explicit decision on whether it should match the `--yes` path's behavior
   now that they've diverged.
+
+## Known Defects Register — addendum (2026-08-07, operational lesson)
+
+- **KD-15**: The break-glass bypass (CL-0008, BUG 1) matches both the bare
+  `agent_enforcer_daemon.js` script path AND `ack configure`. Every manual
+  recovery performed during tonight's testing used the bare script path --
+  which starts the daemon with NO monitor and NO watchdog, since those are
+  only spawned by `ack configure`'s own flow. This meant every
+  manually-recovered daemon tonight ran completely unsupervised: if it died
+  again (cause undetermined -- no crash trace in its log, and no permission
+  to check kernel OOM logs to confirm or rule out a hard kill), nothing
+  would have caught it. Not a defect in the watchdog itself -- a defect in
+  always recommending the narrowest possible recovery command instead of
+  the one that restores full supervision. **Going forward: recovery must
+  always be `ack configure --yes` (or `ack repair`, once that path is
+  audited to confirm it also restores monitor/watchdog), never the bare
+  daemon script.** Verified live: killing the unsupervised daemon and
+  recovering via `ack configure --yes` correctly produced a full
+  daemon+monitor+watchdog trio.
