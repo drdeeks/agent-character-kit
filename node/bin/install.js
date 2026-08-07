@@ -701,7 +701,22 @@ async function main(callerOpts) {
       // user-mode installs -- the auth gate existed but had nothing to check
       // against, i.e. it silently checked ACK_AUTH_TOKEN === undefined.
       const crypto = await import("crypto");
-      const ackToken = crypto.randomUUID();
+      // Reuse the workspace's existing token across re-runs instead of
+      // rotating it every time. Two real problems otherwise, both found
+      // live: (1) the daemon-reuse liveness check below would ping the
+      // already-running daemon with a BRAND NEW token that doesn't match
+      // what it was actually launched with, auth-fail, and silently fall
+      // through to spawning a second daemon -- defeating the whole
+      // idempotency fix; (2) anything that cached the old token (a running
+      // hook process, a manually-tested client) would start getting
+      // rejected on every re-run for no visible reason.
+      let ackToken;
+      try {
+        const existingEnv = fs.readFileSync(wsEnv, "utf8");
+        const m = existingEnv.match(/^ACK_AUTH_TOKEN=(.+)$/m);
+        if (m) ackToken = m[1].trim();
+      } catch { /* no existing .env yet -- first run for this workspace */ }
+      if (!ackToken) ackToken = crypto.randomUUID();
       const vars = {
         AGENT_WORKSPACE: absWs,
         ENFORCER_SOCKET: sock,
