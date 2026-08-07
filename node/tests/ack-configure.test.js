@@ -34,9 +34,16 @@ test("ack configure --yes: real CLI flags reach install.js and actually start a 
     let alive = true;
     try { process.kill(daemonPid, 0); } catch { alive = false; }
     assert.equal(alive, true, "the reported daemon pid must actually be a running process");
-    try { process.kill(daemonPid, "SIGKILL"); } catch { /* already dead */ }
   } finally {
-    try { execSync(`pkill -f ${JSON.stringify(ws)}`); } catch { /* nothing left to kill, expected */ }
+    // pkill -f <workspace> cannot find monitor/watchdog either, for the same
+    // reason documented on the idempotency test below -- AGENT_WORKSPACE is
+    // env-only, never argv. Scan /proc/<pid>/environ for the real cleanup.
+    for (const pidDir of fs.readdirSync("/proc").filter((n) => /^\d+$/.test(n))) {
+      try {
+        const environ = fs.readFileSync(`/proc/${pidDir}/environ`, "utf8");
+        if (environ.includes(`AGENT_WORKSPACE=${ws}\0`)) process.kill(Number(pidDir), "SIGKILL");
+      } catch { /* process gone, or unreadable -- fine, skip */ }
+    }
     fs.rmSync(ws, { recursive: true, force: true });
   }
 });
