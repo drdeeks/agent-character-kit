@@ -1859,3 +1859,17 @@ Rollback Ref: git diff against the commit prior to this entry -- four
   daemon script.** Verified live: killing the unsupervised daemon and
   recovering via `ack configure --yes` correctly produced a full
   daemon+monitor+watchdog trio.
+
+## Known Defects Register — addendum (2026-08-07, root-mode never actually usable)
+
+- **KD-16**: `agent_enforcer_daemon.js` has two independent, both-live
+  implementations of unix-socket creation and permission-setting
+  (`startSocketServer` for single-workspace, `startMultiWorkspaceDaemon` for
+  multi-workspace) that had drifted into the identical wrong permission
+  scheme (0600/0700, owner-only -- see the fix above). Both are now fixed
+  identically, but the duplication itself is unresolved: any future socket
+  hardening change has to be applied twice, in two places, or they will
+  drift apart again. A proper fix collapses both into one shared
+  `bindSocket(server, path)` helper. Not done tonight -- flagged as its own
+  item since touching daemon startup twice, this late in a long session,
+  was already enough real risk without also refactoring the call sites.
