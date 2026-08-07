@@ -63,23 +63,35 @@ that is filler, is worse than no habit: it simulates character while bypassing i
 ### Format (enforced by the daemon)
 
 ```
-Habit: <habit-name> <closer> <engaged, situation-tied reason>
+Habit: <habit-name> <connector> <real work attribution>
 ```
 
-- `<closer>` is VARIABLE — any of these (the daemon accepts all):
-  `resonates true`, `why:`, `because`, `matters because`, `applies because`,
-  or any equivalent first-person grounding. The closer is NOT hardwired; the
-  structure is.
-- `<engaged reason>` MUST use a real connector and tie to the current work:
-  - it's important because / validated ______ / applies to _____ /
-    makes sense because / reminded me / establishes / ensures proper /
-    has me thinking / clearly accurate because
-  - and reference the actual task: current work environment, a to-do being
-    created, why it applies now, or what you'll maintain going forward.
+This was never about affirming the habit is TRUE in the abstract — it's about
+attribution: tying the habit to work you actually did, or how it will affect
+work still ahead. "Resonates true" was dropped (2026-08-07) precisely because
+it read as a truth-claim ritual instead of attribution, and every prior
+implementation of this grammar made that same mistake since the very first
+commit — this is the corrected version.
 
-Filler ("resonates true because x", "why: yes") is REJECTED by the daemon. The
-reason must be specific enough that a reader sees WHY that habit governs THIS
-action.
+- `<connector>` is VARIABLE — any of these (the daemon accepts all):
+  `why:`, `because`, `matters because`, `applies because`. The connector is
+  NOT hardwired; the structure is.
+- `<real work attribution>` MUST point at something concrete — not a generic
+  claim about why the habit is good. The daemon structurally requires one of:
+  - a real file/code reference (a path, a `backtick-quoted` name, a
+    `.extension`),
+  - a past-tense action actually taken (wrote / fixed / changed / edited /
+    added / removed / renamed / moved / committed / refactored / deleted /
+    created / updated / broke / caught / found / touched / reverted),
+  - or a stated future effect (`will affect` / `will prevent` / `will break`
+    / `next time` / `this commit` / `this change` / `this session` / `this
+    turn` / `this edit` / `this file` / `this function` / `this test`).
+
+Filler ("why: yes") is REJECTED for being too short. A reason that's long
+enough but attributes to nothing real ("it's important because it prevents
+bugs") is REJECTED for lacking work attribution. The reason must be specific
+enough that a reader sees WHAT you actually did or will do because of this
+habit — not just that you believe it's true.
 
 ### Rolling window
 
