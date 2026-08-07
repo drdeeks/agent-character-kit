@@ -154,6 +154,115 @@ test("daemon: reuse-window rejects the previous two habits", { timeout: 25000 },
   }
 });
 
+test("daemon: real default habit-name window (10) rejects immediate reuse -- the exact live bug KD-25 caught", { timeout: 25000 }, async () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "ackdw-"));
+  const sock = path.join(ws, ".agent", "enforcer.sock");
+  // No ACK_MAX_HABIT_NAME_HISTORY override here -- this is the real default
+  // (10) the daemon ships with. The bug drdeek caught live: a hardcoded
+  // window of 2 let exactly 2 alternating habit names pass forever. This
+  // proves the shipped default actually closes that gap.
+  const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, HOME: os.homedir() };
+  fs.mkdirSync(path.join(ws, ".agent", "habits"), { recursive: true });
+
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, [DAEMON], { env, detached: true, stdio: "ignore" });
+  child.unref();
+
+  const repoHabits = path.join(REPO, "python", "example_workspace", ".agent", "habits");
+  const wsHabits = path.join(ws, ".agent", "habits");
+  if (fs.existsSync(repoHabits)) {
+    for (const f of fs.readdirSync(repoHabits)) {
+      if (f.endsWith(".yaml")) fs.copyFileSync(path.join(repoHabits, f), path.join(wsHabits, f));
+    }
+  }
+
+  const sid = "test-" + path.basename(ws);
+
+  try {
+    const start = Date.now();
+    while (!fs.existsSync(sock) && Date.now() - start < 8000) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok(fs.existsSync(sock), "daemon socket should be up before RPCs");
+    await new Promise((r) => setTimeout(r, 1000));
+
+    const a = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak why: this test spawns a real daemon in install.test.js under its default config" });
+    const b = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: complete_thoroughly because this test alternates exactly two habit names to reproduce the live bug" });
+    assert.equal(a.ok, true);
+    assert.equal(b.ok, true);
+
+    // Alternating back to A must be rejected -- under the old hardcoded
+    // window of 2, this is exactly the sequence that passed forever.
+    const reuseA = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: no_credential_leak why: this test spawns a real daemon in install.test.js under its default config" });
+    assert.equal(reuseA.ok, false, "immediate reuse of A must be rejected under the real default window");
+
+    const reuseB = await rpc(sock, "submit_ack", { session_id: sid, statement: "Habit: complete_thoroughly because this test alternates exactly two habit names to reproduce the live bug" });
+    assert.equal(reuseB.ok, false, "immediate reuse of B must be rejected under the real default window");
+  } finally {
+    try { process.kill(-child.pid, "SIGKILL"); } catch {}
+    try { child.kill("SIGKILL"); } catch {}
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("daemon: submitAck requires real work attribution, not just a generically-true-sounding reason", { timeout: 25000 }, async () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "ackattr-"));
+  const sock = path.join(ws, ".agent", "enforcer.sock");
+  const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, HOME: os.homedir() };
+  fs.mkdirSync(path.join(ws, ".agent", "habits"), { recursive: true });
+
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, [DAEMON], { env, detached: true, stdio: "ignore" });
+  child.unref();
+
+  const repoHabits = path.join(REPO, "python", "example_workspace", ".agent", "habits");
+  const wsHabits = path.join(ws, ".agent", "habits");
+  if (fs.existsSync(repoHabits)) {
+    for (const f of fs.readdirSync(repoHabits)) {
+      if (f.endsWith(".yaml")) fs.copyFileSync(path.join(repoHabits, f), path.join(wsHabits, f));
+    }
+  }
+
+  try {
+    const start = Date.now();
+    while (!fs.existsSync(sock) && Date.now() - start < 8000) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok(fs.existsSync(sock), "daemon socket should be up before RPCs");
+    await new Promise((r) => setTimeout(r, 1000));
+
+    // Long enough to pass the length check, but attributes to nothing real
+    // -- exactly the abstract truth-claim shape drdeek objected to.
+    const generic = await rpc(sock, "submit_ack", {
+      session_id: "attr-generic",
+      statement: "Habit: no_credential_leak because it is important to never leak secrets in any project ever",
+    });
+    assert.equal(generic.ok, false, "a generic truth-claim reason with no concrete attribution must be rejected");
+
+    const fileRef = await rpc(sock, "submit_ack", {
+      session_id: "attr-file",
+      statement: "Habit: no_credential_leak because agent_enforcer_daemon.js never logs the raw token",
+    });
+    assert.equal(fileRef.ok, true, "a reason naming a real file must be accepted");
+
+    const pastAction = await rpc(sock, "submit_ack", {
+      session_id: "attr-past",
+      statement: "Habit: complete_thoroughly because I just fixed the reuse-window default in this session",
+    });
+    assert.equal(pastAction.ok, true, "a reason naming a real past-tense action must be accepted");
+
+    const futureEffect = await rpc(sock, "submit_ack", {
+      session_id: "attr-future",
+      statement: "Habit: due_diligence because skipping this check will affect every future install of this package",
+    });
+    assert.equal(futureEffect.ok, true, "a reason naming a stated future effect must be accepted");
+  } finally {
+    try { process.kill(-child.pid, "SIGKILL"); } catch {}
+    try { child.kill("SIGKILL"); } catch {}
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
+
 // ─── writeClaudeHookConfig (MOD-003: both PreToolUse + UserPromptSubmit) ──────
 
 test("writeClaudeHookConfig wires both PreToolUse and UserPromptSubmit, preserves unrelated settings", () => {
