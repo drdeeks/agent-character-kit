@@ -212,9 +212,10 @@ the agent cannot reset or bypass it by editing/disabling the plugin.
   `ACK_HOLD_EVERY_N_CALLS` / `enforcer.yaml: hold_every_n_calls`) until the
   agent has acknowledged **2** habits (configurable via `ACK_REQUIRED_ACKS` /
   `required_acks`) in the form:
-  `Habit: <habit-file-name> <resonates true | why: | because | …> <engaged reason>`
-  (the close is variable — see `HABIT_POLICY.md` §4; the reason must be specific
-  and situation-tied, not filler).
+  `Habit: <habit-file-name> <why: | because | matters because | applies because> <real work attribution>`
+  (the connector is variable — see `HABIT_POLICY.md` §4; the reason must
+  attribute to real work — a file/change, a past action taken, or a stated
+  future effect — not a generic claim about why the habit matters).
 - The hold response deliberately does **not** list habit names or the ack
   format — only a terse "acknowledge N habits" reason. The agent must
   search/read `.agent/habits/*.yaml` to find which habit matches whatever
