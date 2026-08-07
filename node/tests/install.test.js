@@ -223,14 +223,27 @@ test("daemon: ACK_AUTH_TOKEN passed at spawn time is genuinely present in the ru
         "the real daemon process's actual environment must contain the token, not just the spawn call's intent");
     }
 
-    const withRightToken = await rpc(sock, "status", {}, realToken);
-    assert.equal(withRightToken.ok, true, "a request with the correct token must succeed");
+    // "status" is deliberately EXEMPT from the auth gate (fixed 2026-08-07):
+    // a plain `ack status`/`ack repair`/`ack doctor` invocation is a fresh
+    // process with no token in its own env (only the Claude-hook wrapper
+    // sources the workspace .env), so gating status behind a token callers
+    // can't possibly have yet made every liveness check silently report
+    // "dead" against a perfectly healthy, correctly-tokened daemon -- found
+    // live while KD-20's fix (ack repair checking other sockets first)
+    // mysteriously kept failing. status's response carries no secret, so
+    // this is safe. tool_tick is the real proof the gate still works for
+    // everything else.
+    const statusNoToken = await rpc(sock, "status", {});
+    assert.equal(statusNoToken.ok, true, "status must succeed with NO token even when ACK_AUTH_TOKEN is set -- it's the one exempt method");
 
-    const withWrongToken = await rpc(sock, "status", {}, "totally-wrong-token");
+    const withRightToken = await rpc(sock, "tool_tick", { session_id: "auth-test", tool: "Bash" }, realToken);
+    assert.notEqual(withRightToken.error, "unauthorized", "a gated method with the correct token must not be rejected");
+
+    const withWrongToken = await rpc(sock, "tool_tick", { session_id: "auth-test", tool: "Bash" }, "totally-wrong-token");
     assert.equal(withWrongToken.error, "unauthorized", "a mismatched token must be genuinely rejected, not silently allowed");
 
-    const withNoToken = await rpc(sock, "status", {});
-    assert.equal(withNoToken.error, "unauthorized", "a missing token must be rejected once ACK_AUTH_TOKEN is set in the daemon's env");
+    const withNoToken = await rpc(sock, "tool_tick", { session_id: "auth-test", tool: "Bash" });
+    assert.equal(withNoToken.error, "unauthorized", "a missing token must be rejected once ACK_AUTH_TOKEN is set in the daemon's env, for every method except status");
   } finally {
     try { process.kill(-child.pid, "SIGKILL"); } catch {}
     try { child.kill("SIGKILL"); } catch {}

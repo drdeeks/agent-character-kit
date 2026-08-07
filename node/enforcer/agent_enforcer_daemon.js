@@ -765,8 +765,21 @@ function startSocketServer(enforcer) {
           // Auth gate: if ACK_AUTH_TOKEN is set in the daemon's env, every
           // request MUST carry a matching `token`. A local process that can't
           // read the daemon's env (i.e. any other uid) is rejected with 403.
+          // EXCEPT "status": a plain `ack status`/`ack repair`/`ack doctor`
+          // invocation is a fresh process with no token in its own env (only
+          // the Claude-hook wrapper sources the workspace .env) -- gating
+          // status behind a token callers can't possibly have yet made every
+          // liveness check silently report "dead" against a perfectly
+          // healthy, correctly-tokened daemon. Found live, 2026-08-07: this
+          // is exactly why `ack repair`'s KD-20 fix (check other sockets
+          // before auto-activating) didn't work -- the check itself always
+          // failed auth and reported false negatives. `status`'s response
+          // carries no secret (no token, no content, nothing beyond what the
+          // caller already implied by knowing the socket path to connect to)
+          // -- safe to expose unauthenticated. Every OTHER method still
+          // requires the real token.
           const expected = process.env.ACK_AUTH_TOKEN;
-          if (expected && request.token !== expected) {
+          if (expected && request.method !== "status" && request.token !== expected) {
             socket.write(JSON.stringify({ error: "unauthorized" }) + "\n");
             continue;
           }
@@ -1004,9 +1017,11 @@ function startMultiWorkspaceDaemon(workspaces) {
           try {
             const request = JSON.parse(line);
 
-            // Auth gate
+            // Auth gate. "status" exempt -- see the matching comment in
+            // startSocketServer() above (same fix, same duplicated logic,
+            // KD-16 applies here too).
             const expected = process.env.ACK_AUTH_TOKEN;
-            if (expected && request.token !== expected) {
+            if (expected && request.method !== "status" && request.token !== expected) {
               socket.write(JSON.stringify({ error: "unauthorized" }) + "\n");
               continue;
             }
