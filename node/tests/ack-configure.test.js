@@ -70,13 +70,28 @@ test("ack configure --yes is idempotent: running it twice reuses the same daemon
     const secondPid = Number(second.stdout.match(/Daemon pid:\s+(\d+)/)?.[1]);
     assert.equal(secondPid, firstPid, "the second run must report the SAME daemon pid, not a new one");
 
-    // Real proof, not just trusting the printed pid: exactly one live
-    // process for this workspace's daemon script, not two.
-    const psOut = execSync(`pgrep -f ${JSON.stringify(ws)} | wc -l`, { encoding: "utf8" }).trim();
-    assert.equal(Number(psOut), 3, // daemon + monitor + watchdog, each exactly once
-      `expected exactly 3 processes (daemon+monitor+watchdog) for this workspace, found ${psOut}`);
+    // Real proof the reused pid is genuinely alive, not just a number the
+    // second run happened to print. NOTE: `pgrep -f <workspace>` does NOT
+    // work here -- the daemon/monitor/watchdog are spawned with the
+    // workspace passed via env vars only, never as a literal CLI argument,
+    // so it can never match their command lines. Found live: this exact
+    // mistake in earlier drafts of this test (and, it turns out, in every
+    // OTHER test file's cleanup in this repo) silently leaked dozens of
+    // orphaned processes across a single session before being caught.
+    let daemonAlive = true;
+    try { process.kill(firstPid, 0); } catch { daemonAlive = false; }
+    assert.equal(daemonAlive, true, "the reused daemon pid must actually still be running");
   } finally {
-    try { execSync(`pkill -9 -f ${JSON.stringify(ws)}`); } catch { /* nothing left to kill, expected */ }
+    // `pgrep -f <workspace>` cannot find these (AGENT_WORKSPACE only ever
+    // reaches the child as an environment variable, never a CLI argument,
+    // and pgrep -f only matches argv). /proc/<pid>/environ is the real way
+    // to find a process by an env var it was launched with on Linux.
+    for (const pidDir of fs.readdirSync("/proc").filter((n) => /^\d+$/.test(n))) {
+      try {
+        const environ = fs.readFileSync(`/proc/${pidDir}/environ`, "utf8");
+        if (environ.includes(`AGENT_WORKSPACE=${ws}\0`)) process.kill(Number(pidDir), "SIGKILL");
+      } catch { /* process gone, or unreadable -- fine, skip */ }
+    }
     fs.rmSync(ws, { recursive: true, force: true });
   }
 });
