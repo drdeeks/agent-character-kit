@@ -2,8 +2,10 @@
 """ACK acknowledgment monitor (root-owned, separate process).
 
 Watches the external ack log that the companion writes. For each entry it
-validates the `Habit: <name> <resonates true | why: | because | …> <reason>`
-statement and credits it to the DAEMON's hold ledger via the submit_ack RPC.
+relays the `Habit: <name> <why: | because | matters because | applies
+because> <real work attribution>` statement to the DAEMON's submit_ack RPC,
+which is the only place that actually validates it (connector shape +
+work-attribution content) and credits the hold ledger.
 
 Why a separate root-owned process: the hold decision lives in the daemon, but
 the daemon only learns about acknowledgments because something feeds it. That
