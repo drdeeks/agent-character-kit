@@ -96,25 +96,41 @@ daemon and obey. If the daemon is unreachable, the client **blocks** (fail-close
 > The Python library (`python/agent_character_kit/`) is a *client*; the Hermes
 > plugin talks to the daemon, not to its own engine. Do not add a second engine.
 
-### User-mode vs Root-mode — what each actually prevents
+### User-mode vs Service-user-mode vs Root-mode — what each actually prevents
 
-Both modes run the **same daemon**; the difference is entirely about which
-Linux user account owns it, and therefore what the agent's own tool calls
-are permitted to do to it.
+All three modes run the **same daemon**; the difference is entirely about
+which Linux user account owns it, and therefore what the agent's own tool
+calls are permitted to do to it. `ack configure` (interactive, no `--yes`)
+asks this as an explicit 3-way choice — it used to be a silent binary
+root/no-root question that never actually surfaced as a real decision;
+fixed 2026-08-07.
 
-| Capability the agent has | User-mode (`ack configure`, no sudo) | Root-mode (`sudo deploy/deploy-agent-enforcer.sh`) |
-|---|---|---|
-| Kill the daemon via its own shell/exec tool | **Yes** — same UID, `kill -9 <pid>` works | No — daemon runs as `root`; agent's tools run as a non-root user with no signal permission |
-| Edit/delete `.agent/constitution.yaml`, `enforcer.yaml`, `habits/*.yaml` directly | **Yes** — same filesystem permissions | No — files are root-owned |
-| Delete or rewrite the ACK log to fake acknowledgments | **Yes** | No — monitor/watchdog are also root-owned |
-| Set `ACK_DISABLE=1` to skip the companion plugin | Works either way — this is a companion-side escape hatch, independent of daemon ownership | Same (see Purpose section) |
-| Survives the daemon being killed | Only if you separately run a supervisor (`supervise.py`) yourself | Yes — systemd `RestartSec=3` auto-revives it |
+| Capability the agent has | User-mode (`ack configure`, no sudo) | Service-user-mode (`ACK_SERVICE_USER=<name>`, via `sudo deploy/deploy-agent-enforcer.sh`) | Root-mode (`sudo deploy/deploy-agent-enforcer.sh`) |
+|---|---|---|---|
+| Kill the daemon via its own shell/exec tool | **Yes** — same UID, `kill -9 <pid>` works | No — different UID, no signal permission | No — daemon runs as `root` |
+| Edit/delete `.agent/constitution.yaml`, `enforcer.yaml`, `habits/*.yaml` directly | **Yes** — same filesystem permissions | No — files owned by the dedicated service user | No — files are root-owned |
+| Delete or rewrite the ACK log to fake acknowledgments | **Yes** | No | No — monitor/watchdog are also service-user/root-owned |
+| Needs full root to set up | No | No — just needs sudo once, to create the dedicated user; the daemon itself never runs as root | Yes |
+| Set `ACK_DISABLE=1` to skip the companion plugin | Works either way — this is a companion-side escape hatch, independent of daemon ownership | Same (see Purpose section) | Same |
+| Survives the daemon being killed | Only if you separately run a supervisor (`supervise.py`) yourself | Yes — systemd `RestartSec=3` auto-revives it | Yes — same |
 
 **Bottom line:** user-mode is a **reminder and deterrent** the agent could
 technically defeat if it chose to (and you'd have to trust it not to, or
-notice). Root-mode is the only path where the enforcement is actually
-outside the agent's reach. If you're relying on this for anything beyond
-"nudge a well-behaved agent," use root-mode.
+notice). Service-user-mode and root-mode both put the enforcement outside
+the agent's reach; service-user-mode gets the same real boundary without
+handing the daemon full root. If you're relying on this for anything
+beyond "nudge a well-behaved agent," use one of those two, not user-mode.
+
+**Cross-uid socket access** (service-user-mode and root-mode both need
+this): the daemon's socket is group-restricted (`0660`, directory `2750`
+setgid) to a shared `ack-clients` group, not owner-only — the deploy
+script adds both the service user and your own user to that group. The
+socket being group-reachable is deliberately weaker than file access
+above; `ACK_AUTH_TOKEN` is the actual authorization check for every RPC
+call, group membership only gets you a raw connection. Fixed 2026-08-07 —
+before this, the socket was locked to `0600` owner-only, which made
+root-mode (and any dedicated-user mode) impossible to actually connect to
+at all; see blueprint CL-0008/KD-16 for the full trace.
 
 ---
 
