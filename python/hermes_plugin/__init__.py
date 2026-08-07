@@ -209,18 +209,31 @@ def _daemon_rpc(method: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]
 
 
 def _detect_ack(session_id: str, text: str) -> None:
-    """Append any `Habit: <name> <resonates true | why: | because | ...> <reason>`
-    statements the agent makes to the external ACK LOG. The root-owned MONITOR
-    reads this log, validates each statement, and credits the daemon's hold
-    ledger via submit_ack.
+    """Append any `Habit: <name> <why: | because | matters because | applies
+    because> <real work attribution>` statements the agent makes to the
+    external ACK LOG. The root-owned MONITOR reads this log, validates each
+    statement, and credits the daemon's hold ledger via submit_ack.
 
     The plugin does NOT credit the daemon directly: that would let the agent's
     own process forge acknowledgments. Only the independent monitor (root-owned,
     unkillable by the agent) can credit. The plugin's job is only to record.
+
+    Matches the daemon's live acceptance grammar (agent_enforcer_daemon.js
+    submitAck, updated 2026-08-07): "resonates true" was dropped as a closer
+    -- it read as an abstract truth-claim rather than attribution to real
+    work. This regex was previously narrower than even that (only the single
+    "resonates true because" form), which meant real acks using the other
+    closers were silently never detected here. Kept deliberately loose on
+    content (just matches the connector shape) -- the daemon's own
+    WORK_ATTRIBUTION_RE is what actually validates the reason.
     """
     if not text:
         return
-    stmts = re.findall(r"habit:\s*\S+\s+resonates\s+true\s+because\s+.+", text, re.I)
+    stmts = re.findall(
+        r"habit:\s*\S+\s*(?:why:|because|matters\s+because|applies\s+because)\s*[-–:]?\s*.+",
+        text,
+        re.I,
+    )
     if not stmts:
         return
     try:
