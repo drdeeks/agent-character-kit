@@ -576,9 +576,16 @@ async function runRepair(targets, opts) {
         }
 
         // ── auto-activate: revive the daemon for an active workspace ──
-        const daemonStatus = await checkDaemon(sock);
-        if (daemonStatus.alive) {
-          console.log("    ~ Daemon already running");
+        // Check EVERY known socket location first (root-mode, service-user
+        // mode, this workspace, env override) -- not just this workspace's
+        // own. Found live, 2026-08-07: checking only `sock` meant `ack
+        // repair` couldn't see a perfectly healthy root-mode daemon and
+        // auto-started a second, unsupervised user-mode one right next to
+        // it -- pure resource duplication, not intended behavior.
+        const allSockets = await checkAllSockets();
+        const liveElsewhere = Object.entries(allSockets).find(([, s]) => s.alive);
+        if (liveElsewhere) {
+          console.log(`    ~ Already served by ${liveElsewhere[0]} (${liveElsewhere[1].path}) -- not starting another`);
           break;
         }
         const wsActive = isWorkspaceActive(ws);
