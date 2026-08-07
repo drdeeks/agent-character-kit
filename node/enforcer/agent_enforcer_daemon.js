@@ -774,7 +774,7 @@ function startSocketServer(enforcer) {
           let response;
           switch (request.method) {
           case "status":
-            response = { ok: true, version: ACK_VERSION, workspace: enforcer.cfg.WORKSPACE, socket: enforcer.cfg.SOCKET, habits: enforcer.habits.length, sessions: enforcer.HOLD_STATE.size };
+            response = { ok: true, pid: process.pid, version: ACK_VERSION, workspace: enforcer.cfg.WORKSPACE, socket: enforcer.cfg.SOCKET, habits: enforcer.habits.length, sessions: enforcer.HOLD_STATE.size };
             break;
           case "execute_tool":
             response = enforcer.executeTool(request.params.tool, request.params);

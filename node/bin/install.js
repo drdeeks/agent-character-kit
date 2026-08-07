@@ -737,9 +737,25 @@ async function main(callerOpts) {
         ACK_MONITOR_BIN: MONITOR,
       });
 
-      // 3. daemon
+      // 3. daemon -- idempotency check first. launchDaemon() always spawns a
+      // fresh process with no liveness check of its own, and the daemon's
+      // own unix-socket bind unlinks whatever's already at that path before
+      // listening -- so re-running `ack configure --yes` against a workspace
+      // that already has a live daemon used to spawn a SECOND daemon that
+      // silently stole the socket out from under the first, leaving the
+      // original orphaned (still running, no longer reachable) and racing
+      // the acknowledgment/audit state between two competing processes.
+      // Found live during Phase 2 re-run testing (2026-08-07). Reuse the
+      // existing daemon when it's genuinely alive; only launch a fresh one
+      // when it isn't.
       if (doStartNow) {
-        daemonPid = await launchDaemon(vars);
+        const existing = await pingDaemonStatus(sock, ackToken);
+        if (!existing.error) {
+          console.log(`  Daemon already running on this socket -- reusing it, not spawning a second one.`);
+          daemonPid = existing.pid || null;
+        } else {
+          daemonPid = await launchDaemon(vars);
+        }
       }
 
       // 5. monitor + watchdog
