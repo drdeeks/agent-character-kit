@@ -13,8 +13,9 @@ tool call is BLOCKED. A guard that fails open is no guard.
 Architecture (3 layers, all root-owned where they must be):
   1. DAEMON   — owns the hold state + acknowledgment ledger; decides allow/hold.
   2. PLUGIN   — thin client: asks daemon ``tool_tick``, blocks on hold; records
-                any ``Habit: <name> <resonates true | why: | because | ...> <reason>``
-                the agent states into the external ACK LOG (does NOT self-credit).
+                any ``Habit: <name> <why: | because | matters because |
+                applies because> <real work attribution>`` the agent states
+                into the external ACK LOG (does NOT self-credit).
   3. MONITOR  — root-owned, separate process: reads the ACK LOG, validates each
                 statement, and credits the daemon via ``submit_ack``. The agent
                 cannot forge acknowledgments (it can only append to the log;

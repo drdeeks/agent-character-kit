@@ -101,10 +101,9 @@ for the same session. This forces genuine variety and genuine engagement — you
 must reach for different principles AND different reasoning, not the same
 comfortable pair.
 
-Habit: document_for_next_agent resonates true — it applies to this correction,
-because the variable-closer grammar belongs in this file so the next agent gets
-the rule as doctrine, not as a scolding it can ignore.
-reach for different principles, not the same comfortable pair.
+Habit: document_for_next_agent because this exact correction to HABIT_POLICY.md
+is what the next agent reads, so the connector+attribution grammar lands as
+doctrine here, not as a scolding it can ignore.
 
 ## 5. Enforcement is fail-closed
 
