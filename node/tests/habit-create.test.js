@@ -29,12 +29,15 @@ test("create-habit generates a valid habit file that the daemon indexes", { time
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "ackhabit-"));
   const sock = path.join(ws, ".agent", "enforcer.sock");
 
-  // create the habit non-interactively
+  // create the habit non-interactively -- MOD-009: evidence + level are now
+  // required CLI values too, no field hardcoded/defaulted.
   const cr = spawn(process.execPath, [INSTALL, "--create-habit",
     "--workspace", ws,
     "--habit-name", "always-verify-before-ship",
     "--habit-prompt", "Did I actually verify this runs before claiming done?",
-    "--habit-logic", "A thing that parses can still be wrong, so proof requires execution."], { stdio: ["ignore", "pipe", "pipe"] });
+    "--habit-logic", "A thing that parses can still be wrong, so proof requires execution.",
+    "--habit-evidence", "The change was actually run and the output pasted back, not just described.",
+    "--habit-level", "must"], { stdio: ["ignore", "pipe", "pipe"] });
   let errOut = "";
   cr.stderr.on("data", (d) => (errOut += d));
   cr.stdout.on("data", (d) => (errOut += d));
@@ -48,6 +51,24 @@ test("create-habit generates a valid habit file that the daemon indexes", { time
   const text = fs.readFileSync(file, "utf8");
   assert.ok(/name: "always_verify_before_ship"/.test(text), "name normalized to snake_case");
   assert.ok(/prompt: "Did I actually verify this runs before claiming done\?"/.test(text), "prompt field present");
+  assert.ok(/kind: "assertion"/.test(text), "MOD-009: must write kind: assertion, not the old thin 'standard' default");
+  assert.ok(/evidence: "The change was actually run/.test(text), "MOD-009: must write the real supplied evidence, not the old generic boilerplate string");
+  assert.ok(!/The agent applies this habit consistently and can state WHY when held/.test(text), "the old hardcoded generic evidence string must never appear");
+  assert.ok(/level: "must"/.test(text), "MOD-009: must write the real supplied enforcement level, not a hardcoded 'reminder'");
+
+  // MOD-009: the CLI must reject the old, now-incomplete invocation instead
+  // of silently defaulting the missing fields.
+  const incomplete = spawn(process.execPath, [INSTALL, "--create-habit",
+    "--workspace", ws,
+    "--habit-name", "should-fail",
+    "--habit-prompt", "x?", "--habit-logic", "y"], { stdio: ["ignore", "pipe", "pipe"] });
+  let incompleteErr = "";
+  incomplete.stderr.on("data", (d) => (incompleteErr += d));
+  const incompleteCode = await new Promise((r) => incomplete.on("exit", r));
+  assert.notEqual(incompleteCode, 0, "must exit non-zero when evidence/level are missing");
+  assert.match(incompleteErr, /habit-evidence.*habit-level|habit-level.*habit-evidence/s);
+  assert.equal(fs.existsSync(path.join(ws, ".agent", "habits", "should_fail.yaml")), false,
+    "must not write a file when required fields are missing");
 
   // boot the daemon pointing at this workspace; the new habit must be known
   const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, HOME: os.homedir() };

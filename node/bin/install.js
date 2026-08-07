@@ -27,6 +27,7 @@ import path from "path";
 import readline from "readline";
 import { spawn, spawnSync } from "child_process";
 import { fileURLToPath, pathToFileURL } from "url";
+import { normalizeHabitName, buildHabitYaml, VALID_LEVELS } from "../src/habits/build.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root
@@ -41,7 +42,7 @@ const ACK_BIN = path.join(REPO, "node", "bin", "ack.js");
 
 // ─── arg parsing (non-interactive) ────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null, all: false, hookCommand: null, python: null, start: true, writeClaudeConfig: true };
+  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null, habitEvidence: null, habitLevel: null, all: false, hookCommand: null, python: null, start: true, writeClaudeConfig: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--workspace") out.workspace = argv[++i];
@@ -56,6 +57,8 @@ function parseArgs(argv) {
     else if (a === "--habit-name") out.habitName = argv[++i];
     else if (a === "--habit-prompt") out.habitPrompt = argv[++i];
     else if (a === "--habit-logic") out.habitLogic = argv[++i];
+    else if (a === "--habit-evidence") out.habitEvidence = argv[++i];
+    else if (a === "--habit-level") out.habitLevel = argv[++i];
     else if (a === "--yes" || a === "-y") out.yes = true;
     else if (a === "--all") out.all = true;
     else if (a === "--hook-command") out.hookCommand = argv[++i];
@@ -337,42 +340,21 @@ function launchMonitorWatchdog(vars, asRoot) {
   return { monitorPid: m.pid, watchdogPid: w.pid };
 }
 
-function createHabitDirect(ws, rawName, prompt, logic) {
+// MOD-009: non-interactive path (--create-habit). All five fields are
+// required CLI values -- no interactive fallback here, since this whole
+// mode exists specifically for scripted/unattended use where prompting
+// would hang forever against a closed stdin.
+function createHabitDirect(ws, rawName, prompt, logic, evidence, level) {
   const name = normalizeHabitName(rawName);
-  if (!name) throw new Error("habit name required");
-  if (!prompt || !prompt.trim()) throw new Error("prompt required");
-  if (!logic || !logic.trim()) throw new Error("reasoning required");
   const habitsDir = path.join(ws, ".agent", "habits");
   fs.mkdirSync(habitsDir, { recursive: true });
   const file = path.join(habitsDir, `${name}.yaml`);
   if (fs.existsSync(file)) {
     throw new Error(`habit '${name}' already exists at ${file}`);
   }
-  const yaml = [
-    `# Habit: ${name}`,
-    `# Source question: ${prompt.trim()}`,
-    `# Logic: ${logic.trim()}`,
-    `name: "${name}"`,
-    `prompt: ${JSON.stringify(prompt.trim())}`,
-    `enforcement:`,
-    `  level: "reminder"`,
-    `behavior:`,
-    `  kind: "standard"`,
-    `  assert: ${JSON.stringify(logic.trim())}`,
-    `  evidence: "The agent applies this habit consistently and can state WHY when held."`,
-    `  logic: ${JSON.stringify(logic.trim())}`,
-    "",
-  ].join("\n");
+  const yaml = buildHabitYaml({ name, prompt, logic, evidence, level });
   fs.writeFileSync(file, yaml);
   return name;
-}
-
-function normalizeHabitName(raw) {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
 }
 
 function createHabit(rl, ws) {
@@ -381,6 +363,19 @@ function createHabit(rl, ws) {
   console.log("enforces it on every hold. Created habits are indexed immediately");
   console.log("into the habit database (the workspace habits dir) and take effect");
   console.log("on the next triggering cycle.\n");
+
+  const askRequired = (question) => ask(rl, question).then((v) => {
+    if (!v || !v.trim()) throw new Error(`${question} -- this can't be empty`);
+    return v.trim();
+  });
+
+  const askLevel = () => ask(rl, `Enforcement level (${VALID_LEVELS.join("/")})`).then((v) => {
+    const level = (v || "").trim().toLowerCase();
+    if (!VALID_LEVELS.includes(level)) {
+      throw new Error(`Invalid level "${v}" -- must be one of: ${VALID_LEVELS.join(", ")}`);
+    }
+    return level;
+  });
 
   return ask(rl, "Habit name (becomes the file name, e.g. always-verify-before-ship)")
     .then((rawName) => {
@@ -392,40 +387,27 @@ function createHabit(rl, ws) {
       console.log("this actually runs before claiming done?\"). It is what the");
       console.log("enforcer shows you when this habit is up for acknowledgment.\n");
 
-      return ask(rl, "Prompt (the self-question that triggers recognition)").then((prompt) => {
-        if (!prompt.trim()) throw new Error("prompt required");
-        return ask(rl, "Reasoning / logic behind this habit (why it governs your actions)").then((logic) => {
-          if (!logic.trim()) throw new Error("reasoning required");
-
-          const habitsDir = path.join(ws, ".agent", "habits");
-          fs.mkdirSync(habitsDir, { recursive: true });
-          const file = path.join(habitsDir, `${name}.yaml`);
-          if (fs.existsSync(file)) {
-            console.log(`\nHabit '${name}' already exists at ${file} — not overwriting.`);
-            return name;
-          }
-          const yaml = [
-            `# Habit: ${name}`,
-            `# Source question: ${prompt.trim()}`,
-            `# Logic: ${logic.trim()}`,
-            `name: "${name}"`,
-            `prompt: ${JSON.stringify(prompt.trim())}`,
-            `enforcement:`,
-            `  level: "reminder"`,
-            `behavior:`,
-            `  kind: "standard"`,
-            `  assert: ${JSON.stringify(logic.trim())}`,
-            `  evidence: "The agent applies this habit consistently and can state WHY when held."`,
-            `  logic: ${JSON.stringify(logic.trim())}`,
-            "",
-          ].join("\n");
-          fs.writeFileSync(file, yaml);
-          console.log(`\nCreated habit: ${file}`);
-          console.log("Indexed into the habit database. It will be offered on the next");
-          console.log("acknowledgment cycle (the daemon loads habits from this dir).");
-          return name;
-        });
-      });
+      return askRequired("Prompt (the self-question that triggers recognition)").then((prompt) =>
+        askRequired("Reasoning / logic behind this habit (why it governs your actions)").then((logic) =>
+          askRequired("Evidence (how to verify THIS habit was actually applied, not generic)").then((evidence) =>
+            askLevel().then((level) => {
+              const habitsDir = path.join(ws, ".agent", "habits");
+              fs.mkdirSync(habitsDir, { recursive: true });
+              const file = path.join(habitsDir, `${name}.yaml`);
+              if (fs.existsSync(file)) {
+                console.log(`\nHabit '${name}' already exists at ${file} — not overwriting.`);
+                return name;
+              }
+              const yaml = buildHabitYaml({ name, prompt, logic, evidence, level });
+              fs.writeFileSync(file, yaml);
+              console.log(`\nCreated habit: ${file}`);
+              console.log("Indexed into the habit database. It will be offered on the next");
+              console.log("acknowledgment cycle (the daemon loads habits from this dir).");
+              return name;
+            })
+          )
+        )
+      );
     });
 }
 
@@ -438,12 +420,16 @@ async function main(callerOpts) {
   if (opts.createHabit) {
     const ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
     const absWs = path.resolve(ws);
-    if (!opts.habitName || !opts.habitPrompt || !opts.habitLogic) {
-      console.error("ERROR: --create-habit needs --habit-name, --habit-prompt, --habit-logic");
+    if (!opts.habitName || !opts.habitPrompt || !opts.habitLogic || !opts.habitEvidence || !opts.habitLevel) {
+      console.error("ERROR: --create-habit needs --habit-name, --habit-prompt, --habit-logic, --habit-evidence, --habit-level");
+      process.exit(1);
+    }
+    if (!VALID_LEVELS.includes(opts.habitLevel)) {
+      console.error(`ERROR: --habit-level must be one of: ${VALID_LEVELS.join(", ")} (got "${opts.habitLevel}")`);
       process.exit(1);
     }
     try {
-      const name = createHabitDirect(absWs, opts.habitName, opts.habitPrompt, opts.habitLogic);
+      const name = createHabitDirect(absWs, opts.habitName, opts.habitPrompt, opts.habitLogic, opts.habitEvidence, opts.habitLevel);
       console.log(`Created habit: ${name}`);
       rl.close();
       return;

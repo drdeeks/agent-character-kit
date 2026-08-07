@@ -23,6 +23,7 @@ import os from "os";
 import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
+import { normalizeHabitName, buildHabitYaml, VALID_LEVELS } from "../src/habits/build.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -880,6 +881,8 @@ habitCmd
   .argument("<name>", "Habit name (kebab-case, becomes filename)")
   .option("-p, --prompt <text>", "Self-question prompt")
   .option("-l, --logic <text>", "Reasoning / logic behind the habit")
+  .option("-e, --evidence <text>", "How to verify the habit was actually applied, specific to this habit")
+  .option("--level <level>", "Enforcement level: reminder | should | must | hard")
   .action(async (name, opts) => {
     if (!name || !name.trim()) {
       console.error("Habit name is required");
@@ -888,29 +891,43 @@ habitCmd
     const ws = resolveWorkspace();
     const habitsDir = path.join(ws, ".agent", "habits");
     fs.mkdirSync(habitsDir, { recursive: true });
-    const fileName = name.replace(/[^a-z0-9]+/gi, "_").toLowerCase().replace(/^_+|_+$/g, "");
+    const fileName = normalizeHabitName(name);
     const file = path.join(habitsDir, `${fileName}.yaml`);
     if (fs.existsSync(file)) {
       console.error("Habit already exists:", file);
       process.exit(1);
     }
-    const prompt = opts.prompt || await ask("Prompt (self-question): ");
-    const logic = opts.logic || await ask("Logic (why this governs your actions): ");
-    const yaml = [
-      `# Habit: ${fileName}`,
-      `# Source question: ${prompt}`,
-      `# Logic: ${logic}`,
-      `name: "${fileName}"`,
-      `prompt: ${JSON.stringify(prompt)}`,
-      `enforcement:`,
-      `  level: "reminder"`,
-      `behavior:`,
-      `  kind: "standard"`,
-      `  assert: ${JSON.stringify(logic)}`,
-      `  evidence: "The agent applies this habit consistently and can state WHY when held."`,
-      `  logic: ${JSON.stringify(logic)}`,
-      "",
-    ].join("\n");
+
+    // MOD-009: every field is asked, none hardcoded/defaulted. An empty
+    // answer is rejected with a reprompt -- flag or interactive, same rule
+    // either way, matching FEAT-004's Rules. YAML text itself comes from
+    // the shared builder (node/src/habits/build.js) -- this was the third
+    // of three independent, near-identical implementations of the same
+    // logic before being collapsed into one (blueprint.md MOD-009).
+    const askRequired = async (flagVal, question) => {
+      let v = flagVal;
+      while (!v || !v.trim()) {
+        if (v !== undefined && !v.trim()) console.error("This can't be empty.");
+        v = await ask(question);
+      }
+      return v.trim();
+    };
+
+    const askLevel = async (flagVal) => {
+      let v = flagVal;
+      while (!v || !VALID_LEVELS.includes(v.trim().toLowerCase())) {
+        if (v !== undefined) console.error(`Invalid level "${v}" -- must be one of: ${VALID_LEVELS.join(", ")}`);
+        v = await ask(`Enforcement level (${VALID_LEVELS.join("/")}): `);
+      }
+      return v.trim().toLowerCase();
+    };
+
+    const prompt = await askRequired(opts.prompt, "Prompt (self-question): ");
+    const logic = await askRequired(opts.logic, "Logic (why this governs your actions): ");
+    const evidence = await askRequired(opts.evidence, "Evidence (how to verify this specific habit was actually applied): ");
+    const level = await askLevel(opts.level);
+
+    const yaml = buildHabitYaml({ name: fileName, prompt, logic, evidence, level });
     fs.writeFileSync(file, yaml);
     console.log("Created:", file);
   });

@@ -459,7 +459,7 @@ what this document does NOT cover should be as traceable as what it does:
 | MOD-006 | auth-token-wiring | `install.js` passes `ACK_AUTH_TOKEN` into the daemon/monitor/watchdog spawn env, not just the client `.env` | FEAT_AUTH_TOKEN_LIVE |
 | MOD-007 | component-liveness-verification | `install.js` confirms daemon/monitor/watchdog are actually alive (RPC + PID check) before reporting success | FEAT_LIVENESS_VERIFY |
 | MOD-008 | claude-transcript-ack-detector *(corrected scope, v3)* | Port `hermes_plugin`'s VERIFIED-working `_detect_ack()` pattern to Claude: read `transcript_path` from the hook payload, apply the same regex, append to the same `ACK_ACK_LOG` format `ack_monitor.js` already tails. NOT a new mechanism — a second implementation of a proven one. | FEAT_CHAT_MONITOR |
-| MOD-009 | habit-creator-completeness *(new, v3)* | `ack habit create` prompts for `evidence` and `enforcement.level` instead of hardcoding both, and writes `behavior.kind: "assertion"` to match the demonstrated-correct format; a companion update path backfills real evidence into the 19 existing habits currently carrying the generic boilerplate string | FEAT_HABIT_CREATOR_COMPLETE |
+| MOD-009 | habit-creator-completeness *(new, v3; scope corrected CL-0006)* | All 3 independent habit-creation code paths (`ack.js habit create`, `install.js createHabitDirect`, `install.js createHabit`) collapsed into one shared `node/src/habits/build.js`; every one now prompts for `evidence` and `enforcement.level` instead of hardcoding either, and writes `behavior.kind: "assertion"`. The originally-planned "backfill 19 thin habits" step was found unnecessary on direct verification (KD-03) and removed — no bundled habit actually needed it. | FEAT_HABIT_CREATOR_COMPLETE |
 
 ## Module Extended Notes
 
@@ -619,35 +619,44 @@ Each specification follows this format:
   'character-kit'`, strip the `hooks` key, remove `~/.agent-character-kit`)
   remains the documented recovery path if `preuninstall.js` itself fails.
 
-**FEAT-004 — Habit creation asks for everything a habit needs (NEW, v3)**
+**FEAT-004 — Habit creation asks for everything a habit needs, from one shared implementation (NEW, v3; scope corrected CL-0006)**
 - Feature ID: FEAT-004
 - Module Ref: MOD-009
 - Rollback Tag: `[SPECS-v2]`
 - Feature Flag: `FEAT_HABIT_CREATOR_COMPLETE`
-- Purpose: every habit authored through `ack habit create`, from this point
-  forward, has specific, non-generic evidence and a deliberately chosen
-  enforcement level and behavior kind — not three hardcoded defaults that
-  happen to match neither the demonstrated-correct format nor the actual
-  content of the habit being created.
-- Components: `ack.js`'s `habitCmd.command("create")` handler, a new
-  companion "update evidence" path for backfilling the 19 already-existing
-  thin habits without regenerating (and thereby losing any manual edits to)
-  their `name`/`prompt`/`logic` fields.
+- Purpose: every habit authored through `ack habit create` OR `ack install`'s
+  interactive wizard OR `install.js --create-habit`, has specific,
+  non-generic evidence and a deliberately chosen enforcement level and
+  behavior kind — not hardcoded defaults — and all three entry points agree,
+  because they now share one implementation instead of three independent
+  copies (KD-11, found mid-implementation, not in the original scoping).
+- Components: `node/src/habits/build.js` (new, single source of truth:
+  `normalizeHabitName`, `buildHabitYaml`, `VALID_LEVELS`), `ack.js`'s
+  `habitCmd.command("create")` handler, `install.js`'s `createHabitDirect`
+  (non-interactive, `--create-habit`) and `createHabit` (interactive wizard)
+  — all three now call the shared builder instead of maintaining their own
+  YAML-generation logic.
 - Rules: `evidence` and `enforcement.level` (`reminder`/`should`/`must`/
-  `hard`) must be asked exactly like `prompt`/`logic` already are — flag if
-  supplied, `ask()` interactively otherwise, never silently defaulted;
-  newly created habits write `behavior.kind: "assertion"`, matching the
-  format shared by the 19 already-real habits, not `"standard"`; the
-  backfill path may only touch the `evidence` field of an existing habit —
-  it must not regenerate or reformat `name`/`prompt`/`logic`/`enforcement`
-  if a human already customized them.
-- Error States: an empty/whitespace-only evidence answer is rejected with a
-  reprompt, the same as an empty prompt/logic answer already is; an invalid
-  `--level` value (not one of the four allowed) errors with the valid list
-  shown, never silently coerced to `"reminder"`.
+  `hard`) must be asked exactly like `prompt`/`logic` — flag if supplied,
+  interactive re-prompt otherwise (or a hard CLI error for the
+  non-interactive `--create-habit` path, which cannot block on stdin),
+  never silently defaulted; every path writes `behavior.kind: "assertion"`;
+  the shared builder itself validates all 5 fields and throws on any
+  missing one, so no caller can accidentally bypass the rule.
+- Error States: an empty/whitespace-only answer (prompt, logic, or
+  evidence) is rejected with a reprompt across ALL THREE entry points — the
+  interactive `createHabit` wizard did not previously validate this either,
+  found and fixed in the same pass since the fix touched that exact code;
+  an invalid `--level`/level answer (not one of the four allowed) errors
+  with the valid list shown, never silently coerced to `"reminder"`.
 - Fallback: hand-editing the YAML file directly remains available and
-  always has been — this feature makes the guided path actually complete,
-  it doesn't remove the manual one.
+  always has been — this feature makes every guided path actually
+  complete, it doesn't remove the manual one.
+- **Scope correction (CL-0006):** the originally-planned "backfill evidence
+  into 19 existing thin habits" component does not appear above because it
+  was found unnecessary — see KD-03. Verifying a diagnosis before acting on
+  it is Guiding Principle 1 applied to this feature specifically, not just
+  to reading someone else's code.
 
 ---
 
@@ -871,10 +880,10 @@ bar than what Part VI's `external-check` deliverables require of the code:
    I's Components table and Part IV's data/RPC documentation, or is the
    document now out of sync with the code it describes?**
 5. **For MOD-009 specifically:** did the reviewer verify the habit
-   creator's `evidence` prompt was actually asked, not merely that the
-   written YAML happens to contain a plausible-looking evidence string
-   (a habit backfilled with a paraphrase of the old boilerplate would pass
-   a shallow read but fail the actual intent of the fix)?
+   creator's `evidence` prompt was actually asked at all three entry
+   points (`ack.js habit create`, `install.js --create-habit`, and the
+   `ack install` interactive wizard), not merely one of them, given all
+   three used to be independent implementations?
 
 ---
 
@@ -928,13 +937,13 @@ All Phase 0 items complete, change log entry written.
 
 ### Deliverables
 
-- [ ] **PHASE-1.1** `node/bin/postinstall.js` Type: file — default flips to interactive-pointer; `ACK_YES=1`/`-y` bypasses to auto-configure (MOD-005)
-- [ ] **PHASE-1.2** `node/bin/install.js` Type: file — `ACK_AUTH_TOKEN` added to daemon/monitor/watchdog spawn env (MOD-006)
-- [ ] **PHASE-1.3** `node/bin/install.js` Type: file — post-spawn liveness verification: `status` RPC + PID check for all three components (MOD-007)
-- [ ] **PHASE-1.4** Type: file — new Claude transcript ack-detector, porting `_detect_ack()`'s verified pattern: reads `transcript_path`, detects a real "Habit: ... resonates true because ..." statement, appends to `ACK_ACK_LOG` in the same shape `ack_monitor.js` already tails (MOD-008, corrected scope — does not call `submit_ack` directly, matching the existing no-self-credit design)
-- [ ] **PHASE-1.5** `node/bin/ack.js` Type: file — `habit create` prompts for `evidence` + `enforcement.level`, writes `behavior.kind: "assertion"` (MOD-009)
-- [ ] **PHASE-1.6** Type: file — companion evidence-backfill path for the 19 existing thin habits, touching only their `evidence` field (MOD-009)
-- [ ] **PHASE-1.7** review-phase1.md Type: review
+- [x] **PHASE-1.1** `node/bin/postinstall.js` Type: file — default flips to interactive-pointer; `ACK_YES=1`/`-y` bypasses to auto-configure (MOD-005) — verified: real subprocess spawns against a fake global node_modules install, both branches, 3 tests
+- [x] **PHASE-1.2** `node/bin/install.js` Type: file — `ACK_AUTH_TOKEN` added to daemon/monitor/watchdog spawn env (MOD-006) — verified: real token read from `/proc/<pid>/environ` on a live daemon, plus RPC accept/reject
+- [x] **PHASE-1.3** `node/bin/install.js` Type: file — post-spawn liveness verification: `status` RPC + PID check for all three components (MOD-007) — verified: genuine partial-failure case (daemon up, monitor/watchdog PIDs dead) and a fully-alive end-to-end case, both with real spawned processes
+- [x] **PHASE-1.4** Type: file — new Claude transcript ack-detector, porting `_detect_ack()`'s verified pattern (MOD-008) — verified against a real Claude Code transcript file's actual schema (not assumed) before writing; deliberately broader than a literal Hermes port (daemon's real 5-closer grammar, not just "resonates true because"), 7 tests
+- [x] **PHASE-1.5** `node/bin/ack.js` + `install.js` (both other creation paths) Type: file — all prompt for `evidence` + `enforcement.level`, write `behavior.kind: "assertion"` (MOD-009) — expanded mid-implementation to collapse 3 independent duplicate implementations into `node/src/habits/build.js` (KD-11, found during this work, not in original scoping)
+- [x] ~~**PHASE-1.6** companion evidence-backfill path for the 19 existing thin habits~~ — **REMOVED (CL-0006).** Verification before execution found this unnecessary: zero files contained the boilerplate string, and the 17 `kind:"standard"` files already carry specific, real evidence. See KD-03.
+- [ ] **PHASE-1.7** review-phase1.md Type: review — awaiting drdeeks
 
 ### Validation Gate
 
@@ -942,10 +951,10 @@ All Phase 0 items complete, change log entry written.
 
 ### Rollback Procedure
 
-1. `git checkout -- <file>` on any of the four new/modified files (`postinstall.js`, `install.js`, the new Claude transcript detector, `ack.js`'s habit-create handler) reverts each independently — this phase's deliverables do not depend on each other's runtime state, so a partial rollback of just MOD-008 or just MOD-009 does not require reverting MOD-005/006/007 as well.
+1. `git checkout -- <file>` on any of the touched files (`postinstall.js`, `install.js`, `character.js`, `ack.js`, `node/src/habits/build.js`) reverts each independently — this phase's deliverables do not depend on each other's runtime state, so a partial rollback of just MOD-008 or just MOD-009 does not require reverting MOD-005/006/007 as well.
 2. If `install.js`'s liveness-verification change (PHASE-1.3) is rolled back mid-testing, any daemon/monitor/watchdog already spawned by a test run of the NEW code must be killed by PID before reverting, or the old code's install summary will report success against processes it didn't actually verify.
-3. The habit backfill (PHASE-1.6) writes only to existing habit YAML files' `evidence` field — if a backfill run needs reverting, `git diff` against the pre-backfill commit shows exactly which habits changed and `git checkout -- <path>` per-file is sufficient; no bulk revert of the whole `habits/` directory is needed since `name`/`prompt`/`logic`/`enforcement` are untouched by design.
-4. Post-incident change log entry within 24 hours if rollback is used, naming which of the four deliverables was reverted and why.
+3. MOD-009's refactor touched three files at once (`ack.js`, `install.js`, plus the new shared module) — reverting requires reverting all three together, or `ack.js habit create` and `install.js`'s two paths will disagree about what a habit YAML should look like, reintroducing the exact duplicated-truth problem (KD-11) the fix closed.
+4. Post-incident change log entry within 24 hours if rollback is used, naming which deliverable was reverted and why.
 
 ---
 ### PHASE-2: Testing & Hardening
@@ -967,7 +976,7 @@ All Phase 1 items complete, change log entry written.
 - [ ] **PHASE-2.4** Type: external-check — trigger a real hold (terse/name-free confirmed) and a real injection (locational nudge, no literal path, confirmed)
 - [ ] **PHASE-2.5** Type: external-check — end-to-end on Claude: produce a real "Habit: ..." statement live, confirm the new transcript detector logs it to `ACK_ACK_LOG`, `ack_monitor.js` credits it, and the hold actually lifts — the exact loop already confirmed working on Hermes, now confirmed on Claude too
 - [ ] **PHASE-2.6** Type: external-check — real `npm uninstall -g`; confirm 0 processes, 0 dangling hooks, rest of `settings.json` untouched
-- [ ] **PHASE-2.7** Type: external-check — run `ack habit create` live with real answers to all 5 questions (name/prompt/logic/evidence/level); confirm the written YAML has `behavior.kind: "assertion"` and non-boilerplate evidence; confirm the backfill path updates at least one existing thin habit's evidence without altering its name/prompt/logic
+- [x] **PHASE-2.7** Type: external-check — run `ack habit create` live with real answers to all 5 questions (name/prompt/logic/evidence/level); confirm the written YAML has `behavior.kind: "assertion"` and non-boilerplate evidence; confirm `install.js --create-habit` rejects an incomplete invocation instead of silently defaulting the missing fields — verified: `habits-build.test.js` (unit) + `habit-create.test.js` (real subprocess, both the complete and rejected-incomplete cases)
 - [ ] **PHASE-2.8** review-phase2.md Type: review
 
 ### Validation Gate
@@ -1204,16 +1213,17 @@ blueprint fixes it or not, named explicitly rather than left implicit.
 
 | # | Defect | Severity | Status | Fix Tracked As |
 |---|---|---|---|---|
-| KD-01 | Claude has no equivalent of Hermes's `_detect_ack()` — an agent can state a perfectly correct habit acknowledgment and nothing credits it | High — this is the actual dead-end an agent can hit with no way out | Open | MOD-008 / PHASE-1.4 |
-| KD-02 | `ack habit create` hardcodes `evidence`, `enforcement.level`, and `behavior.kind` — silently, with no indication to the user that 3 of 5 fields were defaulted rather than asked | Medium — produces valid but thin habits, not broken ones | Open | MOD-009 / PHASE-1.5 |
-| KD-03 | 19 of 40 bundled habits carry the generic boilerplate evidence string this thin creator produces, rather than habit-specific evidence | Medium — direct consequence of KD-02, pre-existing in the bundled set | Open | MOD-009 / PHASE-1.6 |
-| KD-04 | `ACK_AUTH_TOKEN` reaches the daemon's process env only in root/systemd installs, not user-mode spawns — the auth gate is a no-op for most real installs today | High — the design exists but doesn't function for the common case | Open | MOD-006 / PHASE-1.2 |
-| KD-05 | No liveness check after spawning daemon/monitor/watchdog — `spawn()` not throwing is treated as success | Medium — a process that dies immediately after spawn is currently reported as a successful install | Open | MOD-007 / PHASE-1.3 |
-| KD-06 | No `preuninstall.js` exists — `npm uninstall -g` currently leaves daemon/monitor/watchdog running and hooks registered in `settings.json` | High — package removal does not remove what the package installed | Open | MOD-004 / PHASE-0.5 |
-| KD-07 | `UserPromptSubmit` hook is not written by `writeClaudeHookConfig()` — only `PreToolUse` is, meaning habit injection may not be wired for a fresh install even though the daemon-side rotation logic exists | High — half of the enforcement loop's wiring is missing at the config-write step | Open | MOD-003 / PHASE-0.4 |
+| KD-01 | Claude has no equivalent of Hermes's `_detect_ack()` — an agent can state a perfectly correct habit acknowledgment and nothing credits it | High — this is the actual dead-end an agent can hit with no way out | Fixed (CL-0005), MOD-008 verified live, 7 tests | MOD-008 / PHASE-1.4 |
+| KD-02 | `ack habit create` hardcoded `evidence`, `enforcement.level`, and `behavior.kind` — silently, with no indication to the user that 3 of 5 fields were defaulted rather than asked. Confirmed the real, narrow defect: the CREATOR TOOL's output, verified by reading the code, not the bundled files it might have produced | Medium — produced valid but thin habits, not broken ones | Fixed (CL-0006): all 3 creation code paths (`ack.js`, `install.js` x2) collapsed into one shared `node/src/habits/build.js`, all 5 fields now required, `kind: "assertion"` always | MOD-009 / PHASE-1.5 |
+| KD-03 | ~~19 of 40 bundled habits carry the generic boilerplate evidence string this thin creator produces~~ — **CORRECTED, this was false.** Direct verification (`grep` for the literal boilerplate string across all 40 files) found ZERO matches. The 17 files with `behavior.kind: "standard"` were re-read in full and carry genuinely specific, well-authored evidence/logic/assert text, not thin defaults — they were not produced by the thin creator tool despite sharing its `kind` label. Further verified `behavior.kind` is never functionally read anywhere in the runtime (daemon, character.js, ack.js) — it is pure documentation metadata with zero behavioral effect today. The original claim was an unverified inference (kind:"standard" + "creator writes kind:standard" ⇒ assumed these specific files came from that creator) never checked against the files' actual content. No backfill work exists to do. | N/A — the "defect" does not exist | Closed, not a defect (CL-0006) | N/A — was MOD-009 / PHASE-1.6, now removed |
+| KD-04 | `ACK_AUTH_TOKEN` reached the daemon's process env only in root/systemd installs, not user-mode spawns — the auth gate was a no-op for most real installs | High — the design existed but didn't function for the common case | Fixed (CL-0005), verified via `/proc/<pid>/environ` on a live daemon + RPC accept/reject checks | MOD-006 / PHASE-1.2 |
+| KD-05 | No liveness check after spawning daemon/monitor/watchdog — `spawn()` not throwing was treated as success | Medium — a process that died immediately after spawn was reported as a successful install | Fixed (CL-0005), verified with both a genuine partial-failure case and a fully-alive end-to-end case | MOD-007 / PHASE-1.3 |
+| KD-06 | No `preuninstall.js` existed — `npm uninstall -g` left daemon/monitor/watchdog running and hooks registered in `settings.json` | High — package removal did not remove what the package installed | Fixed (CL-0004), 10 tests including a genuine end-to-end process kill | MOD-004 / PHASE-0.5 |
+| KD-07 | `UserPromptSubmit` hook was not written by `writeClaudeHookConfig()` — only `PreToolUse` was, meaning habit injection may not have been wired for a fresh install even though the daemon-side rotation logic existed | High — half of the enforcement loop's wiring was missing at the config-write step | Fixed (CL-0004), verified against the real exported function | MOD-003 / PHASE-0.4 |
 | KD-08 | Three daemon RPC methods (`execute_tool`, `reload`, `get_habit`) existed in the dispatch table with zero documentation anywhere in this blueprint through v2.0 | Low — a documentation gap, not a functional one; the methods work, they just weren't described | Fixed in this regeneration (§4.2, §4.3) |
 | KD-09 | v2.0 of this document asserted `submit_ack` had "zero real callers," which was false | Low severity as code (nothing was broken), but a real defect in this document's own reliability — the exact failure mode Guiding Principle 1 exists to catch | Fixed in this regeneration (CL-0003) |
 | KD-10 | A heavier acknowledgment-enforcement architecture (loop-enforcer chain, setuid kill-switch log, dual monitors with gridlock detection, ERC-8004-hosted habit DB) exists only as a design document, deliberately not built | Informational — not a defect, a recorded decision; listed here for the same reason KD-01 through KD-09 are: nothing about this system's real state should be implicit | N/A — explicitly out of scope; see `docs/agent-character-injection-design.md` at commit `0992bcc` |
+| KD-11 | Three independent, near-identical implementations of habit-YAML-writing existed (`ack.js habit create`, `install.js createHabitDirect`, `install.js createHabit`), all three hardcoding the same defaults — a real "duplicated truth" violation per FOREVER-SYSTEM.md §1, discovered while implementing MOD-009, not present in the original scoping | Medium — three places to independently drift out of sync, exactly the failure mode single_source_of_truth.yaml and check_duplication_before_debug.yaml (both bundled habits) warn about | Fixed (CL-0006): collapsed into `node/src/habits/build.js`, all 3 call sites now use it | MOD-009 (expanded scope) |
 
 ## Done Criteria (7 concrete metrics, PROJECT tier)
 
@@ -1224,7 +1234,7 @@ blueprint fixes it or not, named explicitly rather than left implicit.
 | Auth token live | `ACK_AUTH_TOKEN` present in the daemon's actual process environment; 1/1 mismatched-token request rejected |
 | Locational nudge | Injection string contains a general locational hint, 0 literal habit names or file paths |
 | Claude ack loop functional | 1/1 real "Habit: ..." statement produced live on Claude is detected, logged, credited, and lifts the hold — matching Hermes's already-verified behavior |
-| Habit creator complete | 5/5 fields (name, prompt, logic, evidence, level) asked live, 0 hardcoded; ≥1 existing thin habit backfilled with real evidence |
+| Habit creator complete | 5/5 fields (name, prompt, logic, evidence, level) asked live at all 3 entry points, 0 hardcoded, 0 duplicate implementations remaining |
 | Uninstall cleanup | 0 `character-kit`-matching processes, 0 dangling hook entries after 1 real `npm uninstall -g` |
 | No regressions | `settings.json`'s non-`hooks` keys byte-identical before/after every install and uninstall test |
 | Known defects closed | 8/8 open items in the Known Defects Register (KD-01 through KD-08; KD-09 and KD-10 are informational, not code defects) resolved by end of Phase 2, each with its resolving PHASE-N.M item named in this table's own row |
@@ -1567,4 +1577,124 @@ Phase       : PHASE-0
 Rollback Ref: git diff against the commit prior to this entry; each of the
               three deliverables touches a disjoint set of files and can be
               reverted independently (per this phase's Rollback Procedure)
+```
+
+## CL-0005 — Phase 1 implementation: MOD-005, MOD-006, MOD-007, MOD-008
+
+```
+Date        : 2026-08-07 08:52 UTC
+Contributor : claude-code-session
+Modules     : [MOD-005, MOD-006, MOD-007, MOD-008]
+Section Tags: [[PHASE-1-v2]]
+Files Changed: [node/bin/postinstall.js, node/bin/install.js,
+                node/src/hooks/character.js, node/src/index.js,
+                node/tests/postinstall.test.js (new), node/tests/install.test.js,
+                node/tests/character.test.js]
+Description : MOD-005: postinstall.js now defaults to an interactive-pointer
+              message and configures nothing unless ACK_YES=1. Verified via
+              real subprocess spawns against a fake global node_modules
+              install -- an initial symlinked fixture produced silent zero
+              output because import.meta.url resolves through symlinks to a
+              path with no node_modules component, breaking the existing
+              global-install guard; switched to a real file copy, matching
+              what npm actually does on a real install.
+              MOD-006: before touching anything, read the daemon's explicit
+              "do NOT auto-load ACK_AUTH_TOKEN" security comment in full --
+              it forbids the daemon PASSIVELY loading the token from a .env
+              file (would self-gate against any client with a different
+              .env), not the token arriving via spawn-time LAUNCH env, which
+              the same comment explicitly endorses. The token was being
+              generated and written to the client's .env but never added to
+              the `vars` object used for the actual daemon/monitor/watchdog
+              spawn -- fixed narrowly, verified by reading the real token
+              out of /proc/<pid>/environ on a live spawned daemon, plus
+              RPC-level correct/wrong/missing-token checks.
+              MOD-007: new verifyLiveness() -- 200ms interval, up to 5
+              attempts, real PID check + real status RPC round-trip before
+              install.js reports success. A liveness failure now throws
+              (previously spawn() not throwing was silently treated as
+              "done"), correctly propagating into postinstall.js's failure
+              path too. Verified with both a genuine partial-failure case
+              (daemon alive and answering, monitor/watchdog PIDs dead) and a
+              fully-alive end-to-end case, all real spawned processes.
+              MOD-008: ported hermes_plugin's verified-working _detect_ack()
+              pattern to Claude. Verified the real Claude Code transcript
+              JSONL schema against an actual transcript file on this
+              machine before writing anything (not assumed):
+              {type:"assistant", message:{role, content:[{type:"text",
+              text},...]}}. Deliberately broader than a literal Hermes
+              port: Hermes's regex only matches the "resonates true
+              because" closer, but the daemon's real submitAck() grammar
+              accepts four more (why: / because / matters because /
+              applies because) -- a straight port would have silently
+              missed valid acknowledgments using those. Used the daemon's
+              actual acceptance regex instead. Only scans the most recent
+              assistant turn, confirmed an old acknowledgment several turns
+              back does not get re-detected on every later turn.
+Tests Passing: 11 install.test.js, 3 postinstall.test.js (new), 16
+              character.test.js (7 new). Full repo suite: 43/43, zero
+              orphaned processes after any test run.
+Phase       : PHASE-1
+Rollback Ref: each MOD's files can be reverted independently; git diff
+              against the commit prior to this entry
+```
+
+## CL-0006 — Phase 1 implementation: MOD-009, expanded scope (KD-11), and a self-correction (KD-03)
+
+```
+Date        : 2026-08-07 08:52 UTC
+Contributor : claude-code-session
+Modules     : [MOD-009]
+Section Tags: [[MODULE-REGISTRY-v2], [SPECS-v2], [PHASE-1-v2]]
+Files Changed: [node/src/habits/build.js (new), node/bin/ack.js,
+                node/bin/install.js, node/tests/habits-build.test.js (new),
+                node/tests/habit-create.test.js, .blueprint/blueprint.md]
+Description : Implementing MOD-009 surfaced a real gap in this document's
+              own prior diagnosis, in both directions -- one expansion, one
+              retraction, neither assumed, both verified before acting.
+              EXPANSION (KD-11): while fixing ack.js's habit create
+              handler, discovered install.js contains TWO MORE independent
+              implementations of the exact same YAML-writing logic
+              (createHabitDirect for --create-habit, and createHabit for
+              the interactive `ack install` wizard) -- both hardcoding the
+              identical defaults ack.js's version did. Three independent
+              copies of one capability is a direct FOREVER-SYSTEM.md §1
+              violation this project's own governance names explicitly.
+              Collapsed all three into node/src/habits/build.js
+              (normalizeHabitName, buildHabitYaml, VALID_LEVELS) rather
+              than patching each site separately -- fixing three call
+              sites independently would have left the underlying
+              duplication in place, just with three copies of the FIXED
+              defaults instead of three copies of the broken ones.
+              RETRACTION (KD-03): before starting the originally-planned
+              "backfill 19 thin habits" step, ran the actual verification
+              first instead of executing the plan as written -- grep for
+              the literal hardcoded evidence string across all 40 bundled
+              habits returned ZERO matches. Read two of the 17
+              kind:"standard" files in full: both carry genuinely specific,
+              well-authored evidence and logic text, not thin defaults.
+              Further checked whether behavior.kind is read anywhere in
+              the runtime at all (daemon, character.js, ack.js) -- it is
+              not; it's pure documentation metadata with zero functional
+              effect today. The original KD-03 claim was an unverified
+              inference chained from two true facts (kind:"standard" exists
+              on these files; the thin creator writes kind:"standard") into
+              a third, never independently checked (therefore these
+              specific files came from that creator). PHASE-1.6 removed;
+              no code was written to "fix" something that wasn't broken.
+              This is the second self-correction in this document's history
+              (after CL-0003's MOD-008 correction) and both are handled the
+              same way: found, verified, recorded openly, never quietly
+              absorbed into a rewritten claim with no trace of having been
+              wrong.
+Tests Passing: 5 habits-build.test.js (new), habit-create.test.js updated
+              (adds a required-field-rejection case) + all existing
+              assertions strengthened to check kind:"assertion" and real
+              evidence text, not just file existence. Full repo suite:
+              48/48, zero regressions, zero orphaned processes.
+Phase       : PHASE-1
+Rollback Ref: git diff against the commit prior to this entry; reverting
+              requires reverting build.js + ack.js + install.js together
+              (see this phase's Rollback Procedure item 3) or the three
+              entry points disagree again
 ```
