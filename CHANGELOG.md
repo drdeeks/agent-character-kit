@@ -2,6 +2,42 @@
 
 Append-only, newest entry on top. Never rewrite a past entry.
 
+## 1.3.0 — 2026-08-07
+
+**Changed:**
+- `npm install -g` now NEVER configures anything, under any signal —
+  supersedes the 1.2.1 entry below, whose described auto-configure-by-default
+  postinstall behavior was itself replaced (blueprint CL-0005/MOD-005)
+  before 1.2.1 actually shipped it, then corrected again today
+  (CL-0007): the `ACK_YES=1` bypass that could still make postinstall
+  auto-configure has been removed entirely. `npm install -g` only ever
+  installs the package and prints what to run next; setup is always a
+  separate, deliberate step.
+- The `install` CLI command is renamed to `configure` (`ack configure`),
+  matching the standard package-manager pattern (install via npm, then a
+  separate `configure` step, e.g. `aws configure`). `ack install` still
+  works as a backward-compatible alias.
+- `ack configure` (no flags) is the real interactive step-by-step wizard.
+  `ack configure --yes` is non-interactive, auto-detected sane defaults.
+  Running nothing leaves the package fully inert.
+
+**Fixed:**
+- `ack.js`'s command handler force-appended `--yes` onto every
+  `install.js` invocation regardless of what was actually passed, so the
+  genuine interactive wizard already implemented in `install.js`
+  (readline-based, gated on `opts.yes`) was unreachable through the CLI —
+  `ack configure` silently ran non-interactively every time. Fixed; a new
+  end-to-end test spawns the real `ack.js` binary and confirms `ack
+  configure --yes` reaches `install.js` and starts a live daemon.
+
+Also includes the accumulated Phase 0/1 work landed since 1.2.1: the
+locational habit-file nudge, `UserPromptSubmit` hook wiring, `preuninstall.js`,
+the `ACK_AUTH_TOKEN` spawn-env fix, daemon/monitor/watchdog liveness
+verification surfaced as an install failure instead of a silent partial
+success, the Claude-transcript acknowledgment detector, and the collapsed
+single habit-creator module (fixing a real 3-way duplicate implementation).
+See `.blueprint/blueprint.md` CL-0003 through CL-0007 for full detail.
+
 ## 1.2.1 — 2026-08-05
 
 **Fixed:**

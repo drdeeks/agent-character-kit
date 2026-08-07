@@ -67,7 +67,7 @@ Cursor, Codex, a shell wrapper) can use it.
   - `/run/agent-enforcer/main.sock` remains only as the deepest fallback for a
     root-owned systemd install that sets it explicitly.
   - Clients read the same `ENFORCER_SOCKET` / `AGENT_WORKSPACE`, so they follow
-    automatically. The interactive `ack install` writes one `.env` that every
+    automatically. The interactive `ack configure` writes one `.env` that every
     component reads — no path is assumed.
 - **Out-of-process = tamper-resistant (NOT tamper-proof).** The daemon runs
   outside the agent, so the agent cannot trivially `kill` or modify it, and if
@@ -102,7 +102,7 @@ Both modes run the **same daemon**; the difference is entirely about which
 Linux user account owns it, and therefore what the agent's own tool calls
 are permitted to do to it.
 
-| Capability the agent has | User-mode (`ack install`, no sudo) | Root-mode (`sudo deploy/deploy-agent-enforcer.sh`) |
+| Capability the agent has | User-mode (`ack configure`, no sudo) | Root-mode (`sudo deploy/deploy-agent-enforcer.sh`) |
 |---|---|---|
 | Kill the daemon via its own shell/exec tool | **Yes** — same UID, `kill -9 <pid>` works | No — daemon runs as `root`; agent's tools run as a non-root user with no signal permission |
 | Edit/delete `.agent/constitution.yaml`, `enforcer.yaml`, `habits/*.yaml` directly | **Yes** — same filesystem permissions | No — files are root-owned |
@@ -266,7 +266,7 @@ kept for parity) are only needed if you're binding a Hermes-style Python
 harness as the companion; every other harness only ever touches Node.
 
 **Wiring:** the interactive installer (`node node/bin/install.js`, or
-`npm i -g @character-kit && ack install`) sets up ALL FOUR components — daemon,
+`npm i -g @character-kit && ack configure`) sets up ALL FOUR components — daemon,
 companion, monitor, watchdog — in one flow and writes a single `.env`
 (`AGENT_WORKSPACE` / `ENFORCER_SOCKET` / `ACK_ACK_LOG`) every component reads.
 For a root-owned system-wide deploy, `deploy/deploy-ack-services.sh` installs
