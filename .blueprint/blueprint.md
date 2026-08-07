@@ -1698,3 +1698,44 @@ Rollback Ref: git diff against the commit prior to this entry; reverting
               (see this phase's Rollback Procedure item 3) or the three
               entry points disagree again
 ```
+
+## CL-0007 — MOD-005 correction: postinstall must never configure, under any signal
+
+```
+Date        : 2026-08-07 17:35 UTC
+Contributor : claude-code-session
+Modules     : [MOD-005]
+Section Tags: [[MODULE-REGISTRY-v2], [SPECS-v2]]
+Files Changed: [node/bin/postinstall.js, node/bin/ack.js,
+                node/tests/postinstall.test.js,
+                node/tests/ack-configure.test.js (new), .blueprint/blueprint.md]
+Description : Direct user correction of CL-0005's MOD-005 design. The
+              ACK_YES=1 bypass (postinstall auto-configuring when that env
+              var was set before `npm install -g`) was itself still a form
+              of "install sometimes also configures" -- install and
+              configure must be two fully separate, deliberate actions,
+              with zero exceptions, matching the standard package-manager
+              pattern (install via npm/apt/brew, then a separate `configure`
+              step -- e.g. `aws configure`). Removed the ACK_YES mechanism
+              from postinstall.js entirely; it now unconditionally only
+              installs and prints next-step guidance, never configures.
+              Renamed the `install` command to `configure` (`ack.js`),
+              keeping `install` as a Commander .alias() for backward
+              compatibility with the published v1.2.1 CLI. While making
+              this change, found and fixed a real, previously untested bug:
+              ack.js's configure/install action handler force-appended
+              "--yes" onto every invocation of install.js regardless of
+              whether the user passed --yes, meaning the true interactive
+              wizard path inside install.js (which does exist, gated on
+              opts.yes, using readline) was unreachable through the CLI --
+              `ack configure` without --yes silently ran non-interactively
+              every time. Fixed by removing the hardcoded append and
+              trusting the already-correctly-computed flags array. Added
+              ack-configure.test.js: a real end-to-end spawn of the actual
+              ack.js CLI binary (not install.js directly, which every other
+              test already covers) proving `ack configure --yes` reaches
+              install.js and starts a real, live daemon process.
+Tests Passing: 50/50 (was 48/48; +2 new in ack-configure.test.js), stable
+               across repeated runs
+Rollback Ref: git diff against the commit prior to this entry
+```

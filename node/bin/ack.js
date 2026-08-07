@@ -687,8 +687,9 @@ program
   });
 
 program
-  .command("install")
-  .description("Deploy daemon + monitor + watchdog + companion [Core]")
+  .command("configure")
+  .alias("install") // backward-compat: v1.2.1 and earlier called this "install"
+  .description("Set up daemon + monitor + watchdog + companion [Core]")
   .option("--yes", "Non-interactive, sensible defaults")
   .option("--all", "Everything: root mode + all components + Python bindings")
   .option("--user", "User-mode (default)")
@@ -742,7 +743,13 @@ program
     }
     if (opts.python === true) flags.push("--python");
     else if (opts.python === false) flags.push("--no-python");
-    process.argv = ["node", "install.js", ...flags, "--yes"];
+    // Bug fix: this used to force-append "--yes" unconditionally here,
+    // which meant `ack configure` (run with a real TTY, capable of a true
+    // interactive wizard) could never actually reach install.js's
+    // interactive branch -- every invocation silently ran non-interactive
+    // regardless of whether --yes was passed. `flags` already contains
+    // "--yes" when opts.yes is true; nothing further to add.
+    process.argv = ["node", "install.js", ...flags];
     await main();
   });
 

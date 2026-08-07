@@ -25,55 +25,50 @@ function makeFakeGlobalInstall() {
   return { tmpRoot, fakeHome, postinstallPath: path.join(pkgDir, "node", "bin", "postinstall.js") };
 }
 
-test("postinstall.js MOD-005: no ACK_YES -> prints interactive-pointer, configures nothing", () => {
+test("postinstall.js: install-only -- prints the configure pointer, configures nothing", () => {
   const { tmpRoot, fakeHome, postinstallPath } = makeFakeGlobalInstall();
   try {
     const out = execFileSync(process.execPath, [postinstallPath], {
       env: { ...process.env, HOME: fakeHome, npm_config_global: "true" },
       encoding: "utf8",
     });
-    assert.match(out, /Nothing has been configured yet/);
-    assert.match(out, /Run `ack install`/);
-    assert.match(out, /set ACK_YES=1/);
+    assert.match(out, /Nothing has been configured/);
+    assert.match(out, /^\s*ack configure\s+step-by-step/m);
+    assert.match(out, /ack configure --yes/);
     assert.equal(fs.existsSync(path.join(fakeHome, ".claude", "settings.json")), false,
-      "no bypass must mean nothing gets written to settings.json");
+      "npm install must never write to settings.json");
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
 
-test("postinstall.js MOD-005: ACK_YES=1 reproduces the full auto-configure flow", { timeout: 20000 }, () => {
+test("postinstall.js: never auto-configures, even if ACK_YES=1 is set (that mechanism is gone)", () => {
   const { tmpRoot, fakeHome, postinstallPath } = makeFakeGlobalInstall();
-  let daemonPid = null;
   try {
     const out = execFileSync(process.execPath, [postinstallPath], {
       env: { ...process.env, HOME: fakeHome, npm_config_global: "true", ACK_YES: "1" },
       encoding: "utf8",
-      timeout: 15000,
     });
-    assert.match(out, /ACK_YES=1, setting up automatically/);
-    assert.match(out, /set up generic successfully|set up .* successfully/);
-    const pidMatch = out.match(/Daemon pid:\s+(\d+)/);
-    assert.ok(pidMatch, "must report a real daemon pid, not a description of what would happen");
-    daemonPid = Number(pidMatch[1]);
-    let alive = true;
-    try { process.kill(daemonPid, 0); } catch { alive = false; }
-    assert.equal(alive, true, "the reported daemon pid must actually be a running process");
+    assert.match(out, /Nothing has been configured/,
+      "ACK_YES must have zero effect -- configuration only ever happens via `ack configure`");
+    assert.doesNotMatch(out, /Daemon pid/);
+    assert.equal(fs.existsSync(path.join(fakeHome, ".claude", "settings.json")), false);
+    assert.equal(fs.existsSync(path.join(fakeHome, ".agent-character-kit")), false,
+      "no workspace should be created by npm install alone");
   } finally {
-    if (daemonPid) { try { process.kill(daemonPid, "SIGKILL"); } catch { /* already dead */ } }
-    try { execSync(`pkill -f ${JSON.stringify(tmpRoot)}`); } catch { /* nothing left to kill, expected */ }
+    try { execSync(`pkill -f ${JSON.stringify(tmpRoot)}`); } catch { /* nothing to kill, expected */ }
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
 
-test("postinstall.js: local dev install (no npm_config_global) is always a silent no-op regardless of ACK_YES", () => {
+test("postinstall.js: local dev install (no npm_config_global) is always a silent no-op", () => {
   const { tmpRoot, fakeHome, postinstallPath } = makeFakeGlobalInstall();
   try {
     const out = execFileSync(process.execPath, [postinstallPath], {
-      env: { ...process.env, HOME: fakeHome, ACK_YES: "1" }, // deliberately no npm_config_global
+      env: { ...process.env, HOME: fakeHome }, // deliberately no npm_config_global
       encoding: "utf8",
     });
-    assert.equal(out.trim(), "", "must produce zero output when not a real global install, even with ACK_YES=1");
+    assert.equal(out.trim(), "", "must produce zero output when not a real global install");
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
