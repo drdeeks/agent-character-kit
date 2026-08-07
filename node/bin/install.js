@@ -623,9 +623,14 @@ async function main(callerOpts) {
       console.log("deploy step above — not asking again.)");
     }
 
-    console.log("\nOnly needed if a companion you use is Python-based (e.g. the Hermes");
-    console.log("plugin). Node-only companions (ack hook) don't need this.");
-    const doPythonGlobal = await yesNo(rl, "Install Python ACK bindings (optional pip package)?", false);
+    // Contextual, not generic (KD-19 item 5): only ask at all when a
+    // harness that actually needs it was selected. Every other harness
+    // uses the Node-only `ack hook` companion and has no reason to see
+    // this question.
+    let doPythonGlobal = false;
+    if (harnesses.includes("hermes")) {
+      doPythonGlobal = await yesNo(rl, "Hermes requires the Python companion. Continue?", true);
+    }
 
     let doStartNowGlobal = false;
     if (!asRootGlobal) {
