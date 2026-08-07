@@ -463,9 +463,9 @@ async function main(callerOpts) {
     }
   }
 
-  let ws, socketMode, harness, asRoot, doMonitor, doWatchdog, doCompanion, doPython, doStartNow, doWireClaudeConfig;
+  let ws, socketMode, harness, asRoot, doMonitor, doWatchdog, doCompanion, doPython, doVectors, doStartNow, doWireClaudeConfig;
   // Each entry: { ws, socketMode, harness, asRoot, rootSocket, doMonitor,
-  // doWatchdog, doCompanion, doPython, doStartNow, doWireClaudeConfig }.
+  // doWatchdog, doCompanion, doPython, doVectors, doStartNow, doWireClaudeConfig }.
   // One entry per harness in interactive multi-harness mode; exactly one
   // entry for --yes/--all (unchanged behavior from before).
   const plannedInstalls = [];
@@ -485,6 +485,7 @@ async function main(callerOpts) {
       doWatchdog: true,
       doCompanion: true,
       doPython: opts.python !== false,
+      doVectors: opts.vectors === true,
       doStartNow: opts.start !== false,
       doWireClaudeConfig: harness === "claude" && opts.writeClaudeConfig !== false,
     });
@@ -512,6 +513,7 @@ async function main(callerOpts) {
         doWatchdog: opts.watchdog,
         doCompanion: opts.companion,
         doPython: opts.python ?? false,
+        doVectors: opts.vectors === true,
         doStartNow: opts.start !== false,
         doWireClaudeConfig: h === "claude" && opts.writeClaudeConfig !== false,
       });
@@ -628,8 +630,16 @@ async function main(callerOpts) {
     // uses the Node-only `ack hook` companion and has no reason to see
     // this question.
     let doPythonGlobal = false;
+    let doVectorsGlobal = false;
     if (harnesses.includes("hermes")) {
       doPythonGlobal = await yesNo(rl, "Hermes requires the Python companion. Continue?", true);
+      if (doPythonGlobal) {
+        console.log("\nThe 'vectors' extra (numpy + sentence-transformers) enables real");
+        console.log("semantic search in the knowledge indexer. It's heavy (pulls in a");
+        console.log("large ML stack) and the base companion works fine without it --");
+        console.log("only say yes if you actually want embedding-based search.");
+        doVectorsGlobal = await yesNo(rl, "Also install the optional 'vectors' extra?", false);
+      }
     }
 
     let doStartNowGlobal = false;
@@ -687,6 +697,7 @@ async function main(callerOpts) {
         doWatchdog: doWatchdogGlobal,
         doCompanion: true,
         doPython: doPythonGlobal,
+        doVectors: doVectorsGlobal,
         doStartNow: doStartNowGlobal,
         doWireClaudeConfig: hWireClaude,
       });
@@ -716,10 +727,14 @@ async function main(callerOpts) {
   const seenWorkspaces = new Map(); // absWs -> { sock, wsEnv, daemonPid, ackLog }
   const summaries = [];
   let anyPython = false;
+  let anyVectors = false;
+  let anyRoot = false;
 
   for (const inst of plannedInstalls) {
-    ({ harness, asRoot, doMonitor, doWatchdog, doCompanion, doPython, doStartNow, doWireClaudeConfig, socketMode } = inst);
+    ({ harness, asRoot, doMonitor, doWatchdog, doCompanion, doPython, doVectors, doStartNow, doWireClaudeConfig, socketMode } = inst);
     if (doPython) anyPython = true;
+    if (doVectors) anyVectors = true;
+    if (asRoot) anyRoot = true;
 
     const absWs = asRoot
       ? (process.env.AGENT_WORKSPACE || "/var/lib/agent-character-kit/workspace")
@@ -958,9 +973,8 @@ async function main(callerOpts) {
     );
   }
 
-  // 7. ACK install prompt (do NOT auto-run npm/pip — visibility first).
-  // Only when this invocation is genuinely running from a LOCAL dev
-  // checkout, not an already-global/packed install -- see
+  // 7. ACK install prompt. Only when this invocation is genuinely running
+  // from a LOCAL dev checkout, not an already-global/packed install -- see
   // IS_GLOBAL_INSTALL above. Printing "install the package" right after
   // this exact command ran through the global binary is nonsense, not
   // helpful (KD-19 item 4).
@@ -973,16 +987,48 @@ async function main(callerOpts) {
   console.log("    # or, from this repo root:");
   console.log("    npm install");
   console.log("");
+  console.log("  Run `ack --help` to see all commands once installed.");
+  }
+
+  // Python companion bindings -- deliberately NOT nested inside
+  // IS_GLOBAL_INSTALL above: that gate is about "should I tell you to
+  // reinstall ACK itself", which is nonsense from a real global install.
+  // This is a different question -- "does the Python companion you just
+  // selected actually have its dependency installed" -- and applies
+  // equally whether ACK itself came from a dev checkout or a real global
+  // install. Previously this only ever printed for dev checkouts, so a
+  // real `ack configure` run (the normal case) never told anyone to
+  // install it at all.
   if (anyPython) {
     const pyDir = path.join(REPO, "python");
+    const target = pyDir + (anyVectors ? "[vectors]" : "");
     if (fs.existsSync(path.join(pyDir, "pyproject.toml"))) {
-      console.log("  Python bindings (optional, for Python-plugin companions):");
-      console.log("    pip3 install " + pyDir);
-      console.log("    # or, if Debian-guarded (PEP 668): pip3 install --break-system-packages " + pyDir);
+      if (anyRoot) {
+        // Root already owns this machine's enforcement stack -- running
+        // pip on its own behalf here is the same trust boundary as
+        // everything else deploy-agent-enforcer.sh already does
+        // unattended. User-mode never does this: silently touching a
+        // non-root user's Python environment without them running the
+        // command themselves is a different, unwanted kind of surprise.
+        console.log("\n─── Python companion (root) ───");
+        console.log(`  Installing: pip3 install ${target}`);
+        let result = spawnSync("pip3", ["install", target], { stdio: "inherit" });
+        if (result.status !== 0) {
+          console.log("  Retrying with --break-system-packages (PEP 668 guard)...");
+          result = spawnSync("pip3", ["install", "--break-system-packages", target], { stdio: "inherit" });
+        }
+        if (result.status === 0) {
+          console.log("  Python companion installed.");
+        } else {
+          console.log("  Python companion install FAILED -- run manually:");
+          console.log(`    pip3 install --break-system-packages ${target}`);
+        }
+      } else {
+        console.log("\n  Python bindings (optional, for Python-plugin companions):");
+        console.log("    pip3 install " + target);
+        console.log("    # or, if Debian-guarded (PEP 668): pip3 install --break-system-packages " + target);
+      }
     }
-  }
-  console.log("");
-  console.log("  Run `ack --help` to see all commands once installed.");
   }
 }
 
