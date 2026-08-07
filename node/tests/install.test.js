@@ -69,10 +69,11 @@ test("discoverAgentWorkspaces: returns empty array for a directory with no marke
 
 // ─── daemon reuse-window (integration: boot daemon, exercise submitAck) ───────
 
-function rpc(sock, method, params) {
+function rpc(sock, method, params, token) {
   return new Promise((res, rej) => {
     const c = net.connect(sock, () => {
-      c.write(JSON.stringify({ method, params }) + "\n");
+      const payload = token !== undefined ? { method, params, token } : { method, params };
+      c.write(JSON.stringify(payload) + "\n");
     });
     let buf = "";
     c.on("data", (d) => {
@@ -186,5 +187,153 @@ test("writeClaudeHookConfig wires both PreToolUse and UserPromptSubmit, preserve
   } finally {
     process.env.HOME = origHomeEnv;
     fs.rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+// ─── MOD-006: ACK_AUTH_TOKEN reaches the real daemon process env ──────────────
+
+test("daemon: ACK_AUTH_TOKEN passed at spawn time is genuinely present in the running process's real env, and gates every RPC", { timeout: 20000 }, async () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "ackauth-"));
+  const sock = path.join(ws, ".agent", "enforcer.sock");
+  const realToken = "test-token-" + Math.random().toString(36).slice(2);
+  // Mirrors install.js's own `vars` object after the MOD-006 fix: the token
+  // now flows through the same spawn-env path as AGENT_WORKSPACE/ENFORCER_SOCKET.
+  const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, ACK_AUTH_TOKEN: realToken };
+  fs.mkdirSync(path.join(ws, ".agent", "habits"), { recursive: true });
+
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, [DAEMON], { env, detached: true, stdio: "ignore" });
+  child.unref();
+
+  try {
+    const start = Date.now();
+    while (!fs.existsSync(sock) && Date.now() - start < 8000) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok(fs.existsSync(sock), "daemon socket should be up before checking its env");
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Read the REAL running process's actual environment, not the env
+    // object we passed to spawn() -- proves the token reached the daemon
+    // itself, not just that we intended to pass it (Linux-only check; the
+    // RPC-level checks below are the portable proof).
+    if (fs.existsSync(`/proc/${child.pid}/environ`)) {
+      const environ = fs.readFileSync(`/proc/${child.pid}/environ`, "utf8");
+      assert.ok(environ.includes(`ACK_AUTH_TOKEN=${realToken}`),
+        "the real daemon process's actual environment must contain the token, not just the spawn call's intent");
+    }
+
+    const withRightToken = await rpc(sock, "status", {}, realToken);
+    assert.equal(withRightToken.ok, true, "a request with the correct token must succeed");
+
+    const withWrongToken = await rpc(sock, "status", {}, "totally-wrong-token");
+    assert.equal(withWrongToken.error, "unauthorized", "a mismatched token must be genuinely rejected, not silently allowed");
+
+    const withNoToken = await rpc(sock, "status", {});
+    assert.equal(withNoToken.error, "unauthorized", "a missing token must be rejected once ACK_AUTH_TOKEN is set in the daemon's env");
+  } finally {
+    try { process.kill(-child.pid, "SIGKILL"); } catch {}
+    try { child.kill("SIGKILL"); } catch {}
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+// ─── MOD-007: liveness verification ────────────────────────────────────────────
+
+test("isPidAlive: true for this test's own real process, false for a PID very unlikely to exist", async () => {
+  const { isPidAlive } = await import("../bin/install.js");
+  assert.equal(isPidAlive(process.pid), true);
+  assert.equal(isPidAlive(999999), false);
+  assert.equal(isPidAlive(null), false);
+});
+
+test("verifyLiveness: reports allAlive=false when the daemon PID is dead, without ever contacting a socket", async () => {
+  const { verifyLiveness } = await import("../bin/install.js");
+  const result = await verifyLiveness({
+    sock: "/nonexistent/socket/path",
+    token: "irrelevant",
+    daemonPid: 999999, // not alive
+    monitorPid: null,
+    watchdogPid: null,
+  });
+  assert.equal(result.daemon, false);
+  assert.equal(result.allAlive, false);
+  assert.equal(result.statusOk, false, "must never claim the daemon answered when it's not even alive");
+});
+
+test("verifyLiveness: reports allAlive=false when monitor/watchdog PIDs are dead even though the daemon is alive and answering", { timeout: 15000 }, async () => {
+  const { verifyLiveness } = await import("../bin/install.js");
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "acklive-"));
+  const sock = path.join(ws, ".agent", "enforcer.sock");
+  const token = "test-token-" + Math.random().toString(36).slice(2);
+  const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, ACK_AUTH_TOKEN: token };
+  fs.mkdirSync(path.join(ws, ".agent", "habits"), { recursive: true });
+
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, [DAEMON], { env, detached: true, stdio: "ignore" });
+  child.unref();
+  try {
+    const start = Date.now();
+    while (!fs.existsSync(sock) && Date.now() - start < 8000) await new Promise((r) => setTimeout(r, 100));
+    assert.ok(fs.existsSync(sock));
+    await new Promise((r) => setTimeout(r, 300));
+
+    const result = await verifyLiveness({
+      sock, token, daemonPid: child.pid,
+      monitorPid: 999999, // dead -- monitor "failed to start"
+      watchdogPid: 999998, // dead -- watchdog "failed to start"
+    });
+    assert.equal(result.daemon, true);
+    assert.equal(result.statusOk, true, "the real daemon must genuinely answer the status RPC");
+    assert.equal(result.monitor, false, "a dead monitor PID must be reported as not alive");
+    assert.equal(result.watchdog, false, "a dead watchdog PID must be reported as not alive");
+    assert.equal(result.allAlive, false, "partial failure (daemon up, monitor/watchdog not) must not report allAlive=true");
+  } finally {
+    try { process.kill(-child.pid, "SIGKILL"); } catch {}
+    try { child.kill("SIGKILL"); } catch {}
+    fs.rmSync(ws, { recursive: true, force: true });
+  }
+});
+
+test("verifyLiveness: allAlive=true end-to-end when daemon/monitor/watchdog are all really running and the token is correct", { timeout: 15000 }, async () => {
+  const { verifyLiveness } = await import("../bin/install.js");
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "acklive-ok-"));
+  const sock = path.join(ws, ".agent", "enforcer.sock");
+  const token = "test-token-" + Math.random().toString(36).slice(2);
+  const vars = {
+    AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, ACK_AUTH_TOKEN: token,
+    ACK_ACK_LOG: path.join(ws, ".agent", "ack.jsonl"),
+    ACK_MONITOR_PID: path.join(ws, ".agent", "ack-monitor.pid"),
+    ACK_MONITOR_STATE: path.join(ws, ".agent", "ack-monitor.pos"),
+    ACK_WATCHDOG_PID: path.join(ws, ".agent", "ack-watchdog.pid"),
+  };
+  fs.mkdirSync(path.join(ws, ".agent", "habits"), { recursive: true });
+
+  const { spawn } = await import("node:child_process");
+  const MONITOR = path.join(REPO, "deploy", "ack_monitor.js");
+  const WATCHDOG = path.join(REPO, "deploy", "ack_watchdog.js");
+  const daemon = spawn(process.execPath, [DAEMON], { env: { ...process.env, ...vars }, detached: true, stdio: "ignore" });
+  daemon.unref();
+  const monitor = spawn(process.execPath, [MONITOR], { env: { ...process.env, ...vars }, detached: true, stdio: "ignore" });
+  monitor.unref();
+  const watchdog = spawn(process.execPath, [WATCHDOG], { env: { ...process.env, ...vars }, detached: true, stdio: "ignore" });
+  watchdog.unref();
+
+  try {
+    const start = Date.now();
+    while (!fs.existsSync(sock) && Date.now() - start < 8000) await new Promise((r) => setTimeout(r, 100));
+    assert.ok(fs.existsSync(sock));
+    await new Promise((r) => setTimeout(r, 500));
+
+    const result = await verifyLiveness({
+      sock, token, daemonPid: daemon.pid, monitorPid: monitor.pid, watchdogPid: watchdog.pid,
+    });
+    assert.equal(result.allAlive, true, `expected fully alive, got ${JSON.stringify(result)}`);
+  } finally {
+    for (const c of [daemon, monitor, watchdog]) {
+      try { process.kill(-c.pid, "SIGKILL"); } catch {}
+      try { c.kill("SIGKILL"); } catch {}
+    }
+    fs.rmSync(ws, { recursive: true, force: true });
   }
 });

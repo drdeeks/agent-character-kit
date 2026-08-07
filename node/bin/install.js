@@ -21,6 +21,7 @@
  */
 
 import fs from "fs";
+import net from "net";
 import os from "os";
 import path from "path";
 import readline from "readline";
@@ -229,6 +230,62 @@ function writeConstitution(ws) {
       "  - no_destructive_without_confirm: block rm -rf /, mkfs, dd on disks, etc. unless confirmed",
     ].join("\n") + "\n");
   }
+}
+
+// MOD-007: `spawn()` not throwing means the OS accepted the fork request,
+// not that the process is still running or responding to RPC a moment
+// later. A minimal, self-contained status ping -- deliberately not routed
+// through EnforcerClient (client.js), since that reads its token from
+// process.env.ACK_AUTH_TOKEN globally, and mutating the installer's own
+// process-wide env for a single liveness check is worse than a small
+// self-contained call, matching the same self-containment reasoning
+// ack_monitor.js's own header comment gives for not importing the repo's
+// shared client.
+export function pingDaemonStatus(sock, token) {
+  return new Promise((resolve) => {
+    if (!fs.existsSync(sock)) { resolve({ error: "socket not found" }); return; }
+    const socket = net.createConnection(sock);
+    let data = "";
+    const timeout = setTimeout(() => { socket.destroy(); resolve({ error: "timeout" }); }, 4000);
+    socket.on("connect", () => {
+      socket.write(JSON.stringify({ method: "status", params: {}, token }) + "\n");
+    });
+    socket.on("data", (chunk) => {
+      data += chunk.toString();
+      if (data.includes("\n")) {
+        clearTimeout(timeout);
+        socket.destroy();
+        try { resolve(JSON.parse(data.trim())); } catch { resolve({ error: "invalid response" }); }
+      }
+    });
+    socket.on("error", (err) => { clearTimeout(timeout); resolve({ error: err.message }); });
+  });
+}
+
+export function isPidAlive(pid) {
+  if (!pid) return false;
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+// Design targets stated in blueprint.md Part I/1.3: 200ms interval, up to 5
+// attempts (1 second total) -- well inside client.js's own 5000ms RPC
+// timeout, so a genuine liveness failure is never masked by a slower,
+// unrelated timeout firing first.
+export async function verifyLiveness({ sock, token, daemonPid, monitorPid, watchdogPid }) {
+  const result = { daemon: false, monitor: monitorPid == null, watchdog: watchdogPid == null, statusOk: false };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    result.daemon = isPidAlive(daemonPid);
+    if (monitorPid != null) result.monitor = isPidAlive(monitorPid);
+    if (watchdogPid != null) result.watchdog = isPidAlive(watchdogPid);
+    if (result.daemon) {
+      const status = await pingDaemonStatus(sock, token);
+      result.statusOk = status.ok === true;
+    }
+    if (result.daemon && result.statusOk && result.monitor && result.watchdog) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  result.allAlive = result.daemon && result.statusOk && result.monitor && result.watchdog;
+  return result;
 }
 
 function launchDaemon(vars) {
@@ -613,6 +670,7 @@ async function main(callerOpts) {
     const wsEnv = path.join(absWs, ".env");
 
     let daemonPid = null;
+    let liveness = null;
     let monitorMsg;
     let alreadyProvisioned = seenWorkspaces.has(absWs);
 
@@ -623,10 +681,24 @@ async function main(callerOpts) {
       monitorMsg = `already running for this workspace (shared with an earlier harness in this run: ${seenWorkspaces.get(absWs).harnesses.join(", ")})`;
       daemonPid = seenWorkspaces.get(absWs).daemonPid;
     } else {
+      // MOD-006: ACK_AUTH_TOKEN belongs in `vars` too, not just the client's
+      // .env file. This is the officially-sanctioned "LAUNCH env" pathway
+      // the daemon's own SECURITY comment describes (agent_enforcer_daemon.js:29-34)
+      // -- explicit spawn-time env injection is correct and expected; only
+      // the daemon PASSIVELY AUTO-LOADING the token from a .env file is the
+      // thing that comment forbids (that would self-gate the daemon against
+      // any client/test-harness that doesn't share the exact same .env).
+      // Before this fix, `vars` never carried the token at all, so it never
+      // reached the daemon/monitor/watchdog's actual process.env in
+      // user-mode installs -- the auth gate existed but had nothing to check
+      // against, i.e. it silently checked ACK_AUTH_TOKEN === undefined.
+      const crypto = await import("crypto");
+      const ackToken = crypto.randomUUID();
       const vars = {
         AGENT_WORKSPACE: absWs,
         ENFORCER_SOCKET: sock,
         ACK_ACK_LOG: ackLog,
+        ACK_AUTH_TOKEN: ackToken,
         ACK_MONITOR_PID: path.join(absWs, ".agent", "ack-monitor.pid"),
         ACK_MONITOR_STATE: path.join(absWs, ".agent", "ack-monitor.pos"),
         ACK_WATCHDOG_PID: path.join(absWs, ".agent", "ack-watchdog.pid"),
@@ -646,8 +718,6 @@ async function main(callerOpts) {
       // .env is what every component actually reads (see
       // buildSelfContainedHookCommand below); no reason to also write a
       // collision-prone shared copy.
-      const crypto = await import("crypto");
-      const ackToken = crypto.randomUUID();
       writeEnvFile(wsEnv, {
         AGENT_WORKSPACE: absWs,
         ENFORCER_SOCKET: sock,
@@ -682,6 +752,26 @@ async function main(callerOpts) {
           : "skipped (not requested)";
       } else {
         monitorMsg = (doMonitor || doWatchdog) ? "configured, not started (see manual start commands below)" : "skipped";
+      }
+
+      // MOD-007: confirm daemon/monitor/watchdog are actually alive (RPC +
+      // PID check) BEFORE reporting success -- spawn() not throwing only
+      // means the OS accepted the fork, not that anything is still running
+      // a moment later.
+      if (doStartNow) {
+        liveness = await verifyLiveness({
+          sock, token: ackToken, daemonPid,
+          monitorPid: doMonitor ? procs.monitorPid : null,
+          watchdogPid: doWatchdog ? procs.watchdogPid : null,
+        });
+        if (!liveness.allAlive) {
+          const missing = [];
+          if (!liveness.daemon) missing.push("daemon (process not running)");
+          else if (!liveness.statusOk) missing.push("daemon (running but not answering status RPC)");
+          if (doMonitor && !liveness.monitor) missing.push("monitor (acknowledgments will not be credited)");
+          if (doWatchdog && !liveness.watchdog) missing.push("watchdog (monitor will not self-heal if it dies)");
+          monitorMsg += ` — LIVENESS CHECK FAILED: ${missing.join("; ")}`;
+        }
       }
     }
 
@@ -725,7 +815,7 @@ async function main(callerOpts) {
       }
     }
 
-    summaries.push({ harness, absWs, sock, ackLog, daemonPid, companionMsg, monitorMsg, asRoot, alreadyProvisioned, doStartNow, doMonitor, doWatchdog, doWireClaudeConfig });
+    summaries.push({ harness, absWs, sock, ackLog, daemonPid, companionMsg, monitorMsg, asRoot, alreadyProvisioned, doStartNow, doMonitor, doWatchdog, doWireClaudeConfig, liveness });
   }
 
   // 6. summary (informative, no force-close) — one block per harness
@@ -740,6 +830,11 @@ async function main(callerOpts) {
     console.log("Daemon pid:    ", s.daemonPid ?? "(not started)");
     console.log("Companion:     ", s.companionMsg);
     console.log("Monitor/Watch: ", s.monitorMsg);
+    if (s.liveness) {
+      console.log("Liveness:      ", s.liveness.allAlive
+        ? "CONFIRMED — daemon answered status RPC, monitor + watchdog processes alive"
+        : "FAILED — see LIVENESS CHECK FAILED detail above");
+    }
     if (s.harness === "claude") {
       console.log(s.doWireClaudeConfig
         ? "Done. Claude Code enforcement is live — every tool call now goes through the daemon."
@@ -756,6 +851,20 @@ async function main(callerOpts) {
   console.log("\nThe daemon holds every 5th call until you acknowledge 2 habits");
   console.log("with a real, situation-tied reason. No filler, no reuse.");
   console.log("");
+
+  // MOD-007 / FEAT-001 Rules: "a liveness check failure must be reported as
+  // a failure, never silently downgraded to a warning." The per-harness
+  // detail is already printed above (Liveness: FAILED, with which specific
+  // component); throwing here is what stops postinstall.js's catch-free
+  // success path (and `ack install`'s own CLI wrapper) from reporting
+  // overall success when it demonstrably isn't true.
+  const failedLiveness = summaries.filter((s) => s.liveness && !s.liveness.allAlive);
+  if (failedLiveness.length) {
+    throw new Error(
+      `Liveness check failed for: ${failedLiveness.map((s) => s.harness).join(", ")} ` +
+      `-- see the "LIVENESS CHECK FAILED" detail printed above for exactly which component`
+    );
+  }
 
   // 7. ACK install prompt (do NOT auto-run npm/pip — visibility first)
   // The user installs the package explicitly; we surface the exact

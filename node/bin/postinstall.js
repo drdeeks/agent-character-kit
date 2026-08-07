@@ -70,6 +70,15 @@ function detectHarnesses() {
   return found.length ? found : ["generic"];
 }
 
+function isBypassed() {
+  // MOD-005: postinstall runs as an npm lifecycle hook, which gets no
+  // custom CLI args (npm does not forward flags to lifecycle scripts) --
+  // ACK_YES=1 is the only bypass mechanism actually reachable here. `-y`
+  // remains the equivalent flag on `ack install` itself, a separate code
+  // path this file does not touch.
+  return process.env.ACK_YES === "1";
+}
+
 async function main() {
   if (!isGlobalInstall() || !isRealNodeModulesInstall()) {
     return; // silent no-op — local dev install, or not global
@@ -90,9 +99,32 @@ async function main() {
   const say = (line) => { console.log(line); write(line); };
   const warn = (line) => { console.error(line); write(line); };
 
-  say(`\n[agent-character-kit] postinstall: detected ${harnesses.join(", ")} -- setting up automatically...`);
-
   const isRootUser = typeof process.getuid === "function" && process.getuid() === 0;
+
+  // MOD-005: interactive-pointer is now the DEFAULT -- print what a real
+  // `ack install` session would ask and stop, instead of silently
+  // auto-configuring. ACK_YES=1 reproduces the old always-auto-configure
+  // behavior exactly, byte-for-byte in what gets written to settings.json
+  // (blueprint.md FEAT-001 Rules) -- everything below this block, in the
+  // ACK_YES=1 branch, is unchanged from before this fix.
+  if (!isBypassed()) {
+    const defaultWs = path.join(os.homedir(), ".agent-character-kit", "workspace");
+    say(`\n[agent-character-kit] postinstall: detected ${harnesses.join(", ")}.`);
+    say(`[agent-character-kit] Nothing has been configured yet. A real setup run would ask:`);
+    say(`  - Workspace location (default: ${defaultWs})`);
+    say(`  - Which harness(es) to wire (detected: ${harnesses.join(", ")})`);
+    say(`  - Whether to start the daemon/monitor/watchdog now`);
+    if (isRootUser) {
+      say(`  - Root/system-wide setup needs your sudo password -- an unattended install script`);
+      say(`    must never assume or prompt for it, so root mode is never the automatic default.`);
+    }
+    say(`[agent-character-kit] Run \`ack install\` to answer these interactively, or set ACK_YES=1`);
+    say(`[agent-character-kit] before \`npm install -g\` to auto-configure with these defaults.`);
+    write("ack postinstall: done (interactive-pointer, no auto-configure).");
+    return;
+  }
+
+  say(`\n[agent-character-kit] postinstall: detected ${harnesses.join(", ")} -- ACK_YES=1, setting up automatically...`);
 
   const { main: installMain } = await import("./install.js");
   try {
