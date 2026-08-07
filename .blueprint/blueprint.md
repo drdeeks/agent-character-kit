@@ -1873,3 +1873,67 @@ Rollback Ref: git diff against the commit prior to this entry -- four
   `bindSocket(server, path)` helper. Not done tonight -- flagged as its own
   item since touching daemon startup twice, this late in a long session,
   was already enough real risk without also refactoring the call sites.
+
+## CL-0009 — Real privilege-mode gap: interactive wizard never actually asked, root-mode's socket was unusable
+
+```
+Date        : 2026-08-07 20:15 UTC
+Contributor : claude-code-session
+Modules     : [MOD-005]
+Section Tags: [[MODULE-REGISTRY-v2], [SPECS-v2]]
+Files Changed: [node/enforcer/agent_enforcer_daemon.js, node/bin/install.js,
+                deploy/deploy-agent-enforcer.sh, deploy/deploy-ack-services.sh,
+                AGENTS.md, .blueprint/blueprint.md]
+Description : Direct user challenge: "you could still bypass, still fuck
+              around and get rid of it" -- pointed out that user-mode's
+              same-uid weakness had never actually been surfaced as a real
+              setup decision, and asked for a real 3-way choice (system
+              service / dedicated user / trust-the-agent) instead of a
+              silent default. Tracing the actual privilege model to answer
+              it properly surfaced a deeper, pre-existing bug: the
+              daemon's unix socket was locked to 0600 (owner-only), which
+              means root-mode -- already built, already the "strong"
+              option -- was never actually usable, since a non-root agent
+              physically cannot connect to an owner-only root-owned
+              socket. Root-mode's entire stated purpose ("agent can use
+              it, can't tamper with it") could not have worked as coded.
+
+              Fixed the socket to 0660/2750 (group-restricted via a new
+              shared `ack-clients` group) instead of owner-only --
+              ACK_AUTH_TOKEN stays the actual authorization gate, group
+              access only grants a raw connection. Found and fixed the
+              identical bug duplicated in a second, independent
+              socket-server implementation (startMultiWorkspaceDaemon) --
+              logged as KD-16, not collapsed into one shared helper this
+              session (too invasive a refactor this late).
+
+              Added the real third option: a dedicated, unprivileged
+              service user (default `ack-enforcer`), generalizing both
+              deploy scripts (deploy-agent-enforcer.sh,
+              deploy-ack-services.sh) from hardcoded root:root to a
+              configurable ACK_SERVICE_USER, with user/group creation and
+              client-group wiring. Rewrote the interactive wizard's binary
+              root/no-root question into the actual 3-way prompt with real
+              recommendations (system service = recommended, dedicated
+              user = recommended if root is undesired, trust-the-agent =
+              highly not recommended, explicitly labeled as such).
+Tests Passing: 54/54 unchanged (this work adds new interactive/deploy-time
+               code paths not exercised by the existing automated suite --
+               see Known Defects below)
+Rollback Ref: git diff against the commit prior to this entry -- 5 separate
+              commits: 7031b05 (socket fix), ee9bdec (KD-16 doc),
+              bfdfef8 (deploy scripts), b8a5823 (wizard), 7727221 (docs)
+```
+
+## Known Defects Register — addendum (2026-08-07, CL-0009 verification gap)
+
+- **KD-17**: None of CL-0009's privilege-mode work has been live-verified
+  end to end. This session has no sudo access (password required, no TTY
+  to provide one), so `useradd`, the systemd unit deployment, and the
+  actual cross-uid socket connection have only been syntax-checked
+  (`bash -n`, `node --check`), never run for real. A human with real sudo
+  access needs to run all three interactive-wizard paths
+  (`ack configure`, choosing 1/2/3) and confirm: the service user gets
+  created correctly, the agent can actually connect to the socket after
+  the group-membership refresh, and the agent genuinely cannot kill/edit
+  the daemon in modes 1/2.
