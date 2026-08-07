@@ -2228,3 +2228,14 @@ Rollback Ref : 29fa0e6 (core grammar change), 0378989, f968891, 602b914,
                08b8851, d71e42e, c1002fa, aacdc58, 2c062a0 (propagation to
                tests/docs/Hermes plugin)
 ```
+
+**CL-0011's "Known gap" closed same session (fe73ebc -> c473d8d):** added
+two tests to install.test.js proving, via a real spawned daemon and live
+RPC (not code reading): (1) the shipped default window of 10 -- no test
+override -- actually rejects immediate reuse of either of 2 alternating
+habit names, reproducing the exact live bug KD-25 caught; (2) submitAck
+rejects a long-enough-but-generic truth-claim reason and accepts each of
+the three real attribution categories (file/code reference, past-tense
+action, stated future effect) individually. 56/56 full suite passing,
+both new tests confirmed passing by name (`ok 36`, `ok 37`), not just by
+aggregate count.
