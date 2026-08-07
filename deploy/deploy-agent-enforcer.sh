@@ -166,6 +166,18 @@ fi
 # binary stale — a footgun that bites exactly when you redeploy.
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0755 "$INSTALL_LIB/node"
 cp -r "$SRC_DIR/node/." "$INSTALL_LIB/node/"
+
+# Install the daemon's real npm dependencies (js-yaml, commander,
+# gray-matter) into the deployed location. Without this the daemon is an
+# ES module that imports packages nothing provides -- ERR_MODULE_NOT_FOUND
+# on every start, crash-looping until systemd's StartLimitBurst gives up.
+# Found live (not theorized): root-mode had never actually started
+# successfully until this exact gap was hit and traced, 2026-08-07.
+NPM_BIN="$(command -v npm)"
+[ -n "$NPM_BIN" ] || { echo "ERROR: npm not found -- cannot install daemon dependencies"; exit 1; }
+echo ">> Installing daemon dependencies into $INSTALL_LIB/node ..."
+(cd "$INSTALL_LIB/node" && "$NPM_BIN" install --omit=dev --no-audit --no-fund)
+
 chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_LIB"
 chmod -R go-w "$INSTALL_LIB"          # writable only by the service user
 chmod -R a+rX "$INSTALL_LIB"          # anyone may READ (needed to load habits), not write
