@@ -515,36 +515,65 @@ async function main(callerOpts) {
     console.log("and the acknowledgment monitor/watchdog. Every step is optional");
     console.log("to skip; press Enter to accept the default.\n");
 
-    console.log("\n⚠ SECURITY-RELEVANT — read before answering:");
-    console.log("  no  (user-mode): daemon runs as YOUR user, same as the agent.");
-    console.log("      The agent's own shell/exec tools CAN kill this daemon or");
-    console.log("      edit its config directly (same-UID = same permissions).");
-    console.log("      This is a reminder/deterrent, not a hard boundary.");
-    console.log("  yes (root-mode): daemon + monitor + watchdog run as root via");
-    console.log("      systemd — ONE shared instance for the whole machine, every");
-    console.log("      harness's companion below points at the same root socket.");
-    console.log("      This actually runs");
-    console.log(`        sudo bash ${path.join(REPO, "deploy", "deploy-agent-enforcer.sh")}`);
-    console.log("      right now if you say yes here — it will prompt for your");
-    console.log("      sudo password itself, no separate manual step afterward.");
-    console.log("  Full comparison: AGENTS.md § User-mode vs Root-mode.");
-    const asRootGlobal = await yesNo(rl, "Install as ROOT (system-wide, self-respawning)?", false);
+    console.log("\n⚠ SECURITY-RELEVANT — read before answering. Three real options,");
+    console.log("  not two — pick the privilege boundary for the daemon/monitor/watchdog:");
+    console.log("");
+    console.log("  [1] System service (root, via systemd)  — RECOMMENDED");
+    console.log("      Daemon + monitor + watchdog run as root. Strongest boundary: the");
+    console.log("      agent's own shell/exec tools cannot kill, edit, or replace them at");
+    console.log("      all. ONE shared instance for the whole machine.");
+    console.log("");
+    console.log("  [2] Dedicated service user (non-root, via systemd)  — recommended if");
+    console.log("      you'd rather not grant root");
+    console.log("      Same real boundary as [1] (the agent's uid still can't touch a");
+    console.log("      different uid's process) without needing full root. Creates a new");
+    console.log("      unprivileged system user (default: ack-enforcer) just for this.");
+    console.log("");
+    console.log("  [3] Trust the agent (user-mode, same uid as the agent)  — HIGHLY NOT");
+    console.log("      RECOMMENDED");
+    console.log("      Daemon runs as YOUR user, same as the agent. The agent's own tools");
+    console.log("      CAN kill this daemon or edit its config directly — same-uid means");
+    console.log("      same permissions. This is a reminder/deterrent, not a boundary.");
+    console.log("");
+    console.log("  Options [1] and [2] both actually run");
+    console.log(`    sudo bash ${path.join(REPO, "deploy", "deploy-agent-enforcer.sh")}`);
+    console.log("  right now if chosen — prompts for your sudo password itself, no");
+    console.log("  separate manual step afterward. Full comparison: AGENTS.md § User-mode");
+    console.log("  vs Root-mode.");
+    const privilegeChoice = await ask(rl, "\nPrivilege mode [1/2/3]", "1");
 
-    if (asRootGlobal) {
+    let asRootGlobal = false;
+    let serviceUser = null;
+    if (privilegeChoice === "1" || privilegeChoice === "2") {
+      asRootGlobal = true;
+      const deployEnv = { ...process.env };
+      if (privilegeChoice === "2") {
+        serviceUser = (await ask(rl, "Dedicated service user name", "ack-enforcer")).trim() || "ack-enforcer";
+        deployEnv.ACK_SERVICE_USER = serviceUser;
+        deployEnv.ACK_AGENT_USER = os.userInfo().username;
+      }
       const deployScript = path.join(REPO, "deploy", "deploy-agent-enforcer.sh");
-      console.log(`\nRunning: sudo bash ${deployScript}`);
+      console.log(`\nRunning: sudo bash ${deployScript}${serviceUser ? ` (ACK_SERVICE_USER=${serviceUser})` : ""}`);
       console.log("(you'll be prompted for your sudo password now if needed)\n");
-      const result = spawnSync("sudo", ["bash", deployScript], { stdio: "inherit" });
+      const result = spawnSync("sudo", ["-E", "bash", deployScript], { stdio: "inherit", env: deployEnv });
       if (result.error || result.status !== 0) {
         console.error(
-          "\nRoot deploy failed" + (result.status != null ? ` (exit ${result.status})` : "") +
+          "\nDeploy failed" + (result.status != null ? ` (exit ${result.status})` : "") +
           ". Aborting — fix the error above and re-run `ack install`."
         );
         rl.close();
         process.exit(1);
       }
       rootSocketGlobal = process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock";
-      console.log(`\nRoot daemon installed and running. Shared socket: ${rootSocketGlobal}\n`);
+      console.log(`\nDaemon installed and running${serviceUser ? ` as '${serviceUser}'` : " as root"}. Shared socket: ${rootSocketGlobal}\n`);
+      if (serviceUser) {
+        console.log("NOTE: group membership for the client group only applies to NEW login");
+        console.log("sessions — you may need to log out/in (or `newgrp ack-clients`) before");
+        console.log("the agent can actually reach the socket.\n");
+      }
+    } else {
+      console.log("\nProceeding in user-mode (same uid as the agent) — highly not");
+      console.log("recommended, per the warning above, but this is your call.\n");
     }
 
     console.log("Which harness(es) do you use on this machine? You'll confirm a");
