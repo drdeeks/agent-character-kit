@@ -233,57 +233,77 @@ chown "$SERVICE_USER:$SERVICE_GROUP" "$REGISTRY"
 chmod 0640 "$REGISTRY"
 echo ">> Registered $AGENT_WORKSPACE in $REGISTRY"
 
-# 5. Systemd units (enforcer + monitor + watchdog — templated to the chosen
-#    service user, self-respawning). The checked-in unit files hardcode
-#    User=root/Group=root as the safe default; sed-replace at deploy time
-#    rather than maintaining a second set of near-duplicate unit files per
-#    privilege mode. Exactly one of each unit regardless of how many agents
-#    are registered -- the monitor tracks all of them itself, same as the
-#    daemon does; neither gets a second instance per agent.
-for unit in agent-enforcer.service agent-character-monitor.service agent-character-watchdog.service; do
-  sed -e "s/^User=root$/User=$SERVICE_USER/" \
-      -e "s/^Group=root$/Group=$SERVICE_GROUP/" \
-      "$SRC_DIR/deploy/$unit" > "/etc/systemd/system/$unit"
-  # The checked-in unit files' Environment=AGENT_WORKSPACE/ENFORCER_SOCKET
-  # lines are placeholder defaults -- without this, every deploy silently
-  # ignored whatever $AGENT_WORKSPACE/$ENFORCER_SOCKET this specific run
-  # actually computed and used the checked-in literal instead, regardless
-  # of which agent was actually being deployed. Only agent-enforcer.service
-  # has these keys; sed is a no-op on units that don't.
-  sed -i \
-    -e "s|^Environment=AGENT_WORKSPACE=.*|Environment=AGENT_WORKSPACE=$AGENT_WORKSPACE|" \
-    -e "s|^Environment=ENFORCER_SOCKET=.*|Environment=ENFORCER_SOCKET=$ENFORCER_SOCKET|" \
-    "/etc/systemd/system/$unit"
-  # Explicit registry path -- more robust than relying on the daemon's own
-  # path-guessing fallback, and the monitor needs to read this exact same
-  # file to know which agents to tail acks for.
-  if ! grep -q "^Environment=ACK_WORKSPACES_REGISTRY=" "/etc/systemd/system/$unit"; then
-    sed -i "/^\[Service\]/a Environment=ACK_WORKSPACES_REGISTRY=$REGISTRY" "/etc/systemd/system/$unit"
-  else
-    sed -i "s|^Environment=ACK_WORKSPACES_REGISTRY=.*|Environment=ACK_WORKSPACES_REGISTRY=$REGISTRY|" "/etc/systemd/system/$unit"
-  fi
-  chown root:root "/etc/systemd/system/$unit"
-  chmod 0644 "/etc/systemd/system/$unit"
-done
+# 5. Systemd unit (enforcer ONLY -- templated to the chosen service user,
+#    self-respawning). The checked-in unit file hardcodes User=root/
+#    Group=root as the safe default; sed-replace at deploy time rather than
+#    maintaining a second set of near-duplicate unit files per privilege
+#    mode. Exactly one instance regardless of how many agents are
+#    registered -- the daemon tracks all of them itself, one agent doesn't
+#    get a second instance.
+#
+#    Deliberately does NOT touch agent-character-monitor.service or
+#    agent-character-watchdog.service (real fix, 2026-08-07 -- this script
+#    used to write+enable those two units as well, despite never copying
+#    ack_monitor.js/ack_watchdog.js anywhere; deploy-ack-services.sh is the
+#    only script that actually installs those binaries, so it's the only
+#    one that should own their unit files. The two scripts writing the
+#    same units independently was real duplication that could silently
+#    clobber each other's Environment lines.
+unit=agent-enforcer.service
+sed -e "s/^User=root$/User=$SERVICE_USER/" \
+    -e "s/^Group=root$/Group=$SERVICE_GROUP/" \
+    "$SRC_DIR/deploy/$unit" > "/etc/systemd/system/$unit"
+# The checked-in unit file's Environment=AGENT_WORKSPACE/ENFORCER_SOCKET
+# lines are placeholder defaults -- without this, every deploy silently
+# ignored whatever $AGENT_WORKSPACE/$ENFORCER_SOCKET this specific run
+# actually computed and used the checked-in literal instead, regardless of
+# which agent was actually being deployed.
+sed -i \
+  -e "s|^Environment=AGENT_WORKSPACE=.*|Environment=AGENT_WORKSPACE=$AGENT_WORKSPACE|" \
+  -e "s|^Environment=ENFORCER_SOCKET=.*|Environment=ENFORCER_SOCKET=$ENFORCER_SOCKET|" \
+  "/etc/systemd/system/$unit"
+# Explicit registry path -- more robust than relying on the daemon's own
+# path-guessing fallback.
+if ! grep -q "^Environment=ACK_WORKSPACES_REGISTRY=" "/etc/systemd/system/$unit"; then
+  sed -i "/^\[Service\]/a Environment=ACK_WORKSPACES_REGISTRY=$REGISTRY" "/etc/systemd/system/$unit"
+else
+  sed -i "s|^Environment=ACK_WORKSPACES_REGISTRY=.*|Environment=ACK_WORKSPACES_REGISTRY=$REGISTRY|" "/etc/systemd/system/$unit"
+fi
+chown root:root "/etc/systemd/system/$unit"
+chmod 0644 "/etc/systemd/system/$unit"
 
-# 6. Enable + start all three. `enable --now` is a no-op on an already-active
-#    unit, so if this run just added a NEW agent to an already-populated
-#    registry, the running daemon/monitor need an explicit restart to
-#    actually pick up the new workspace -- otherwise the new agent's socket
-#    silently never appears until the next unrelated restart.
+# 6. Enable + start the enforcer. `enable --now` is a no-op on an
+#    already-active unit, so if this run just added a NEW agent to an
+#    already-populated registry, the running daemon needs an explicit
+#    restart to actually pick up the new workspace -- otherwise the new
+#    agent's socket silently never appears until the next unrelated
+#    restart. Same for the monitor, but ONLY if it's actually been deployed
+#    (deploy-ack-services.sh) and is currently active -- this script can't
+#    assume that's happened yet, and restarting a unit that was never
+#    enabled just errors for no benefit.
 systemctl daemon-reload
-systemctl enable --now agent-enforcer.service agent-character-monitor.service agent-character-watchdog.service
+systemctl enable --now agent-enforcer.service
 if [ "$REGISTRY_HAD_OTHER_ENTRIES" = "true" ]; then
-  echo ">> New agent added to an existing registry -- restarting enforcer + monitor to pick it up..."
-  systemctl restart agent-enforcer.service agent-character-monitor.service
+  echo ">> New agent added to an existing registry -- restarting enforcer to pick it up..."
+  systemctl restart agent-enforcer.service
+  if systemctl is-active --quiet agent-character-monitor.service; then
+    echo ">> Monitor is already deployed and active -- restarting it too, for the same reason..."
+    systemctl restart agent-character-monitor.service
+  fi
 fi
 
-echo ">> Done. Status:"
-systemctl status agent-enforcer.service agent-character-monitor.service agent-character-watchdog.service --no-pager || true
+echo ">> Done. Enforcer status:"
+systemctl status agent-enforcer.service --no-pager || true
 echo
 echo "Verify self-respawn:  sudo systemctl kill -s KILL agent-enforcer.service"
 echo "                         -> it should return within ~3s (RestartSec=3)"
-echo "Monitor and watchdog will auto-restart on failure (Restart=always, RestartSec=3)"
+if systemctl list-unit-files agent-character-monitor.service >/dev/null 2>&1 && \
+   [ "$(systemctl is-enabled agent-character-monitor.service 2>/dev/null)" = "enabled" ]; then
+  echo "Monitor + watchdog are already deployed (auto-restart on failure via Restart=always)."
+else
+  echo "Monitor + watchdog are NOT deployed yet -- acknowledgments won't be credited"
+  echo "until you also run:  sudo bash deploy/deploy-ack-services.sh"
+fi
 if [ "$SERVICE_USER" != "root" ] && [ -n "$AGENT_USER" ]; then
   echo
   echo "NOTE: '$AGENT_USER' was just added to the '$CLIENT_GROUP' group. Group"
