@@ -48,12 +48,12 @@ function resolveSocket() {
       : path.join(os.homedir(), ".agent-character-kit", "workspace", ".agent", "enforcer.sock"));
 }
 
-// Best-effort "has this machine ever been through `ack install`" check --
+// Best-effort "has this machine ever been through `ack configure`" check --
 // NOT a hard gate, just what decides whether to print a first-run nudge.
 // No npm lifecycle script is involved anywhere in this: it only ever runs
 // because the user themselves typed `ack` or `ack status`. A false
 // positive (custom/discovered workspace path this doesn't know about) just
-// means an unnecessary but harmless reminder -- `ack install` is safe to
+// means an unnecessary but harmless reminder -- `ack configure` is safe to
 // re-run against an already-configured workspace.
 function looksNeverConfigured() {
   const rootSocketExists = fs.existsSync("/run/agent-enforcer/main.sock");
@@ -66,10 +66,10 @@ function looksNeverConfigured() {
 
 const FIRST_RUN_NUDGE =
   "No Agent Character Kit setup found on this machine yet.\n" +
-  "Run `ack install` for a guided, interactive setup (asks about root vs\n" +
+  "Run `ack configure` for a guided, interactive setup (asks about root vs\n" +
   "user mode, which harness(es) you use, and confirms before touching\n" +
   "anything -- nothing runs without you saying yes at each step).\n" +
-  "Or `ack install --yes` for a fast, non-interactive default (user-mode,\n" +
+  "Or `ack configure --yes` for a fast, non-interactive default (user-mode,\n" +
   "generic harness, no daemon auto-started).\n";
 
 function resolveAckLog() {
@@ -342,7 +342,7 @@ async function runDoctor() {
     }
   } else {
     c("Daemon reachable", false, `${daemon.error || "unreachable"}`);
-    warn("Start daemon: `sudo systemctl start agent-enforcer` (root) or `ack install --yes` (user)");
+    warn("Start daemon: `sudo systemctl start agent-enforcer` (root) or `ack configure --yes` (user)");
   }
 
   // Check all endpoints
@@ -608,7 +608,7 @@ async function runRepair(targets, opts) {
         } else {
           console.log("    ~ No active workspace. Deploy with:");
           console.log("        sudo systemctl start agent-enforcer           (root)");
-          console.log("        ack install --yes                             (user)");
+          console.log("        ack configure --yes                           (user)");
         }
         break;
       }
@@ -640,6 +640,13 @@ const program = new Command()
       const args = cmd.registeredArguments.map(a => a.name()).join(" ");
       return cmd.name() + (args ? ` ${args}` : "") + (desc ? `  ${desc}` : "");
     },
+    // subcommandTerm above already bakes the description into the term
+    // column -- without this, commander's default formatter ALSO prints
+    // cmd.description() in its own separate column, so every command line
+    // showed its description twice ("Manage agent configuration [Config]
+    // Manage agent configuration [Config]"). Found live: drdeek ran bare
+    // `ack` and the doubled, garbled output read as "nothing populates."
+    subcommandDescription: () => "",
     helpWidth: 100,
   });
 
@@ -978,14 +985,14 @@ habitCmd
 
 program.addHelpText("after", `
 Category summary:
-  [Core]     hook, install
+  [Core]     hook, configure
   [Config]   config show, config verify, config set, config write-env
   [Diag]     status, doctor, repair (doctor reports + repair cleans stale daemons/sockets, auto-activates)
   [Habits]   habit create, habit list
 
 Examples:
-  ack install --yes                          quick user-mode install
-  ack install --all                          root-mode install + Python bindings
+  ack configure --yes                        quick user-mode setup
+  ack configure --all                        root-mode setup + Python bindings
   ack doctor                                 full diagnostic report
   ack repair                                 auto-fix workspace/habits/daemon
   ack habit create verify-workspace          create a new habit
