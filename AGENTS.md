@@ -61,14 +61,59 @@ Cursor, Codex, a shell wrapper) can use it.
   it works with **zero config files**. Config on disk *overrides* (merges on top
   of) the embedded default — never mandatory.
 - **Transport auto-selects (all self-resolving, no hardcoded host path):**
-  - Default → Unix socket under `AGENT_WORKSPACE/.agent/enforcer.sock`
-    (falls back to `$HOME/.agent-character-kit/workspace/.agent/enforcer.sock`)
+  - Default → Unix socket under `AGENT_WORKSPACE/.agent/<agent-name>.sock` —
+    named after the agent, not a generic `enforcer.sock` every workspace
+    shared indistinguishably (fixed 2026-08-07, see "One enforcer, many
+    agents" below). Falls back to
+    `$HOME/.agent-character-kit/workspace/.agent/enforcer.sock` when nothing
+    else applies.
   - Windows / cross-host / explicit → `ENFORCER_SOCKET=tcp://127.0.0.1:8753`
   - `/run/agent-enforcer/main.sock` remains only as the deepest fallback for a
-    root-owned systemd install that sets it explicitly.
+    pre-registry root-owned systemd install that sets it explicitly.
   - Clients read the same `ENFORCER_SOCKET` / `AGENT_WORKSPACE`, so they follow
     automatically. The interactive `ack configure` writes one `.env` that every
     component reads — no path is assumed.
+
+### One enforcer, many agents — real per-agent isolation, not a shared instance
+
+One daemon **process** can hold every agent on a machine; it is not one
+shared ruleset every agent uses identically. Each agent gets its own nested
+workspace, own socket, own `constitution.yaml`/`enforcer.yaml`/`habits/` —
+genuinely independent, not per-agent naming as a coat of paint over shared
+config. drdeek, 2026-08-07: *"how do you know if you have 12 agents running
+at the same time on one sock which one is doing what? It would get
+gridlock."*
+
+- **Identity resolution** (`node/src/agent-identity.js`): each agent's name
+  comes from `agent.json`'s `name` field, then `SOUL.md` (frontmatter
+  `name:`, else its first `#` heading), then — for a known terminal harness
+  (claude/hermes/opencode) not being used in a delegated multi-agent
+  setup — the harness's own name with no prompt, then a direct interactive
+  prompt, then `"generic"` as the last resort. Read-only, cosmetic use
+  only; never writes to an identity file, never used in any enforcement
+  decision.
+- **Layout:** agents nest under one shared enforcer root, not their own
+  top-level workspace — `<enforcer-root>/agents/<agent-name>/.agent/`.
+  `ack configure` resolves and deploys each agent individually (one
+  `deploy-agent-enforcer.sh` invocation per agent, not one shared call for
+  a whole batch).
+- **Registry:** `/var/lib/agent-character-kit/workspaces.json` (a plain
+  JSON array of agent workspace paths). `agent_enforcer_daemon.js`'s
+  `resolveWorkspaces()`, `deploy/ack_monitor.js`'s `resolveAgents()`, and
+  `ack.js`'s `checkAllSockets()` all read the exact same file, same
+  priority order (`ACK_WORKSPACES_REGISTRY` override → that fixed path →
+  `$HOME`-based fallback for plain user-mode, which never creates a
+  registry at all and is completely unaffected by any of this).
+- **Monitor:** one process, but genuinely agent-aware — tails every
+  registered agent's own ack log independently and credits that agent's
+  own socket. One agent's acks can never land on another's hold ledger.
+- **Watchdog:** unchanged, one instance — it only ever checks "is *the*
+  monitor process alive" / "is *the* enforcer process alive" via
+  process-pattern matching, with no per-agent awareness needed at all.
+- **Adding an agent to an already-populated registry** restarts the
+  enforcer + monitor automatically (`systemctl enable --now` is a no-op on
+  an already-active unit, so without an explicit restart a new agent's
+  socket would silently never appear).
 - **Out-of-process = tamper-resistant (NOT tamper-proof).** The daemon runs
   outside the agent, so the agent cannot trivially `kill` or modify it, and if
   the daemon dies the supervisor (systemd / launchd / `supervise.py` / Windows
@@ -451,6 +496,31 @@ append-only, newest entry on top, never rewrite a past entry. History before
   deliberately per `HABIT_POLICY.md` §3 (knowledge/memory is a separate
   skill from character enforcement) rather than assuming it should be
   restored to a CLI; revisit if that assumption is wrong.
+- **`ack config` has no registry awareness.** `ack config show/verify/
+  set/write-env` all still assume a single workspace — they don't yet know
+  about the multi-agent registry `status`/`doctor`/`repair` already read.
+- **The Python monitor/watchdog equivalents weren't updated to match the
+  Node monitor's multi-agent rewrite** (2026-08-07). `python/hermes_plugin`
+  users on the Hermes-only companion path are still on the old
+  single-ack-log/single-socket behavior. The Node trio is the one that
+  matters for everyone else (`deploy/ack_monitor.js`/`ack_watchdog.js`,
+  Python stays purely optional per the Architecture section above).
+- **`ack repair` can see which specific agent is down (registry-aware as of
+  2026-08-07) but doesn't yet selectively heal just that one** — its
+  auto-activate logic still reasons about one workspace at a time, not "N
+  registered agents, some subset unhealthy."
+- **Real duplication between `deploy-agent-enforcer.sh` and
+  `deploy-ack-services.sh`**: both independently write and enable the same
+  `agent-character-monitor.service`/`agent-character-watchdog.service` unit
+  files. Worked around (both now inject the same `ACK_WORKSPACES_REGISTRY`
+  line so they stop clobbering each other) rather than untangled — one of
+  the two scripts should own these units, not both.
+- **The full multi-agent chain (registry, per-agent deploy, agent-aware
+  monitor) is proven against real spawned processes in the test suite, not
+  against actual systemd.** Everything above this line in "One enforcer,
+  many agents" is real, tested code — but nobody has run
+  `deploy-agent-enforcer.sh` twice for two different agents against a real
+  systemd instance yet. Needs a human with real sudo.
 - **No middle ground between user-mode and full root-mode.** Today it's
   binary: same-UID user-mode (agent can kill/edit the daemon and its config
   — a reminder, not a boundary) or literal root (agent can't touch it at

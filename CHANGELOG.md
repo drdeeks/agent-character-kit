@@ -2,6 +2,82 @@
 
 Append-only, newest entry on top. Never rewrite a past entry.
 
+## 1.5.0 — 2026-08-07
+
+**Added — real multi-agent support (KD-21, 5 commits: b7a62bc, 152e5eb,
+74ee90d, 5c1381b, and this doc/version pass):**
+
+One enforcer daemon now holds every agent on a machine, not one shared
+generic instance indistinguishable between them. drdeek's spec, refined
+through several corrections during the build: "how do you know if you have
+12 agents running at the same time on one sock which one is doing what? It
+would get gridlock."
+
+- **Real per-agent identity resolution** (`node/src/agent-identity.js`,
+  new): a real name for each agent's socket, resolved in order —
+  `agent.json`'s `name` field, then `SOUL.md` (YAML frontmatter `name:`,
+  else its first `#` heading), then (for a known terminal harness —
+  claude/hermes/opencode — not being used in a delegated multi-agent setup)
+  the harness's own name with no prompt, then a direct interactive prompt,
+  then `"generic"` as the last resort. Read-only — never writes to an
+  identity file, never used in any enforcement decision.
+- **Agents nest under one shared enforcer root**, not their own top-level
+  workspace: `<enforcer-root>/agents/<agent-name>/`, each with fully
+  independent `constitution.yaml`/`enforcer.yaml`/`habits/` — genuine
+  per-agent tailoring (lighten/tighten enforcement per agent), not shared
+  rules with per-agent naming as a coat of paint.
+- **Sockets are named per agent**, not a shared literal `enforcer.sock`
+  every workspace used indistinguishably — `<agent-name>.sock`, consistent
+  from the very first agent registered onward (multi-workspace mode is now
+  forced by the mere existence of the registry, not just "more than one
+  workspace," so agent #1's socket path never silently changes later when
+  agent #2 gets added).
+- **`deploy-agent-enforcer.sh`** now registers each deployed agent in a
+  shared registry (`/var/lib/agent-character-kit/workspaces.json`,
+  idempotent), and auto-restarts the enforcer + monitor when a new agent
+  joins an already-populated registry (`systemctl enable --now` is a no-op
+  on an already-active unit, so without this a new agent's socket would
+  silently never appear).
+- **The monitor is now agent-aware**: one process, but it tails every
+  registered agent's own ack log independently and credits that agent's
+  own socket — proven via a real end-to-end test (a real spawned daemon +
+  real spawned monitor + a real 2-agent registry), including an explicit
+  cross-contamination check.
+- **`ack status`/`doctor`/`repair`** now report each registered agent
+  individually instead of folding everything into one opaque "root
+  (systemd)" entry.
+- **The watchdog needed no changes** — confirmed it already only checks
+  "is *the* monitor process alive" / "is *the* enforcer process alive" via
+  process-pattern matching, with zero per-agent assumptions baked in.
+
+**Fixed, found while building the above:**
+- `deploy-agent-enforcer.sh` looked parameterized by `$AGENT_WORKSPACE`
+  but every seeding path actually hardcoded the literal string
+  `$VAR_DIR/workspace` — passing a different `AGENT_WORKSPACE` per agent
+  would have silently seeded the same shared path every time regardless.
+- The registry path was originally derived from `dirname($AGENT_WORKSPACE)`,
+  which for a nested agent path resolves one directory off from the fixed
+  location `ack status` and the daemon actually default to checking when no
+  explicit env var is set (the normal case for a human running commands by
+  hand, not through systemd's env). Introduced a real fixed `ACK_VAR_ROOT`.
+- `deploy-ack-services.sh` independently re-writes the same monitor/
+  watchdog unit files `deploy-agent-enforcer.sh` already wrote (real
+  pre-existing duplication between the two scripts) — would have silently
+  clobbered the registry env line since the documented flow runs both in
+  sequence. Worked around by injecting the same env line in both places;
+  untangling the duplication itself is still open.
+
+**32 new tests this pass, all confirmed passing individually, not just by
+aggregate count. 87/87 full suite passing.**
+
+**Known gaps, explicitly not done:** `ack config` has no registry
+awareness yet. The Python monitor/watchdog equivalents (Hermes-only path)
+weren't updated to match the Node monitor's rewrite. Repair can now *see*
+which specific agent is down but doesn't yet selectively heal just that
+one. Real systemd/sudo verification of the full chain still needs a human
+— everything above is proven against real spawned processes in tests, not
+against actual systemd.
+
 ## 1.4.0 — 2026-08-07
 
 **Fixed (security-relevant):**
