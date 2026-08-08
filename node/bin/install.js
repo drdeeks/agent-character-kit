@@ -49,7 +49,7 @@ const ACK_BIN = path.join(REPO, "node", "bin", "ack.js");
 
 // ─── arg parsing (non-interactive) ────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { workspace: null, socket: null, harness: null, root: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null, habitEvidence: null, habitLevel: null, all: false, hookCommand: null, python: null, vectors: false, start: true, writeClaudeConfig: true };
+  const out = { workspace: null, socket: null, harness: null, root: null, serviceUser: null, yes: false, monitor: true, watchdog: true, companion: true, createHabit: false, habitName: null, habitPrompt: null, habitLogic: null, habitEvidence: null, habitLevel: null, all: false, hookCommand: null, python: null, vectors: false, start: true, writeClaudeConfig: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--workspace") out.workspace = argv[++i];
@@ -57,6 +57,7 @@ function parseArgs(argv) {
     else if (a === "--harness") out.harness = argv[++i];
     else if (a === "--root") out.root = true;
     else if (a === "--user") out.root = false;
+    else if (a === "--service-user") { out.root = true; out.serviceUser = argv[++i]; }
     else if (a === "--no-monitor") out.monitor = false;
     else if (a === "--no-watchdog") out.watchdog = false;
     else if (a === "--no-companion") out.companion = false;
@@ -438,6 +439,42 @@ function createHabit(rl, ws) {
     });
 }
 
+// Runs deploy-agent-enforcer.sh (real sudo, real systemd units) when root
+// or service-user mode was chosen. Extracted so the interactive wizard and
+// the non-interactive --yes/--all paths share exactly one implementation --
+// found live, 2026-08-07: this used to live ONLY inside the interactive
+// branch, so `ack configure --yes --root` silently never deployed anything
+// at all (rootSocket stayed null, no systemd units, no daemon) while
+// claiming success. A curl-installer wrapper (install.sh) needs this path
+// to actually work non-interactively to avoid re-asking a question it
+// already asked.
+async function deployRootIfNeeded({ asRoot, serviceUser }, spawnSyncFn = spawnSync) {
+  if (!asRoot) return { rootSocket: null };
+  const deployEnv = { ...process.env };
+  if (serviceUser) {
+    deployEnv.ACK_SERVICE_USER = serviceUser;
+    deployEnv.ACK_AGENT_USER = os.userInfo().username;
+  }
+  const deployScript = path.join(REPO, "deploy", "deploy-agent-enforcer.sh");
+  console.log(`\nRunning: sudo bash ${deployScript}${serviceUser ? ` (ACK_SERVICE_USER=${serviceUser})` : ""}`);
+  console.log("(you'll be prompted for your sudo password now if needed)\n");
+  const result = spawnSyncFn("sudo", ["-E", "bash", deployScript], { stdio: "inherit", env: deployEnv });
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `Deploy failed${result.status != null ? ` (exit ${result.status})` : ""}. ` +
+      "Fix the error above and re-run."
+    );
+  }
+  const rootSocket = process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock";
+  console.log(`\nDaemon installed and running${serviceUser ? ` as '${serviceUser}'` : " as root"}. Shared socket: ${rootSocket}\n`);
+  if (serviceUser) {
+    console.log("NOTE: group membership for the client group only applies to NEW login");
+    console.log("sessions -- you may need to log out/in (or `newgrp ack-clients`) before");
+    console.log("the agent can actually reach the socket.\n");
+  }
+  return { rootSocket };
+}
+
 // ─── main flow ─────────────────────────────────────────────────────────────────
 async function main(callerOpts) {
   const opts = callerOpts || parseArgs(process.argv.slice(2));
@@ -477,13 +514,20 @@ async function main(callerOpts) {
   // --all: root mode, all components, non-interactive
   if (opts.all) {
     opts.yes = true;
+    try {
+      ({ rootSocket: rootSocketGlobal } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser }));
+    } catch (e) {
+      console.error(`\n${e.message}`);
+      rl.close();
+      process.exit(1);
+    }
     harness = opts.harness || "generic";
     plannedInstalls.push({
       ws: opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace"),
       socketMode: opts.socket || "unix",
       harness,
       asRoot: true,
-      rootSocket: null,
+      rootSocket: rootSocketGlobal,
       doMonitor: true,
       doWatchdog: true,
       doCompanion: true,
@@ -505,13 +549,25 @@ async function main(callerOpts) {
     const harnessList = (opts.harnesses && opts.harnesses.length)
       ? opts.harnesses
       : (opts.harness ? [opts.harness] : detectHarnesses());
+    // One shared root instance for every harness in this run, not one per
+    // harness -- deploy exactly once, before the loop, same as root-mode's
+    // own "ONE shared instance for the whole machine" design.
+    if (opts.root) {
+      try {
+        ({ rootSocket: rootSocketGlobal } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser }));
+      } catch (e) {
+        console.error(`\n${e.message}`);
+        rl.close();
+        process.exit(1);
+      }
+    }
     for (const h of harnessList) {
       plannedInstalls.push({
         ws: opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace"),
         socketMode: opts.socket || "unix",
         harness: h,
         asRoot: opts.root ?? false,
-        rootSocket: null,
+        rootSocket: rootSocketGlobal,
         doMonitor: opts.monitor,
         doWatchdog: opts.watchdog,
         doCompanion: opts.companion,
@@ -558,30 +614,15 @@ async function main(callerOpts) {
     let serviceUser = null;
     if (privilegeChoice === "1" || privilegeChoice === "2") {
       asRootGlobal = true;
-      const deployEnv = { ...process.env };
       if (privilegeChoice === "2") {
         serviceUser = (await ask(rl, "Dedicated service user name", "ack-enforcer")).trim() || "ack-enforcer";
-        deployEnv.ACK_SERVICE_USER = serviceUser;
-        deployEnv.ACK_AGENT_USER = os.userInfo().username;
       }
-      const deployScript = path.join(REPO, "deploy", "deploy-agent-enforcer.sh");
-      console.log(`\nRunning: sudo bash ${deployScript}${serviceUser ? ` (ACK_SERVICE_USER=${serviceUser})` : ""}`);
-      console.log("(you'll be prompted for your sudo password now if needed)\n");
-      const result = spawnSync("sudo", ["-E", "bash", deployScript], { stdio: "inherit", env: deployEnv });
-      if (result.error || result.status !== 0) {
-        console.error(
-          "\nDeploy failed" + (result.status != null ? ` (exit ${result.status})` : "") +
-          ". Aborting — fix the error above and re-run `ack install`."
-        );
+      try {
+        ({ rootSocket: rootSocketGlobal } = await deployRootIfNeeded({ asRoot: true, serviceUser }));
+      } catch (e) {
+        console.error(`\n${e.message} Re-run \`ack configure\`.`);
         rl.close();
         process.exit(1);
-      }
-      rootSocketGlobal = process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock";
-      console.log(`\nDaemon installed and running${serviceUser ? ` as '${serviceUser}'` : " as root"}. Shared socket: ${rootSocketGlobal}\n`);
-      if (serviceUser) {
-        console.log("NOTE: group membership for the client group only applies to NEW login");
-        console.log("sessions — you may need to log out/in (or `newgrp ack-clients`) before");
-        console.log("the agent can actually reach the socket.\n");
       }
     } else {
       console.log("\nProceeding in user-mode (same uid as the agent) — highly not");
@@ -1050,4 +1091,4 @@ if (__isCLI) {
   });
 }
 
-export { parseArgs, resolveSocket, main, launchDaemon, seedHabits, writeConstitution, discoverAgentWorkspaces, installPythonCompanion };
+export { parseArgs, resolveSocket, main, launchDaemon, seedHabits, writeConstitution, discoverAgentWorkspaces, installPythonCompanion, deployRootIfNeeded };

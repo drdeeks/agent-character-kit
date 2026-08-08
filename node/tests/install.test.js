@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
-import { resolveSocket, discoverAgentWorkspaces, writeClaudeHookConfig, claudeSettingsPath, parseArgs, installPythonCompanion, main as installMain } from "../bin/install.js";
+import { resolveSocket, discoverAgentWorkspaces, writeClaudeHookConfig, claudeSettingsPath, parseArgs, installPythonCompanion, deployRootIfNeeded, main as installMain } from "../bin/install.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root, regardless of CWD
@@ -605,4 +605,48 @@ test("main() end-to-end (user-mode, no sudo): --yes --harness hermes --python --
   }
   const out = lines.join("\n");
   assert.match(out, /pip3 install .*\[vectors\]/, "anyVectors must reach installPythonCompanion through main()'s real accumulation logic, not just the isolated unit test");
+});
+
+// ─── deployRootIfNeeded (KD: --yes --root never actually deployed anything) ──
+
+test("parseArgs: --service-user implies --root and captures the name", () => {
+  const opts = parseArgs(["--service-user", "my-enforcer"]);
+  assert.equal(opts.root, true);
+  assert.equal(opts.serviceUser, "my-enforcer");
+});
+
+test("deployRootIfNeeded: asRoot=false is a no-op, never spawns sudo", async () => {
+  let calls = 0;
+  const result = await deployRootIfNeeded({ asRoot: false, serviceUser: null }, () => { calls++; return { status: 0 }; });
+  assert.deepEqual(result, { rootSocket: null });
+  assert.equal(calls, 0);
+});
+
+test("deployRootIfNeeded: asRoot=true invokes sudo bash deploy-agent-enforcer.sh with the right argv", async () => {
+  const calls = [];
+  const fakeSpawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0 }; };
+  const result = await deployRootIfNeeded({ asRoot: true, serviceUser: null }, fakeSpawn);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].cmd, "sudo");
+  assert.deepEqual(calls[0].args.slice(0, 2), ["-E", "bash"]);
+  assert.match(calls[0].args[2], /deploy-agent-enforcer\.sh$/);
+  assert.equal(calls[0].opts.stdio, "inherit", "sudo's password prompt must reach the real terminal, not be captured");
+  assert.equal(result.rootSocket, process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock");
+});
+
+test("deployRootIfNeeded: service-user mode sets ACK_SERVICE_USER/ACK_AGENT_USER in the deploy script's env", async () => {
+  const calls = [];
+  const fakeSpawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0 }; };
+  await deployRootIfNeeded({ asRoot: true, serviceUser: "ack-enforcer" }, fakeSpawn);
+  assert.equal(calls[0].opts.env.ACK_SERVICE_USER, "ack-enforcer");
+  assert.equal(calls[0].opts.env.ACK_AGENT_USER, os.userInfo().username);
+});
+
+test("deployRootIfNeeded: a failed deploy throws (not a silently-successful no-op)", async () => {
+  const result = await deployRootIfNeeded(
+    { asRoot: true, serviceUser: null },
+    () => ({ status: 1 })
+  ).then(() => "resolved", (e) => e);
+  assert.ok(result instanceof Error, "must reject/throw on a real deploy failure, not resolve as if it worked");
+  assert.match(result.message, /Deploy failed/);
 });

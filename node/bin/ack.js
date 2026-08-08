@@ -708,6 +708,7 @@ program
   .option("--all", "Everything: root mode + all components + Python bindings")
   .option("--user", "User-mode (default)")
   .option("--root", "Root mode (systemd)")
+  .option("--service-user <name>", "Root-equivalent boundary via a dedicated non-root service user (implies --root); default name if given no value elsewhere: ack-enforcer")
   .option("--workspace <path>", "Workspace path (default: ~/.agent-character-kit/workspace)")
   .option("--socket <mode>", "Socket: unix | tcp (default: unix)")
   .option("--harness <name>", "Harness: claude | cursor | gemini | opencode | hermes | generic")
