@@ -221,16 +221,6 @@ chmod 0755 "$INSTALL_BIN"
 #    (a redeploy) doesn't duplicate the entry.
 REGISTRY="$ACK_VAR_ROOT/workspaces.json"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$ACK_VAR_ROOT"
-REGISTRY_HAD_OTHER_ENTRIES=false
-if [ -f "$REGISTRY" ]; then
-  if "$NODE_BIN" -e "
-    const fs = require('fs');
-    const list = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-    process.exit(Array.isArray(list) && list.filter(w => w !== process.argv[2]).length > 0 ? 0 : 1);
-  " "$REGISTRY" "$AGENT_WORKSPACE"; then
-    REGISTRY_HAD_OTHER_ENTRIES=true
-  fi
-fi
 "$NODE_BIN" -e "
   const fs = require('fs');
   const path = process.argv[1];
@@ -292,24 +282,24 @@ fi
 chown root:root "/etc/systemd/system/$unit"
 chmod 0644 "/etc/systemd/system/$unit"
 
-# 6. Enable + start the enforcer. `enable --now` is a no-op on an
-#    already-active unit, so if this run just added a NEW agent to an
-#    already-populated registry, the running daemon needs an explicit
-#    restart to actually pick up the new workspace -- otherwise the new
-#    agent's socket silently never appears until the next unrelated
-#    restart. Same for the monitor, but ONLY if it's actually been deployed
-#    (deploy-ack-services.sh) and is currently active -- this script can't
-#    assume that's happened yet, and restarting a unit that was never
-#    enabled just errors for no benefit.
+# 6. Enable + start the enforcer. `enable --now` is a NO-OP on an
+#    already-active unit -- it does NOT restart it, so it can never pick up
+#    code/config/permission changes from this run (a fresh Environment= line,
+#    a fixed socket-directory bug, an updated daemon binary, anything).
+#    Found live, 2026-08-08: this used to only restart when
+#    REGISTRY_HAD_OTHER_ENTRIES (a NEW agent joining an already-populated
+#    registry) -- redeploying the SAME single agent to pick up a bugfix left
+#    the old process running untouched for 9+ hours, silently undoing the
+#    whole point of redeploying. Restart is now unconditional: running this
+#    script at all means "make the live daemon match current code," full
+#    stop -- RestartSec=3 already makes a restart's brief gap an expected,
+#    tolerated event, so there's no safe case where skipping it is better.
 systemctl daemon-reload
 systemctl enable --now agent-enforcer.service
-if [ "$REGISTRY_HAD_OTHER_ENTRIES" = "true" ]; then
-  echo ">> New agent added to an existing registry -- restarting enforcer to pick it up..."
-  systemctl restart agent-enforcer.service
-  if systemctl is-active --quiet agent-character-monitor.service; then
-    echo ">> Monitor is already deployed and active -- restarting it too, for the same reason..."
-    systemctl restart agent-character-monitor.service
-  fi
+systemctl restart agent-enforcer.service
+if systemctl is-active --quiet agent-character-monitor.service; then
+  echo ">> Monitor is already deployed and active -- restarting it too, for the same reason..."
+  systemctl restart agent-character-monitor.service
 fi
 
 echo ">> Done. Enforcer status:"
