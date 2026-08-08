@@ -496,31 +496,31 @@ append-only, newest entry on top, never rewrite a past entry. History before
   deliberately per `HABIT_POLICY.md` §3 (knowledge/memory is a separate
   skill from character enforcement) rather than assuming it should be
   restored to a CLI; revisit if that assumption is wrong.
-- **`ack config` has no registry awareness.** `ack config show/verify/
-  set/write-env` all still assume a single workspace — they don't yet know
-  about the multi-agent registry `status`/`doctor`/`repair` already read.
-- **The Python monitor/watchdog equivalents weren't updated to match the
-  Node monitor's multi-agent rewrite** (2026-08-07). `python/hermes_plugin`
-  users on the Hermes-only companion path are still on the old
-  single-ack-log/single-socket behavior. The Node trio is the one that
-  matters for everyone else (`deploy/ack_monitor.js`/`ack_watchdog.js`,
-  Python stays purely optional per the Architecture section above).
 - **`ack repair` can see which specific agent is down (registry-aware as of
   2026-08-07) but doesn't yet selectively heal just that one** — its
   auto-activate logic still reasons about one workspace at a time, not "N
   registered agents, some subset unhealthy."
-- **Real duplication between `deploy-agent-enforcer.sh` and
-  `deploy-ack-services.sh`**: both independently write and enable the same
-  `agent-character-monitor.service`/`agent-character-watchdog.service` unit
-  files. Worked around (both now inject the same `ACK_WORKSPACES_REGISTRY`
-  line so they stop clobbering each other) rather than untangled — one of
-  the two scripts should own these units, not both.
 - **The full multi-agent chain (registry, per-agent deploy, agent-aware
   monitor) is proven against real spawned processes in the test suite, not
-  against actual systemd.** Everything above this line in "One enforcer,
-  many agents" is real, tested code — but nobody has run
-  `deploy-agent-enforcer.sh` twice for two different agents against a real
-  systemd instance yet. Needs a human with real sudo.
+  against actual systemd.** Everything in "One enforcer, many agents" above
+  is real, tested code — but nobody has run `deploy-agent-enforcer.sh`
+  twice for two different agents against a real systemd instance yet.
+  Needs a human with real sudo.
+
+Resolved same day, no longer gaps: `ack config show/verify/write-env` all
+gained a `--agent <name>` option (registry-aware, verified live against a
+real fake registry before the tests were even written) — `ack config
+set` deliberately left alone, it's a pure passthrough with no per-agent
+resolution step to hook into. `deploy/ack_monitor.py` was ported to the
+same multi-agent design as `ack_monitor.js` (Hermes-only companion path
+is no longer left behind) — verified live with a real spawned daemon +
+monitor against a real 2-agent registry, including a cross-contamination
+check, same as the Node version's own proof.
+`deploy-agent-enforcer.sh`/`deploy-ack-services.sh`'s duplication was
+untangled for real (not just worked around): the enforcer script no
+longer writes or enables the monitor/watchdog units at all, since it
+never installed their binaries anyway — `deploy-ack-services.sh` is now
+the sole owner of those two units.
 - **No middle ground between user-mode and full root-mode.** Today it's
   binary: same-UID user-mode (agent can kill/edit the daemon and its config
   — a reminder, not a boundary) or literal root (agent can't touch it at

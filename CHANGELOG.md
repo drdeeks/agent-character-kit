@@ -78,6 +78,22 @@ one. Real systemd/sudo verification of the full chain still needs a human
 — everything above is proven against real spawned processes in tests, not
 against actual systemd.
 
+**Update, later the same day (10cf9c5, e6402cf, 8ed70c5):** three of the
+five gaps above are closed. `deploy/ack_monitor.py` ported to the same
+multi-agent design as `ack_monitor.js` — verified live (real spawned
+daemon + monitor against a real 2-agent registry, cross-contamination
+check included) before the automated test was even written; 4/4 Python
+suite passing. `deploy-agent-enforcer.sh`/`deploy-ack-services.sh`'s
+duplication untangled for real, not just worked around — the enforcer
+script no longer writes or enables the monitor/watchdog units at all,
+since it never installed their binaries in the first place;
+`deploy-ack-services.sh` is now their sole owner. `ack config
+show/verify/write-env` all gained a real `--agent <name>` option,
+registry-aware, verified live before the 5 new tests were written (`ack
+config set` deliberately left alone — pure passthrough, no per-agent
+resolution to hook into). Still open: repair's selective per-agent
+healing, and real systemd/sudo verification of the whole chain.
+
 ## 1.4.0 — 2026-08-07
 
 **Fixed (security-relevant):**
