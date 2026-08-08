@@ -786,6 +786,47 @@ export class Enforcer {
   }
 }
 
+// ─── Socket permissions ──────────────────────────────────────────────────────
+// chmod(0660) alone only sets permission BITS; it does nothing to WHICH group
+// those bits apply to. The socket's group comes from whatever the parent
+// directory's setgid inheritance (or the process's own default gid, root)
+// hands it at creation time -- found live, 2026-08-07, after the directory
+// half of this (deploy-agent-enforcer.sh's RUN_DIR setgid+chown) got
+// silently clobbered by a later `install -d` on the same path, leaving every
+// socket owned root:root and unreachable by the agent's own uid no matter
+// how many times the client group was granted. Fixed at the source (deploy
+// script ordering) AND here, defense in depth: explicitly chown the socket
+// FILE itself to ACK_CLIENT_GROUP's gid on every bind, independent of
+// directory setgid semantics, so a directory-setup regression can't silently
+// reintroduce this.
+function _resolveGroupGid(groupName) {
+  if (!groupName) return null;
+  try {
+    const lines = fssync.readFileSync("/etc/group", "utf8").split("\n");
+    for (const line of lines) {
+      const parts = line.split(":");
+      if (parts[0] === groupName) return parseInt(parts[2], 10);
+    }
+  } catch { /* /etc/group unreadable -- fall through, leave socket group as-is */ }
+  return null;
+}
+
+function secureSocketFile(sockPath) {
+  try { fssync.chmodSync(sockPath, 0o660); } catch { /* best-effort */ }
+  const groupName = process.env.ACK_CLIENT_GROUP;
+  if (!groupName) return; // user-mode / no service-user deploy: same uid, chown is a no-op anyway
+  const gid = _resolveGroupGid(groupName);
+  if (gid === null) {
+    console.error(`Warning: ACK_CLIENT_GROUP='${groupName}' not found in /etc/group -- socket left with its default group; client connections may fail with EACCES.`);
+    return;
+  }
+  try {
+    fssync.chownSync(sockPath, -1, gid); // -1 = leave owning uid untouched, only change group
+  } catch (e) {
+    console.error(`Warning: could not chown ${sockPath} to group '${groupName}' (gid ${gid}): ${e.message}`);
+  }
+}
+
 // ─── Socket Server ─────────────────────────────────────────────────────────────
 function startSocketServer(enforcer) {
   const server = net.createServer((socket) => {
@@ -928,7 +969,7 @@ function startSocketServer(enforcer) {
     try { fssync.mkdirSync(sockDir, { recursive: true, mode: 0o750 }); } catch {}
     try { fssync.chmodSync(sockDir, 0o750); } catch {}
     server.listen(raw, () => {
-      try { fssync.chmodSync(raw, 0o660); } catch {}
+      secureSocketFile(raw);
       onListening();
     });
   }
@@ -942,7 +983,7 @@ function startSocketServer(enforcer) {
     if (err.code === "EADDRINUSE" && !isTcp) {
       try {
         fssync.unlinkSync(raw);
-        server.listen(raw, () => { try { fssync.chmodSync(raw, 0o660); } catch {} onListening(); });
+        server.listen(raw, () => { secureSocketFile(raw); onListening(); });
         return;
       } catch {}
     }
@@ -1177,7 +1218,7 @@ function startMultiWorkspaceDaemon(workspaces) {
       try { fssync.mkdirSync(sockDir, { recursive: true, mode: 0o750 }); } catch {}
       try { fssync.chmodSync(sockDir, 0o750); } catch {}
       server.listen(sock, () => {
-        try { fssync.chmodSync(sock, 0o660); } catch {}
+        secureSocketFile(sock);
         console.log(`ACK Enforcer daemon v${ACK_VERSION} listening on ${sock} [workspace: ${ws}]`);
       });
     }
@@ -1187,7 +1228,7 @@ function startMultiWorkspaceDaemon(workspaces) {
         try {
           fssync.unlinkSync(sock);
           server.listen(sock, () => {
-            try { fssync.chmodSync(sock, 0o660); } catch {}
+            secureSocketFile(sock);
             console.log(`ACK Enforcer daemon v${ACK_VERSION} listening on ${sock} [workspace: ${ws}]`);
           });
           return;

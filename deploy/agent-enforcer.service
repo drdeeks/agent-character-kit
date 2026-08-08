@@ -37,6 +37,7 @@ PrivateTmp=true
 # Defaults are sensible fallbacks; override with ACK_INSTALL_* env vars when running deploy.
 Environment=ENFORCER_SOCKET=/run/agent-enforcer/main.sock
 Environment=AGENT_WORKSPACE=/var/lib/agent-character-kit/workspace
+Environment=ACK_CLIENT_GROUP=ack-clients
 Environment=HOME=/root
 Environment=NODE_ENV=production
 

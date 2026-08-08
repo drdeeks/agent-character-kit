@@ -106,12 +106,23 @@ fi
 # this. Everything else stays fully private to the service user; the agent
 # only ever needs the socket, never direct file access (it's a thin RPC
 # client, not a filesystem consumer of the workspace).
-install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 2750 "$RUN_DIR"
+#
+# In the current per-agent architecture ENFORCER_SOCKET is computed as
+# $AGENT_WORKSPACE/.agent/<agent>.sock, so RUN_DIR and $AGENT_WORKSPACE/.agent
+# are almost always THE SAME PATH. Found live, 2026-08-07: with the
+# $AGENT_WORKSPACE/.agent install run after RUN_DIR's, `install -d` on an
+# already-existing directory reapplies its own owner/group/mode every time --
+# silently clobbering RUN_DIR's setgid+client-group setup back to
+# root:$SERVICE_GROUP/0750, which is exactly why the socket kept coming up
+# owned by root:root and unreachable by the agent's own uid. RUN_DIR's
+# install now runs LAST so its cross-uid settings always win regardless of
+# whether the two paths happen to coincide.
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$VAR_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$AGENT_WORKSPACE"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$AGENT_WORKSPACE/.agent"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$LOG_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$INSTALL_LIB"
+install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 2750 "$RUN_DIR"
 
 # Seed a baseline constitution so the enforcer is NOT born in violation of itself.
 # The agent (or a later install step) overrides these; the enforcer owns the file
@@ -268,6 +279,15 @@ if ! grep -q "^Environment=ACK_WORKSPACES_REGISTRY=" "/etc/systemd/system/$unit"
   sed -i "/^\[Service\]/a Environment=ACK_WORKSPACES_REGISTRY=$REGISTRY" "/etc/systemd/system/$unit"
 else
   sed -i "s|^Environment=ACK_WORKSPACES_REGISTRY=.*|Environment=ACK_WORKSPACES_REGISTRY=$REGISTRY|" "/etc/systemd/system/$unit"
+fi
+# Belt-and-suspenders: the daemon itself also explicitly chowns the socket
+# to this group on every bind (agent_enforcer_daemon.js), independent of
+# the directory-setgid mechanism above, so a client can still connect even
+# if some future change to the directory setup regresses again.
+if ! grep -q "^Environment=ACK_CLIENT_GROUP=" "/etc/systemd/system/$unit"; then
+  sed -i "/^\[Service\]/a Environment=ACK_CLIENT_GROUP=$CLIENT_GROUP" "/etc/systemd/system/$unit"
+else
+  sed -i "s|^Environment=ACK_CLIENT_GROUP=.*|Environment=ACK_CLIENT_GROUP=$CLIENT_GROUP|" "/etc/systemd/system/$unit"
 fi
 chown root:root "/etc/systemd/system/$unit"
 chmod 0644 "/etc/systemd/system/$unit"

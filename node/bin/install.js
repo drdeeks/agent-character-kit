@@ -499,7 +499,7 @@ function rootAgentWorkspace(agentName) {
 // shared path for the whole machine. Called once per agent, not once per
 // `ack configure` run.
 async function deployRootIfNeeded({ asRoot, serviceUser, agentWorkspace }, spawnSyncFn = spawnSync) {
-  if (!asRoot) return { rootSocket: null };
+  if (!asRoot) return { rootSocket: null, monitorActive: false, watchdogActive: false };
   const deployEnv = { ...process.env, AGENT_WORKSPACE: agentWorkspace };
   if (serviceUser) {
     deployEnv.ACK_SERVICE_USER = serviceUser;
@@ -527,7 +527,34 @@ async function deployRootIfNeeded({ asRoot, serviceUser, agentWorkspace }, spawn
     console.log("sessions -- you may need to log out/in (or `newgrp ack-clients`) before");
     console.log("the agent can actually reach the socket.\n");
   }
-  return { rootSocket };
+
+  // Monitor + watchdog are SEPARATE systemd units (deploy-ack-services.sh),
+  // never installed by deploy-agent-enforcer.sh above. Found live,
+  // 2026-08-07: the install summary used to unconditionally claim "daemon +
+  // monitor + watchdog already running via systemd" for every root-mode
+  // install, without this ever actually happening -- acknowledgments
+  // silently never got credited, and the only warning was a line buried in
+  // scrolled-past deploy output, never surfaced in the summary itself.
+  // Checked for real (systemctl is-active) rather than assumed, and
+  // deployed here if missing so root-mode setup is actually complete in one
+  // wizard pass. Idempotent against an already-active service, so repeat
+  // agents on the same machine in the same run don't re-prompt for sudo.
+  const isActive = (unit) => spawnSyncFn("systemctl", ["is-active", "--quiet", unit]).status === 0;
+  let monitorActive = isActive("agent-character-monitor.service");
+  let watchdogActive = isActive("agent-character-watchdog.service");
+  if (!monitorActive || !watchdogActive) {
+    const servicesScript = path.join(REPO, "deploy", "deploy-ack-services.sh");
+    console.log(`Running: sudo bash ${servicesScript} (monitor + watchdog)\n`);
+    const svcResult = spawnSyncFn("sudo", ["-E", "bash", servicesScript], { stdio: "inherit", env: deployEnv });
+    if (svcResult.error || svcResult.status !== 0) {
+      console.error(`\nWARNING: monitor/watchdog deploy failed${svcResult.status != null ? ` (exit ${svcResult.status})` : ""}.`);
+      console.error(`Acknowledgments will NOT be credited until you fix this and re-run: sudo bash ${servicesScript}\n`);
+    }
+    monitorActive = isActive("agent-character-monitor.service");
+    watchdogActive = isActive("agent-character-watchdog.service");
+  }
+
+  return { rootSocket, monitorActive, watchdogActive };
 }
 
 // ─── main flow ─────────────────────────────────────────────────────────────────
@@ -584,9 +611,9 @@ async function main(callerOpts) {
       // or "generic".
       const agentName = await resolveAgentName({ ws: null, harness: h, isDelegatedMultiAgent: harnessList.length > 1 });
       const agentWs = rootAgentWorkspace(agentName);
-      let rootSocket;
+      let rootSocket, monitorActive, watchdogActive;
       try {
-        ({ rootSocket } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser, agentWorkspace: agentWs }));
+        ({ rootSocket, monitorActive, watchdogActive } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser, agentWorkspace: agentWs }));
       } catch (e) {
         console.error(`\n${e.message}`);
         rl.close();
@@ -600,6 +627,8 @@ async function main(callerOpts) {
         agentName,
         asRoot: true,
         rootSocket,
+        rootMonitorActive: monitorActive,
+        rootWatchdogActive: watchdogActive,
         doMonitor: true,
         doWatchdog: true,
         doCompanion: true,
@@ -628,12 +657,12 @@ async function main(callerOpts) {
     for (const h of harnessList) {
       let ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
       let agentName = null;
-      let rootSocket = null;
+      let rootSocket = null, monitorActive, watchdogActive;
       if (opts.root) {
         agentName = await resolveAgentName({ ws: null, harness: h, isDelegatedMultiAgent: harnessList.length > 1 });
         ws = rootAgentWorkspace(agentName);
         try {
-          ({ rootSocket } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser, agentWorkspace: ws }));
+          ({ rootSocket, monitorActive, watchdogActive } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser, agentWorkspace: ws }));
         } catch (e) {
           console.error(`\n${e.message}`);
           rl.close();
@@ -647,6 +676,8 @@ async function main(callerOpts) {
         agentName,
         asRoot: opts.root ?? false,
         rootSocket,
+        rootMonitorActive: monitorActive,
+        rootWatchdogActive: watchdogActive,
         doMonitor: opts.monitor,
         doWatchdog: opts.watchdog,
         doCompanion: opts.companion,
@@ -662,33 +693,18 @@ async function main(callerOpts) {
     console.log("and the acknowledgment monitor/watchdog. Every step is optional");
     console.log("to skip; press Enter to accept the default.\n");
 
-    console.log("\n⚠ SECURITY-RELEVANT — read before answering. Pick the privilege");
-    console.log("  boundary for the daemon/monitor/watchdog:");
-    console.log("");
-    console.log("  [1] System service (root, via systemd)  — RECOMMENDED");
-    console.log("      Daemon + monitor + watchdog run as root. Strongest boundary: the");
-    console.log("      agent's own shell/exec tools cannot kill, edit, or replace them at");
-    console.log("      all. ONE enforcer process holds every agent you add -- each gets its");
-    console.log("      own socket and own config, none of them share a daemon instance's");
-    console.log("      rules with each other.");
-    console.log("");
-    console.log("  [2] Dedicated service user (non-root, via systemd)  — recommended if");
-    console.log("      you'd rather not grant root");
-    console.log("      Same real boundary as [1] (the agent's uid still can't touch a");
-    console.log("      different uid's process) without needing full root. Creates a new");
-    console.log("      unprivileged system user (default: ack-enforcer) just for this.");
-    console.log("");
-    console.log("  [3] Trust the agent (user-mode, same uid as the agent)  — HIGHLY NOT");
-    console.log("      RECOMMENDED");
-    console.log("      Daemon runs as YOUR user, same as the agent. The agent's own tools");
-    console.log("      CAN kill this daemon or edit its config directly — same-uid means");
-    console.log("      same permissions. This is a reminder/deterrent, not a boundary.");
-    console.log("");
-    console.log("  Options [1] and [2] both actually run");
-    console.log(`    sudo bash ${path.join(REPO, "deploy", "deploy-agent-enforcer.sh")}`);
-    console.log("  right now, once per agent below — prompts for your sudo password");
-    console.log("  itself, no separate manual step afterward. Full comparison: AGENTS.md");
-    console.log("  § User-mode vs Root-mode.");
+    // Kept deliberately tight -- this used to be a 24-line wall of text
+    // repeating in full on every single `ack configure` run regardless of
+    // how many times you'd already seen it, which was its own instance of
+    // over-explaining the thing that mattered least while the summary at
+    // the end under-reported what actually happened (see monitorMsg below).
+    // One line per option, real consequence stated, full detail pushed to
+    // AGENTS.md instead of inlined every time.
+    console.log("\n⚠ Privilege boundary for the daemon/monitor/watchdog (full comparison: AGENTS.md § User-mode vs Service-user-mode vs Root-mode):");
+    console.log("  [1] Root, via systemd        — RECOMMENDED. Agent can't touch it at all.");
+    console.log("  [2] Dedicated service user   — same real boundary as [1], no full root needed.");
+    console.log("  [3] User-mode (agent's uid)  — HIGHLY NOT RECOMMENDED. Agent CAN kill/edit this.");
+    console.log(`  [1]/[2] run: sudo bash ${path.join(REPO, "deploy", "deploy-agent-enforcer.sh")} (once per agent, prompts for your password now).`);
     // No default -- this is the single most consequential decision in the
     // whole wizard (whether sudo gets invoked at all), so it requires an
     // explicit answer rather than a blank Enter silently picking ANYTHING,
@@ -879,11 +895,11 @@ async function main(callerOpts) {
       // workspace and its own deploy call, done here per-harness rather
       // than once for the whole run (see the privilege-mode prompt above).
       let hWs2 = hWs;
-      let hRootSocket = null;
+      let hRootSocket = null, hMonitorActive, hWatchdogActive;
       if (asRootGlobal) {
         hWs2 = rootAgentWorkspace(hAgentName);
         try {
-          ({ rootSocket: hRootSocket } = await deployRootIfNeeded({ asRoot: true, serviceUser, agentWorkspace: hWs2 }));
+          ({ rootSocket: hRootSocket, monitorActive: hMonitorActive, watchdogActive: hWatchdogActive } = await deployRootIfNeeded({ asRoot: true, serviceUser, agentWorkspace: hWs2 }));
         } catch (e) {
           console.error(`\n${e.message} Re-run \`ack configure\`.`);
           rl.close();
@@ -906,6 +922,8 @@ async function main(callerOpts) {
         agentName: hAgentName,
         asRoot: asRootGlobal,
         rootSocket: hRootSocket,
+        rootMonitorActive: hMonitorActive,
+        rootWatchdogActive: hWatchdogActive,
         doMonitor: doMonitorGlobal,
         doWatchdog: doWatchdogGlobal,
         doCompanion: true,
@@ -950,9 +968,16 @@ async function main(callerOpts) {
     if (doVectors) anyVectors = true;
     if (asRoot) anyRoot = true;
 
-    const absWs = asRoot
-      ? (process.env.AGENT_WORKSPACE || "/var/lib/agent-character-kit/workspace")
-      : path.resolve(inst.ws);
+    // asRoot used to special-case this to process.env.AGENT_WORKSPACE (the
+    // INSTALLER's own env, never actually set to a per-agent path) or a
+    // hardcoded pre-multi-agent single-workspace fallback -- leftover from
+    // before the per-agent nested-workspace redesign, never updated when it
+    // landed. Found live, 2026-08-07: the install summary's "Workspace:" and
+    // "Ack log:" lines showed the wrong (stale, non-nested) path for every
+    // root-mode install, even though inst.ws already held the correct
+    // per-agent path (rootAgentWorkspace(agentName)) the whole time -- the
+    // socket path (inst.rootSocket, below) never had this bug, only these.
+    const absWs = path.resolve(inst.ws);
     const sock = asRoot
       ? (inst.rootSocket || process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock")
       : resolveSocket(socketMode, absWs);
@@ -965,7 +990,20 @@ async function main(callerOpts) {
     let alreadyProvisioned = seenWorkspaces.has(absWs);
 
     if (asRoot) {
-      monitorMsg = "root mode: daemon + monitor + watchdog already running via systemd";
+      // Real state (systemctl is-active, checked in deployRootIfNeeded) --
+      // not assumed. Found live, 2026-08-07: this used to unconditionally
+      // claim "already running via systemd" regardless of whether
+      // deploy-ack-services.sh had ever actually been run; it hadn't,
+      // acknowledgments silently never got credited, and the summary lied
+      // about it. deployRootIfNeeded now deploys monitor/watchdog itself if
+      // missing, so this should normally read "running" -- but reports the
+      // truth either way instead of asserting it.
+      const monBit = inst.rootMonitorActive ? "monitor: running" : "monitor: NOT running";
+      const watchBit = inst.rootWatchdogActive ? "watchdog: running" : "watchdog: NOT running";
+      monitorMsg = `root mode: daemon: running (systemd) — ${monBit} — ${watchBit}`;
+      if (!inst.rootMonitorActive || !inst.rootWatchdogActive) {
+        monitorMsg += " — acknowledgments will NOT be credited until both are running; re-run: sudo bash deploy/deploy-ack-services.sh";
+      }
       alreadyProvisioned = true; // root workspace is provisioned by deploy-agent-enforcer.sh, not here
     } else if (alreadyProvisioned) {
       monitorMsg = `already running for this workspace (shared with an earlier harness in this run: ${seenWorkspaces.get(absWs).harnesses.join(", ")})`;

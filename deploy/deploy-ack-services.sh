@@ -16,9 +16,12 @@
 #   2. Installs the two systemd units.
 #   3. Enables + starts both (Restart=always -> self-healing).
 #
-# Shared state:
-#   - ack log: /tmp/agent-character-kit-ack.jsonl  (agent writes, monitor reads+validates)
-#   - socket:  /run/agent-enforcer/main.sock        (root-owned daemon)
+# Shared state (per-agent, multi-agent architecture as of 1.5.0 -- these two
+# stale single-workspace paths from before that redesign never got updated
+# here, even though the monitor/watchdog have both been agent-registry-aware
+# for a while now):
+#   - registry: $ACK_VAR_ROOT/workspaces.json (default /var/lib/agent-character-kit/workspaces.json)
+#   - per agent: <workspace>/agents/<name>/.agent/ack.jsonl + <name>.sock
 set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

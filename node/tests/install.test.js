@@ -618,22 +618,51 @@ test("parseArgs: --service-user implies --root and captures the name", () => {
 test("deployRootIfNeeded: asRoot=false is a no-op, never spawns sudo", async () => {
   let calls = 0;
   const result = await deployRootIfNeeded({ asRoot: false, serviceUser: null, agentWorkspace: "/tmp/whatever" }, () => { calls++; return { status: 0 }; });
-  assert.deepEqual(result, { rootSocket: null });
+  assert.deepEqual(result, { rootSocket: null, monitorActive: false, watchdogActive: false });
   assert.equal(calls, 0);
 });
 
-test("deployRootIfNeeded: asRoot=true invokes sudo bash deploy-agent-enforcer.sh with the right argv and per-agent AGENT_WORKSPACE", async () => {
+test("deployRootIfNeeded: asRoot=true invokes sudo bash deploy-agent-enforcer.sh with the right argv and per-agent AGENT_WORKSPACE; skips deploy-ack-services.sh when monitor/watchdog already active", async () => {
   const calls = [];
+  // status:0 for everything -- including the two `systemctl is-active`
+  // checks -- so monitor/watchdog read as already active and the
+  // deploy-ack-services.sh call is skipped (idempotent path).
   const fakeSpawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0 }; };
   const agentWorkspace = "/var/lib/agent-character-kit/workspace/agents/claude";
   const result = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace }, fakeSpawn);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 3, "enforcer deploy + 2 systemctl is-active checks (monitor, watchdog)");
   assert.equal(calls[0].cmd, "sudo");
   assert.deepEqual(calls[0].args.slice(0, 2), ["-E", "bash"]);
   assert.match(calls[0].args[2], /deploy-agent-enforcer\.sh$/);
   assert.equal(calls[0].opts.stdio, "inherit", "sudo's password prompt must reach the real terminal, not be captured");
   assert.equal(calls[0].opts.env.AGENT_WORKSPACE, agentWorkspace, "each agent's deploy call must pass ITS OWN workspace, not a shared one");
+  assert.equal(calls[1].cmd, "systemctl");
+  assert.deepEqual(calls[1].args, ["is-active", "--quiet", "agent-character-monitor.service"]);
+  assert.equal(calls[2].cmd, "systemctl");
+  assert.deepEqual(calls[2].args, ["is-active", "--quiet", "agent-character-watchdog.service"]);
   assert.equal(result.rootSocket, path.join(agentWorkspace, ".agent", "claude.sock"), "socket formula must mirror startMultiWorkspaceDaemon()'s exactly");
+  assert.equal(result.monitorActive, true);
+  assert.equal(result.watchdogActive, true);
+});
+
+test("deployRootIfNeeded: actually deploys deploy-ack-services.sh when monitor/watchdog are NOT already active (KD: install summary used to claim 'already running' when neither was ever deployed)", async () => {
+  const calls = [];
+  const fakeSpawn = (cmd, args, opts) => {
+    calls.push({ cmd, args, opts });
+    // First systemctl is-active check (before the ack-services deploy):
+    // report "not active" (status 1) so the fix path (actually running
+    // deploy-ack-services.sh) gets exercised. Everything else succeeds.
+    if (cmd === "systemctl" && calls.filter(c => c.cmd === "systemctl").length <= 2) {
+      return { status: 1 };
+    }
+    return { status: 0 };
+  };
+  const agentWorkspace = "/var/lib/agent-character-kit/workspace/agents/claude";
+  const result = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace }, fakeSpawn);
+  const servicesCalls = calls.filter(c => c.cmd === "sudo" && /deploy-ack-services\.sh$/.test(c.args[2] || ""));
+  assert.equal(servicesCalls.length, 1, "must actually invoke deploy-ack-services.sh when monitor/watchdog aren't already active, not just assume they're running");
+  assert.equal(result.monitorActive, true, "re-checked after the deploy, not assumed");
+  assert.equal(result.watchdogActive, true);
 });
 
 test("deployRootIfNeeded: service-user mode sets ACK_SERVICE_USER/ACK_AGENT_USER in the deploy script's env", async () => {

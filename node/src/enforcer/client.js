@@ -1,5 +1,4 @@
 import net from "net";
-import fs from "fs";
 import path from "path";
 
 // Socket default MUST match the daemon (agent_enforcer_daemon.js): it lives
@@ -31,11 +30,6 @@ export class EnforcerClient {
    */
   async call(method, params = {}) {
     return new Promise((resolve, reject) => {
-      if (!fs.existsSync(this.socketPath)) {
-        resolve({ error: "enforcer socket not found", denied: false });
-        return;
-      }
-
       let retried = false;
       const doCall = () => {
         const socket = net.createConnection(this.socketPath);
@@ -74,7 +68,20 @@ export class EnforcerClient {
 
         socket.on("error", (err) => {
           clearTimeout(timeout);
-          resolve({ error: err.message, denied: false });
+          // Distinguish real causes instead of collapsing every connect
+          // failure into one string -- found live, 2026-08-07, after a real
+          // EACCES (socket's group ownership was wrong) got reported as
+          // "socket not found" and cost real time to diagnose, because the
+          // old fs.existsSync() pre-check this replaced can't tell "doesn't
+          // exist" apart from "exists but I can't reach it": existsSync
+          // swallows every stat error into a bare `false`. Connecting
+          // directly and reading err.code gives the real reason instead.
+          let reason;
+          if (err.code === "ENOENT") reason = "enforcer socket not found";
+          else if (err.code === "EACCES") reason = `permission denied connecting to enforcer socket (${this.socketPath}) -- check the socket's group ownership and that this user is a member of it`;
+          else if (err.code === "ECONNREFUSED") reason = "enforcer socket exists but nothing is listening (daemon not running?)";
+          else reason = err.message;
+          resolve({ error: reason, denied: false });
         });
 
         socket.on("timeout", () => {
