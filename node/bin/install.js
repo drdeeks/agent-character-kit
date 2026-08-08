@@ -181,10 +181,8 @@ export function claudeSettingsPath() {
 // Single source of truth for harness auto-detection -- was duplicated
 // between install.js's --yes path (which had none, silently defaulting to
 // "generic") and postinstall.js's own copy (used only for its pointer
-// message). postinstall.js is gone entirely now (removed 2026-08-07 --
-// npm never reliably streamed its stdout, and that pointer message was
-// its only job), but this stays the one real implementation regardless of
-// how many call sites ever need harness detection.
+// message). Exported so both call sites use exactly one implementation,
+// regardless of how many more ever need harness detection.
 export function detectHarnesses() {
   const home = os.homedir();
   const candidates = [

@@ -870,12 +870,14 @@ program
       if (info.error) console.log(`    error: ${info.error}`);
       if (info.workspace) console.log(`    workspace: ${info.workspace}`);
     }
-    // There is no postinstall script (removed 2026-08-07 -- npm never
-    // reliably streamed its stdout to the real terminal, and its only job
-    // was this exact pointer message anyway). This nudge, shown whenever
-    // nothing looks configured yet, is now the PRIMARY way anyone learns
-    // to run `ack configure` after installing, not a fallback for an edge
-    // case.
+    // postinstall.js already prints this same pointer for anyone who ran a
+    // plain `npm install -g` (its stdout write goes straight to /dev/tty,
+    // bypassing npm's own unreliable lifecycle-script stdout capture -- see
+    // its own comments). This is the fallback for the two cases that
+    // misses: --ignore-scripts / an allow-scripts policy that denied it, or
+    // no controlling terminal at install time (piped/CI). Not the primary
+    // discovery path either now that install.sh exists -- that one hands
+    // off straight into this same wizard with its own real TTY.
     if (Object.values(results).every((r) => !r.checked || !r.alive) && looksNeverConfigured()) {
       console.log(`\n${FIRST_RUN_NUDGE}`);
     }
