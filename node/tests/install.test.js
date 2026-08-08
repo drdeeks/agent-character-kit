@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
-import { resolveSocket, discoverAgentWorkspaces, writeClaudeHookConfig, claudeSettingsPath, parseArgs, installPythonCompanion, deployRootIfNeeded, main as installMain } from "../bin/install.js";
+import { resolveSocket, discoverAgentWorkspaces, writeClaudeHookConfig, claudeSettingsPath, parseArgs, installPythonCompanion, deployRootIfNeeded, parseHarnessMenuChoice, main as installMain } from "../bin/install.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root, regardless of CWD
@@ -658,4 +658,72 @@ test("deployRootIfNeeded: two different agents get two different sockets, never 
   const a = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace: "/var/lib/agent-character-kit/workspace/agents/claude" }, fakeSpawn);
   const b = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace: "/var/lib/agent-character-kit/workspace/agents/opencode" }, fakeSpawn);
   assert.notEqual(a.rootSocket, b.rootSocket, "drdeek: \"how do you know if you have 12 agents running at the same time on one sock which one is doing what?\"");
+});
+
+// ─── parseHarnessMenuChoice (drdeek: "blank Enter silently installs all 3" fix) ──
+
+const DETECTED = ["claude", "hermes", "opencode"];
+
+test("parseHarnessMenuChoice: a single number selects exactly that one harness", () => {
+  assert.deepEqual(parseHarnessMenuChoice("2", DETECTED), { action: "select", harnesses: ["hermes"] });
+});
+
+test("parseHarnessMenuChoice: comma-separated subset (the exact case drdeek's live session needed) selects only those, in order, excluding the rest", () => {
+  const result = parseHarnessMenuChoice("1,3", DETECTED);
+  assert.equal(result.action, "select");
+  assert.deepEqual(result.harnesses, ["claude", "opencode"]);
+  assert.ok(!result.harnesses.includes("hermes"), "hermes must be excluded, not silently included");
+});
+
+test("parseHarnessMenuChoice: space-separated subset works the same as comma-separated", () => {
+  const result = parseHarnessMenuChoice("1 3", DETECTED);
+  assert.deepEqual(result.harnesses, ["claude", "opencode"]);
+});
+
+test("parseHarnessMenuChoice: the numeric 'all' index (N+1) selects every detected harness", () => {
+  const result = parseHarnessMenuChoice("4", DETECTED); // 3 detected -> allIdx = 4
+  assert.deepEqual(result.harnesses, ["claude", "hermes", "opencode"]);
+});
+
+test("parseHarnessMenuChoice: the word 'all' works the same as its numeric index", () => {
+  const result = parseHarnessMenuChoice("all", DETECTED);
+  assert.deepEqual(result.harnesses, DETECTED);
+});
+
+test("parseHarnessMenuChoice: the numeric 'custom' index (N+2) and the word 'custom' both defer to the caller's follow-up prompt", () => {
+  assert.deepEqual(parseHarnessMenuChoice("5", DETECTED), { action: "custom" }); // 3 detected -> customIdx = 5
+  assert.deepEqual(parseHarnessMenuChoice("custom", DETECTED), { action: "custom" });
+});
+
+test("parseHarnessMenuChoice: the numeric 'cancel' index (N+3), 'none', and 'cancel' all cancel", () => {
+  assert.deepEqual(parseHarnessMenuChoice("6", DETECTED), { action: "cancel" }); // 3 detected -> cancelIdx = 6
+  assert.deepEqual(parseHarnessMenuChoice("none", DETECTED), { action: "cancel" });
+  assert.deepEqual(parseHarnessMenuChoice("cancel", DETECTED), { action: "cancel" });
+});
+
+test("parseHarnessMenuChoice: out-of-range numbers are dropped, not treated as valid indices into a shorter list", () => {
+  // Only 3 detected -- "9" isn't any of claude/hermes/opencode/all/custom/cancel.
+  const result = parseHarnessMenuChoice("9", DETECTED);
+  assert.equal(result.fallback, true);
+  assert.deepEqual(result.harnesses, DETECTED);
+});
+
+test("parseHarnessMenuChoice: unrecognized garbage input falls back to all detected, with fallback flagged for the caller to warn about", () => {
+  const result = parseHarnessMenuChoice("asdf", DETECTED);
+  assert.equal(result.action, "select");
+  assert.equal(result.fallback, true, "caller needs this flag to print the 'unrecognized, defaulting to all' warning");
+  assert.deepEqual(result.harnesses, DETECTED);
+});
+
+test("parseHarnessMenuChoice: case-insensitive and tolerant of surrounding whitespace", () => {
+  assert.deepEqual(parseHarnessMenuChoice("  ALL  ", DETECTED).harnesses, DETECTED);
+  assert.deepEqual(parseHarnessMenuChoice(" None ", DETECTED), { action: "cancel" });
+});
+
+test("parseHarnessMenuChoice: works correctly with a different detected-harness count (menu indices shift accordingly)", () => {
+  const twoDetected = ["claude", "opencode"];
+  // allIdx=3, customIdx=4, cancelIdx=5 -- NOT the same indices as the 3-harness case above.
+  assert.deepEqual(parseHarnessMenuChoice("3", twoDetected).harnesses, twoDetected);
+  assert.deepEqual(parseHarnessMenuChoice("4", twoDetected), { action: "custom" });
+  assert.deepEqual(parseHarnessMenuChoice("5", twoDetected), { action: "cancel" });
 });

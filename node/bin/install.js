@@ -447,6 +447,41 @@ function createHabit(rl, ws) {
 // claiming success. A curl-installer wrapper (install.sh) needs this path
 // to actually work non-interactively to avoid re-asking a question it
 // already asked.
+// Pure, directly testable classification of the "Install for: 1) claude 2)
+// hermes ... N) all N+1) custom N+2) none" menu choice -- extracted so the
+// parsing logic (numbers, "all"/"custom"/"none" by word, comma/space-
+// separated subsets, the unrecognized-input fallback) can be unit tested
+// without needing a real interactive readline session. "custom" can't be
+// fully resolved here (needs a follow-up ask() the caller supplies); every
+// other outcome is deterministic from the choice string alone. Found live,
+// 2026-08-07: the previous "blank Enter = all detected, silently" prompt
+// read as if all detected harnesses were already committed with no visible
+// confirm step -- drdeek: "who is just saying that we're not just gonna
+// start pumping their stuff full of random hazardous shit?"
+function parseHarnessMenuChoice(choice, detected) {
+  const normalized = (choice || "").trim().toLowerCase();
+  const allIdx = detected.length + 1;
+  const customIdx = detected.length + 2;
+  const cancelIdx = detected.length + 3;
+
+  if (normalized === String(cancelIdx) || normalized === "none" || normalized === "cancel") {
+    return { action: "cancel" };
+  }
+  if (normalized === String(allIdx) || normalized === "all") {
+    return { action: "select", harnesses: [...detected] };
+  }
+  if (normalized === String(customIdx) || normalized === "custom") {
+    return { action: "custom" };
+  }
+  const nums = normalized.split(/[,\s]+/)
+    .map((s) => parseInt(s, 10))
+    .filter((n) => !Number.isNaN(n) && n >= 1 && n <= detected.length);
+  if (nums.length) {
+    return { action: "select", harnesses: nums.map((n) => detected[n - 1]) };
+  }
+  return { action: "select", harnesses: [...detected], fallback: true };
+}
+
 // One enforcer root -- agents nest UNDER it, they don't each get their own
 // top-level workspace (drdeek, 2026-08-07: "they do not get their own
 // workplace directory. The enforcer can hold all of them... they do get
@@ -666,12 +701,42 @@ async function main(callerOpts) {
     const detected = detectHarnesses();
     const harnesses = [];
     if (detected.length && detected[0] !== "generic") {
+      // Real explicit choice, not "detected N things, blank Enter silently
+      // configures all of them." Found live, 2026-08-07: drdeek hit this
+      // exact prompt and pointed out it reads as if all detected harnesses
+      // are already committed with no visible confirm step -- "who is just
+      // saying that we're not just gonna start pumping their stuff full of
+      // random hazardous shit?"
       console.log(`\nDetected: ${detected.join(", ")}.`);
-      harnesses.push(...detected);
-      while (true) {
-        const h = (await ask(rl, "Add another harness? (blank = done)", "")).toLowerCase().trim();
-        if (!h) break;
-        harnesses.push(h);
+      console.log("\nInstall for:");
+      detected.forEach((h, i) => console.log(`  ${i + 1}) ${h}`));
+      const allIdx = detected.length + 1;
+      const customIdx = detected.length + 2;
+      const cancelIdx = detected.length + 3;
+      console.log(`  ${allIdx}) all (${detected.join(", ")})`);
+      console.log(`  ${customIdx}) custom -- type harness name(s), comma-separated`);
+      console.log(`  ${cancelIdx}) none -- cancel`);
+      const rawChoice = await ask(
+        rl,
+        `Choice [1-${cancelIdx}, or comma-separated numbers like "1,3"]`,
+        String(allIdx)
+      );
+      const parsed = parseHarnessMenuChoice(rawChoice, detected);
+      if (parsed.action === "cancel") {
+        console.log("\nCancelled -- nothing configured.");
+        rl.close();
+        return;
+      } else if (parsed.action === "custom") {
+        const typed = await ask(rl, "Harness name(s), comma-separated", "");
+        harnesses.push(...typed.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
+      } else {
+        if (parsed.fallback) console.log(`Unrecognized choice "${rawChoice}" -- defaulting to all detected.`);
+        harnesses.push(...parsed.harnesses);
+      }
+      if (harnesses.length === 0) {
+        console.log("\nNo harness selected -- nothing configured.");
+        rl.close();
+        return;
       }
     } else {
       console.log("\nNo known harness detected on this machine.");
@@ -1155,4 +1220,4 @@ if (__isCLI) {
   });
 }
 
-export { parseArgs, resolveSocket, main, launchDaemon, seedHabits, writeConstitution, discoverAgentWorkspaces, installPythonCompanion, deployRootIfNeeded };
+export { parseArgs, resolveSocket, main, launchDaemon, seedHabits, writeConstitution, discoverAgentWorkspaces, installPythonCompanion, deployRootIfNeeded, parseHarnessMenuChoice };
