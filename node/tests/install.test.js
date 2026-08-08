@@ -617,36 +617,45 @@ test("parseArgs: --service-user implies --root and captures the name", () => {
 
 test("deployRootIfNeeded: asRoot=false is a no-op, never spawns sudo", async () => {
   let calls = 0;
-  const result = await deployRootIfNeeded({ asRoot: false, serviceUser: null }, () => { calls++; return { status: 0 }; });
+  const result = await deployRootIfNeeded({ asRoot: false, serviceUser: null, agentWorkspace: "/tmp/whatever" }, () => { calls++; return { status: 0 }; });
   assert.deepEqual(result, { rootSocket: null });
   assert.equal(calls, 0);
 });
 
-test("deployRootIfNeeded: asRoot=true invokes sudo bash deploy-agent-enforcer.sh with the right argv", async () => {
+test("deployRootIfNeeded: asRoot=true invokes sudo bash deploy-agent-enforcer.sh with the right argv and per-agent AGENT_WORKSPACE", async () => {
   const calls = [];
   const fakeSpawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0 }; };
-  const result = await deployRootIfNeeded({ asRoot: true, serviceUser: null }, fakeSpawn);
+  const agentWorkspace = "/var/lib/agent-character-kit/workspace/agents/claude";
+  const result = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace }, fakeSpawn);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].cmd, "sudo");
   assert.deepEqual(calls[0].args.slice(0, 2), ["-E", "bash"]);
   assert.match(calls[0].args[2], /deploy-agent-enforcer\.sh$/);
   assert.equal(calls[0].opts.stdio, "inherit", "sudo's password prompt must reach the real terminal, not be captured");
-  assert.equal(result.rootSocket, process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock");
+  assert.equal(calls[0].opts.env.AGENT_WORKSPACE, agentWorkspace, "each agent's deploy call must pass ITS OWN workspace, not a shared one");
+  assert.equal(result.rootSocket, path.join(agentWorkspace, ".agent", "claude.sock"), "socket formula must mirror startMultiWorkspaceDaemon()'s exactly");
 });
 
 test("deployRootIfNeeded: service-user mode sets ACK_SERVICE_USER/ACK_AGENT_USER in the deploy script's env", async () => {
   const calls = [];
   const fakeSpawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0 }; };
-  await deployRootIfNeeded({ asRoot: true, serviceUser: "ack-enforcer" }, fakeSpawn);
+  await deployRootIfNeeded({ asRoot: true, serviceUser: "ack-enforcer", agentWorkspace: "/var/lib/agent-character-kit/workspace/agents/opencode" }, fakeSpawn);
   assert.equal(calls[0].opts.env.ACK_SERVICE_USER, "ack-enforcer");
   assert.equal(calls[0].opts.env.ACK_AGENT_USER, os.userInfo().username);
 });
 
 test("deployRootIfNeeded: a failed deploy throws (not a silently-successful no-op)", async () => {
   const result = await deployRootIfNeeded(
-    { asRoot: true, serviceUser: null },
+    { asRoot: true, serviceUser: null, agentWorkspace: "/tmp/whatever" },
     () => ({ status: 1 })
   ).then(() => "resolved", (e) => e);
   assert.ok(result instanceof Error, "must reject/throw on a real deploy failure, not resolve as if it worked");
   assert.match(result.message, /Deploy failed/);
+});
+
+test("deployRootIfNeeded: two different agents get two different sockets, never the same one", async () => {
+  const fakeSpawn = () => ({ status: 0 });
+  const a = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace: "/var/lib/agent-character-kit/workspace/agents/claude" }, fakeSpawn);
+  const b = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace: "/var/lib/agent-character-kit/workspace/agents/opencode" }, fakeSpawn);
+  assert.notEqual(a.rootSocket, b.rootSocket, "drdeek: \"how do you know if you have 12 agents running at the same time on one sock which one is doing what?\"");
 });

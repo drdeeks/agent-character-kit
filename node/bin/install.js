@@ -28,6 +28,7 @@ import readline from "readline";
 import { spawn, spawnSync } from "child_process";
 import { fileURLToPath, pathToFileURL } from "url";
 import { normalizeHabitName, buildHabitYaml, VALID_LEVELS } from "../src/habits/build.js";
+import { resolveAgentName } from "../src/agent-identity.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root
@@ -446,16 +447,32 @@ function createHabit(rl, ws) {
 // claiming success. A curl-installer wrapper (install.sh) needs this path
 // to actually work non-interactively to avoid re-asking a question it
 // already asked.
-async function deployRootIfNeeded({ asRoot, serviceUser }, spawnSyncFn = spawnSync) {
+// One enforcer root -- agents nest UNDER it, they don't each get their own
+// top-level workspace (drdeek, 2026-08-07: "they do not get their own
+// workplace directory. The enforcer can hold all of them... they do get
+// their own directory for habits and stuff"). The base itself never becomes
+// a real agent workspace -- it's just the parent every agent nests under.
+function rootAgentWorkspace(agentName) {
+  const base = process.env.AGENT_WORKSPACE || "/var/lib/agent-character-kit/workspace";
+  return path.join(base, "agents", agentName);
+}
+
+// agentWorkspace is REQUIRED for root/service-user mode now -- one enforcer
+// process holds every agent (see agent_enforcer_daemon.js's registry-backed
+// multi-workspace mode), so each agent needs its OWN nested workspace path
+// passed through as this specific deploy call's AGENT_WORKSPACE, not one
+// shared path for the whole machine. Called once per agent, not once per
+// `ack configure` run.
+async function deployRootIfNeeded({ asRoot, serviceUser, agentWorkspace }, spawnSyncFn = spawnSync) {
   if (!asRoot) return { rootSocket: null };
-  const deployEnv = { ...process.env };
+  const deployEnv = { ...process.env, AGENT_WORKSPACE: agentWorkspace };
   if (serviceUser) {
     deployEnv.ACK_SERVICE_USER = serviceUser;
     deployEnv.ACK_AGENT_USER = os.userInfo().username;
   }
   const deployScript = path.join(REPO, "deploy", "deploy-agent-enforcer.sh");
   console.log(`\nRunning: sudo bash ${deployScript}${serviceUser ? ` (ACK_SERVICE_USER=${serviceUser})` : ""}`);
-  console.log("(you'll be prompted for your sudo password now if needed)\n");
+  console.log(`(workspace: ${agentWorkspace} -- you'll be prompted for your sudo password now if needed)\n`);
   const result = spawnSyncFn("sudo", ["-E", "bash", deployScript], { stdio: "inherit", env: deployEnv });
   if (result.error || result.status !== 0) {
     throw new Error(
@@ -463,8 +480,13 @@ async function deployRootIfNeeded({ asRoot, serviceUser }, spawnSyncFn = spawnSy
       "Fix the error above and re-run."
     );
   }
-  const rootSocket = process.env.ENFORCER_SOCKET || "/run/agent-enforcer/main.sock";
-  console.log(`\nDaemon installed and running${serviceUser ? ` as '${serviceUser}'` : " as root"}. Shared socket: ${rootSocket}\n`);
+  // Mirrors agent_enforcer_daemon.js's startMultiWorkspaceDaemon() socket
+  // formula exactly (<workspace>/.agent/<workspace-basename>.sock) -- the
+  // deploy script always registers this workspace in the shared registry,
+  // which forces multi-workspace mode from agent #1 onward, so this is the
+  // real socket path the daemon will actually listen on, not a guess.
+  const rootSocket = path.join(agentWorkspace, ".agent", `${path.basename(agentWorkspace)}.sock`);
+  console.log(`\nDaemon installed and running${serviceUser ? ` as '${serviceUser}'` : " as root"}. Socket: ${rootSocket}\n`);
   if (serviceUser) {
     console.log("NOTE: group membership for the client group only applies to NEW login");
     console.log("sessions -- you may need to log out/in (or `newgrp ack-clients`) before");
@@ -512,18 +534,25 @@ async function main(callerOpts) {
   // --all: root mode, all components, non-interactive
   if (opts.all) {
     opts.yes = true;
+    harness = opts.harness || "generic";
+    // No ws to scan for an identity file yet -- root mode's workspace is a
+    // fresh enforcement location, not necessarily the agent's own project
+    // dir. Falls through to the harness's own name (claude/hermes/opencode)
+    // or "generic".
+    const agentName = await resolveAgentName({ ws: null, harness, isDelegatedMultiAgent: false });
+    const agentWs = rootAgentWorkspace(agentName);
     try {
-      ({ rootSocket: rootSocketGlobal } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser }));
+      ({ rootSocket: rootSocketGlobal } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser, agentWorkspace: agentWs }));
     } catch (e) {
       console.error(`\n${e.message}`);
       rl.close();
       process.exit(1);
     }
-    harness = opts.harness || "generic";
     plannedInstalls.push({
-      ws: opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace"),
+      ws: agentWs,
       socketMode: opts.socket || "unix",
       harness,
+      agentName,
       asRoot: true,
       rootSocket: rootSocketGlobal,
       doMonitor: true,
@@ -547,25 +576,31 @@ async function main(callerOpts) {
     const harnessList = (opts.harnesses && opts.harnesses.length)
       ? opts.harnesses
       : (opts.harness ? [opts.harness] : detectHarnesses());
-    // One shared root instance for every harness in this run, not one per
-    // harness -- deploy exactly once, before the loop, same as root-mode's
-    // own "ONE shared instance for the whole machine" design.
-    if (opts.root) {
-      try {
-        ({ rootSocket: rootSocketGlobal } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser }));
-      } catch (e) {
-        console.error(`\n${e.message}`);
-        rl.close();
-        process.exit(1);
-      }
-    }
+    // One enforcer, N agents nested under it -- each harness in this run
+    // gets its OWN deploy call with its OWN nested workspace and socket
+    // when root mode is on, not one shared deploy for the whole batch.
     for (const h of harnessList) {
+      let ws = opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace");
+      let agentName = null;
+      let rootSocket = null;
+      if (opts.root) {
+        agentName = await resolveAgentName({ ws: null, harness: h, isDelegatedMultiAgent: harnessList.length > 1 });
+        ws = rootAgentWorkspace(agentName);
+        try {
+          ({ rootSocket } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser, agentWorkspace: ws }));
+        } catch (e) {
+          console.error(`\n${e.message}`);
+          rl.close();
+          process.exit(1);
+        }
+      }
       plannedInstalls.push({
-        ws: opts.workspace || path.join(os.homedir(), ".agent-character-kit", "workspace"),
+        ws,
         socketMode: opts.socket || "unix",
         harness: h,
+        agentName,
         asRoot: opts.root ?? false,
-        rootSocket: rootSocketGlobal,
+        rootSocket,
         doMonitor: opts.monitor,
         doWatchdog: opts.watchdog,
         doCompanion: opts.companion,
@@ -587,7 +622,9 @@ async function main(callerOpts) {
     console.log("  [1] System service (root, via systemd)  — RECOMMENDED");
     console.log("      Daemon + monitor + watchdog run as root. Strongest boundary: the");
     console.log("      agent's own shell/exec tools cannot kill, edit, or replace them at");
-    console.log("      all. ONE shared instance for the whole machine.");
+    console.log("      all. ONE enforcer process holds every agent you add -- each gets its");
+    console.log("      own socket and own config, none of them share a daemon instance's");
+    console.log("      rules with each other.");
     console.log("");
     console.log("  [2] Dedicated service user (non-root, via systemd)  — recommended if");
     console.log("      you'd rather not grant root");
@@ -603,9 +640,9 @@ async function main(callerOpts) {
     console.log("");
     console.log("  Options [1] and [2] both actually run");
     console.log(`    sudo bash ${path.join(REPO, "deploy", "deploy-agent-enforcer.sh")}`);
-    console.log("  right now if chosen — prompts for your sudo password itself, no");
-    console.log("  separate manual step afterward. Full comparison: AGENTS.md § User-mode");
-    console.log("  vs Root-mode.");
+    console.log("  right now, once per agent below — prompts for your sudo password");
+    console.log("  itself, no separate manual step afterward. Full comparison: AGENTS.md");
+    console.log("  § User-mode vs Root-mode.");
     const privilegeChoice = await ask(rl, "\nPrivilege mode [1/2/3]", "1");
 
     let asRootGlobal = false;
@@ -615,13 +652,9 @@ async function main(callerOpts) {
       if (privilegeChoice === "2") {
         serviceUser = (await ask(rl, "Dedicated service user name", "ack-enforcer")).trim() || "ack-enforcer";
       }
-      try {
-        ({ rootSocket: rootSocketGlobal } = await deployRootIfNeeded({ asRoot: true, serviceUser }));
-      } catch (e) {
-        console.error(`\n${e.message} Re-run \`ack configure\`.`);
-        rl.close();
-        process.exit(1);
-      }
+      // Deploy itself happens per-agent, below in the harness loop -- one
+      // enforcer holds every agent, but each still needs its own nested
+      // workspace/socket registered via its own deploy call.
     } else {
       console.log("\nProceeding in user-mode (same uid as the agent) — highly not");
       console.log("recommended, per the warning above, but this is your call.\n");
@@ -721,6 +754,37 @@ async function main(callerOpts) {
         if (!firstNonRootWs) firstNonRootWs = hWs;
       }
 
+      // Real name for this agent's socket filename, not a generic
+      // "enforcer.sock" every workspace shares indistinguishably. Order:
+      // agent.json/SOUL.md in the workspace -> (for claude/hermes/opencode
+      // with only ONE harness in this run) the harness name itself, no
+      // prompt -> ask, with the harness name as the default if left blank.
+      // Root mode has no hWs to scan (nothing exists yet -- the workspace
+      // IS what's about to be created), so identity-file lookup is skipped
+      // there; falls through to harness name or a direct prompt.
+      const hAgentName = await resolveAgentName({
+        ws: asRootGlobal ? null : hWs,
+        harness: h,
+        isDelegatedMultiAgent: harnesses.length > 1,
+        askFn: async () => ask(rl, `No agent identity found for '${h}' — name for this agent (used for the socket filename)`, h),
+      });
+
+      // One enforcer holds every agent -- each still gets its OWN nested
+      // workspace and its own deploy call, done here per-harness rather
+      // than once for the whole run (see the privilege-mode prompt above).
+      let hWs2 = hWs;
+      let hRootSocket = null;
+      if (asRootGlobal) {
+        hWs2 = rootAgentWorkspace(hAgentName);
+        try {
+          ({ rootSocket: hRootSocket } = await deployRootIfNeeded({ asRoot: true, serviceUser, agentWorkspace: hWs2 }));
+        } catch (e) {
+          console.error(`\n${e.message} Re-run \`ack configure\`.`);
+          rl.close();
+          process.exit(1);
+        }
+      }
+
       let hWireClaude = false;
       if (h === "claude") {
         console.log("\nWithout this, the hook config is only printed — Claude Code never");
@@ -730,11 +794,12 @@ async function main(callerOpts) {
       }
 
       plannedInstalls.push({
-        ws: hWs,
+        ws: hWs2,
         socketMode: "unix",
         harness: h,
+        agentName: hAgentName,
         asRoot: asRootGlobal,
-        rootSocket: rootSocketGlobal,
+        rootSocket: hRootSocket,
         doMonitor: doMonitorGlobal,
         doWatchdog: doWatchdogGlobal,
         doCompanion: true,
@@ -745,9 +810,10 @@ async function main(callerOpts) {
       });
     }
 
-    // Habit creator — ask once, applies to the first user-mode workspace
-    // (root mode's constitution/habits live in the shared root workspace,
-    // already seeded by deploy-agent-enforcer.sh).
+    // Habit creator — ask once, applies to the first user-mode workspace.
+    // Root-mode agents' nested workspaces are root/service-user-owned
+    // (mode 0750) -- this prompt runs as the calling user, who can't write
+    // there directly, so it stays scoped to user-mode workspaces only.
     if (firstNonRootWs) {
       while (await yesNo(rl, "Create a habit now (interactive)?", false)) {
         try {

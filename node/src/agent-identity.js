@@ -32,6 +32,11 @@ function sanitizeName(raw) {
 }
 
 export function extractAgentName(dir) {
+  // Root/service-user mode's workspace is a fresh root-owned enforcement
+  // location, not necessarily the same directory as wherever the agent's
+  // own project/identity files actually live -- there may be nothing to
+  // scan at all yet. Callers pass null/undefined for `dir` in that case.
+  if (!dir) return null;
   const agentJsonPath = path.join(dir, "agent.json");
   if (fs.existsSync(agentJsonPath)) {
     try {
