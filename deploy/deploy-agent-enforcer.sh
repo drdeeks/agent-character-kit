@@ -41,7 +41,6 @@ INSTALL_LIB="${ACK_INSTALL_LIB:-/usr/local/lib/agent-character-kit}"
 AGENT_WORKSPACE="${AGENT_WORKSPACE:-/var/lib/agent-character-kit/workspace}"
 ENFORCER_SOCKET="${ENFORCER_SOCKET:-/run/agent-enforcer/main.sock}"
 INSTALL_BIN="${ACK_INSTALL_BIN:-/usr/local/bin/agent-enforcer-daemon}"
-RUN_DIR="$(dirname "$ENFORCER_SOCKET")"
 VAR_DIR="$(dirname "$AGENT_WORKSPACE")"
 # Fixed, independent of AGENT_WORKSPACE's nesting depth -- deliberately NOT
 # derived from $VAR_DIR (dirname of AGENT_WORKSPACE). With agents nested
@@ -98,31 +97,41 @@ if [ -n "$AGENT_USER" ]; then
 fi
 
 # 1. System-owned directories.
-# RUN_DIR (holds the socket) is the one directory that needs cross-uid
-# access: owned by the service user, GROUP-owned by the client group, with
-# setgid (g+s, the "2" in 2750) so the socket file the daemon creates
-# inside it inherits the client group automatically -- see
+# $AGENT_WORKSPACE/.agent (holds the socket) is the one directory that needs
+# cross-uid access: owned by the service user, GROUP-owned by the client
+# group, with setgid (g+s, the "2" in 2750) so the socket file the daemon
+# creates inside it inherits the client group automatically -- see
 # agent_enforcer_daemon.js's own socket chmod (0660) for the other half of
 # this. Everything else stays fully private to the service user; the agent
 # only ever needs the socket, never direct file access (it's a thin RPC
 # client, not a filesystem consumer of the workspace).
 #
-# In the current per-agent architecture ENFORCER_SOCKET is computed as
-# $AGENT_WORKSPACE/.agent/<agent>.sock, so RUN_DIR and $AGENT_WORKSPACE/.agent
-# are almost always THE SAME PATH. Found live, 2026-08-07: with the
-# $AGENT_WORKSPACE/.agent install run after RUN_DIR's, `install -d` on an
-# already-existing directory reapplies its own owner/group/mode every time --
-# silently clobbering RUN_DIR's setgid+client-group setup back to
-# root:$SERVICE_GROUP/0750, which is exactly why the socket kept coming up
-# owned by root:root and unreachable by the agent's own uid. RUN_DIR's
-# install now runs LAST so its cross-uid settings always win regardless of
-# whether the two paths happen to coincide.
+# WRONG PREVIOUSLY, in two stages, both found live: this used to derive the
+# cross-uid directory from RUN_DIR="$(dirname "$ENFORCER_SOCKET")" instead
+# of $AGENT_WORKSPACE/.agent directly, on the assumption the two paths
+# always coincide in the current per-agent architecture. That's only true
+# if ENFORCER_SOCKET happens to be explicitly set to match -- nothing in
+# the real call chain (install.js's deployRootIfNeeded, this script's own
+# `ENFORCER_SOCKET="${ENFORCER_SOCKET:-/run/agent-enforcer/main.sock}"`
+# default) ever does that, so RUN_DIR was actually /run/agent-enforcer --
+# a directory the daemon never even looks at once a registry exists
+# (agent_enforcer_daemon.js's resolveWorkspaces() sets hasRegistry=true,
+# which unconditionally routes to startMultiWorkspaceDaemon(), which
+# computes each socket path from the workspace itself and never reads
+# ENFORCER_SOCKET at all). First fix (2026-08-07, reordering the two
+# install -d calls so RUN_DIR's settings "win") was solving a real
+# clobbering bug but at the wrong path, so it never actually took effect --
+# confirmed live 2026-08-08 (fresh daemon restart, socket still root:root).
+# Fixed for real by dropping RUN_DIR from this decision entirely and
+# applying the cross-uid setup directly, unconditionally, to
+# $AGENT_WORKSPACE/.agent -- which this script itself guarantees is the
+# real socket location, since it always registers the workspace into the
+# shared registry a few lines above this.
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$VAR_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$AGENT_WORKSPACE"
-install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$AGENT_WORKSPACE/.agent"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$LOG_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$INSTALL_LIB"
-install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 2750 "$RUN_DIR"
+install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 2750 "$AGENT_WORKSPACE/.agent"
 
 # Seed a baseline constitution so the enforcer is NOT born in violation of itself.
 # The agent (or a later install step) overrides these; the enforcer owns the file
