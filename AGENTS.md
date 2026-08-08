@@ -500,13 +500,15 @@ append-only, newest entry on top, never rewrite a past entry. History before
   2026-08-07) but doesn't yet selectively heal just that one** — its
   auto-activate logic still reasons about one workspace at a time, not "N
   registered agents, some subset unhealthy."
-- **The full multi-agent chain has now been run against real systemd once
-  (2026-08-07, root mode, one agent) — and it surfaced a real bug** (see the
-  socket-permission gap above), now fixed but not yet re-verified live.
-  Still not done: two different agents deployed against a real systemd
-  instance in the same run (only ever proven against real spawned
-  processes in the test suite for the 2-agent case). Needs a human with
-  real sudo.
+- **The full multi-agent chain has now been run against real systemd
+  repeatedly (2026-08-07/08, root mode, one agent), and it's genuinely
+  solid now** — a real root-mode socket-permission chain of bugs got found
+  and fixed for real, confirmed via live `ls -la` (no sudo) succeeding on
+  the actual socket; see CHANGELOG 1.5.0's final "Update, next day" entry
+  for the full 5-commit trace. Still not done: two different agents
+  deployed against a real systemd instance in the same run (only ever
+  proven against real spawned processes in the test suite for the 2-agent
+  case). Needs a human with real sudo.
 
 Resolved same day, no longer gaps: `ack config show/verify/write-env` all
 gained a `--agent <name>` option (registry-aware, verified live against a
@@ -526,18 +528,21 @@ the sole owner of those two units. Service-user-mode (a dedicated non-root
 already built — see "User-mode vs Service-user-mode vs Root-mode" above —
 this list previously had a stale bullet claiming it wasn't; removed
 2026-08-07 after checking the actual code, not just the old bullet's word.
-- **A real root-mode socket-permission bug was found and fixed 2026-08-07
-  (8be35f6), but the FIX itself hasn't been re-verified against a live
-  systemd deploy yet** — only the bug was (drdeek hit it live: a fresh
-  root-mode install locked this very session out of its own tool calls for
-  over an hour, because the socket came up `root:root` instead of
-  `root:ack-clients`, two independent `install -d` calls on the same
-  directory in `deploy-agent-enforcer.sh` silently fighting each other).
-  The reordering + daemon-side `chownSync` fix is unit-tested (104/104) and
-  code-reviewed, but needs a fresh `sudo bash deploy-agent-enforcer.sh` run
-  and a real `ls -la` on the resulting socket to confirm the group is
-  actually `ack-clients` before trusting it in production. See CHANGELOG
-  1.5.0's second "Update, later the same day" entry for the full trace.
+A real root-mode socket-permission bug — first hit 2026-08-07 (a fresh
+root-mode install locked that session's own tool calls out for over an
+hour, socket came up `root:root` instead of `root:ack-clients`) — took 5
+commits across two days to actually fix, not 1: a redeploy-never-restarts
+bug, a wrong first diagnosis (derived the fix from a variable,
+`ENFORCER_SOCKET`, the real code path never reads), a fix that only
+covered the file's group but not ancestor-directory traversal, a fix that
+covered one ancestor but not all of them (`$AGENT_WORKSPACE` is nested
+three levels under `$ACK_VAR_ROOT`), and two more independent clobbers
+found while auditing the rest of the script. **Confirmed working for real,
+live, 2026-08-08** — plain `ls -la` (no sudo) on the socket succeeds. See
+CHANGELOG 1.5.0's final "Update, next day" entry for the full trace; this
+is the concrete case study behind `rigor_no_half_assing` memory's rule
+that shell/deploy-script correctness can't be verified by reading code or
+by a green JS test suite, only by an actual run against real system state.
 - **Socket.dev supply-chain scan not yet run against this repo.** `socket`
   CLI is installed but has never been authenticated in any environment this
   work happened in (`socket whoami` → 401 / `token: (not set)`) — every

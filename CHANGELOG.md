@@ -158,6 +158,59 @@ healing, and a *fresh* real systemd/sudo verification of the corrected
 socket-permission code specifically (the bug above was found via a real
 systemd deploy; the fix itself has not yet been re-verified against one).
 
+**Update, next day (2026-08-08, `eee4f95`/`9105f41`/`b752479`/`422f7fd`):
+the socket-permission fix above was wrong, and it took 4 more commits —
+each one live-tested by drdeek, each one catching a real remaining bug —
+to actually get it right.** Full trace, honestly:
+- `eee4f95` — a real, separate bug found first: redeploying never
+  restarted an already-running daemon (`systemctl enable --now` is a no-op
+  on an already-active unit), so no code fix could ever take effect on a
+  redeploy without an unrelated manual restart. Fixed: redeploy now always
+  restarts.
+- `8be35f6`'s fix was **wrong**, not just untested. It derived the
+  cross-uid directory from `RUN_DIR="$(dirname "$ENFORCER_SOCKET")"`,
+  assuming that equals `$AGENT_WORKSPACE/.agent`. Only true if
+  `ENFORCER_SOCKET` is explicitly set to match — nothing in the real call
+  chain does that, and the daemon never even reads it once a registry
+  exists (routes to `startMultiWorkspaceDaemon()` instead, which computes
+  socket paths from the workspace itself). Confirmed live: fresh daemon
+  restart, socket still `root:root`.
+- `9105f41` — fixed the file's group correctly this time (`root
+  ack-clients`, confirmed via `sudo ls -la`), by applying the setup
+  directly to `$AGENT_WORKSPACE/.agent` instead of `RUN_DIR`. Still
+  incomplete: a plain `ls` (no sudo) still failed — the file's group was
+  right, but *traversal* into its ancestor directories wasn't.
+- `b752479` — fixed traversal on `$VAR_DIR`/`$AGENT_WORKSPACE`
+  (`0710`, client-group execute-only). Still incomplete: `namei -l`
+  on the real path showed the actual remaining block was at
+  `$ACK_VAR_ROOT` (`/var/lib/agent-character-kit`) — a separate, higher
+  ancestor, since `$AGENT_WORKSPACE` is nested three levels under it, not
+  one.
+- `422f7fd` — the real, complete fix: walks every directory level from
+  `$ACK_VAR_ROOT` down to `$AGENT_WORKSPACE`, granting client-group
+  traversal regardless of nesting depth. Also caught two more real
+  clobbers auditing the rest of the script: a `chown -R` that reset the
+  `.agent` directory's own group every deploy (now non-recursive, targets
+  only the two config files it's meant to secure), and a second redundant
+  `install -d` on `$ACK_VAR_ROOT` later in the script (registry setup)
+  that re-clobbered the fix every single run.
+- **Confirmed working, for real, live:** `ls -la` (no sudo) on the socket
+  succeeded — `srw-rw---- 1 root ack-clients .../claude.sock`. One
+  intermediate false alarm ("No such file or directory") turned out to be
+  a pure timing race (`ls` ran ~55ms after the daemon started, before its
+  async socket bind finished) — confirmed via `sudo find` and the
+  daemon's own "listening on..." log, not just assumed.
+
+104/104 tests passing throughout — none of these four bugs could have
+been caught by the JS test suite, since all four live entirely in
+`deploy-agent-enforcer.sh`'s bash/filesystem logic, which nothing in
+`node/tests/` executes for real. **Lesson kept in memory
+(`rigor_no_half_assing`): for anything with a real shell/deploy-script
+component, code-reading confidence is not verification, even when the
+reasoning is careful and unit tests stay green — only an actual run
+against real system state proves it.** Root-mode install is genuinely
+trustworthy again as of `422f7fd`.
+
 ## 1.4.0 — 2026-08-07
 
 **Fixed (security-relevant):**
