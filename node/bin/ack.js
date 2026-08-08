@@ -104,22 +104,61 @@ async function checkDaemon(socketPath = resolveSocket()) {
   });
 }
 
+// Same registry-path priority as agent_enforcer_daemon.js's own
+// resolveWorkspaces() -- checked here too so `ack status`/doctor/repair
+// report the SAME agents the daemon itself would actually serve, not a
+// separately-guessed list that can drift out of sync with it.
+function readWorkspacesRegistry() {
+  const candidates = [
+    process.env.ACK_WORKSPACES_REGISTRY,
+    "/var/lib/agent-character-kit/workspaces.json",
+    path.join(os.homedir(), ".agent-character-kit", "workspaces.json"),
+  ].filter(Boolean);
+  for (const rp of candidates) {
+    try {
+      if (fs.existsSync(rp)) {
+        const list = JSON.parse(fs.readFileSync(rp, "utf8"));
+        if (Array.isArray(list) && list.length) return { registryPath: rp, agents: list };
+      }
+    } catch { /* best-effort */ }
+  }
+  return { registryPath: null, agents: [] };
+}
+
 async function checkAllSockets() {
   const results = {};
   const candidates = [
-    { name: "root (systemd)", path: "/run/agent-enforcer/main.sock" },
     { name: "user workspace", path: path.join(resolveWorkspace(), ".agent", "enforcer.sock") },
     { name: "env ENFORCER_SOCKET", path: resolveSocket() },
   ];
+
+  // One enforcer, N agents -- check each REGISTERED agent's own socket
+  // individually, not one opaque "root (systemd)" blob that can't tell you
+  // which of potentially many agents is actually up (drdeek, 2026-08-07:
+  // "how do you know if you have 12 agents running at the same time on one
+  // sock which one is doing what?").
+  const { registryPath, agents } = readWorkspacesRegistry();
+  if (agents.length) {
+    for (const ws of agents) {
+      const name = path.basename(ws);
+      candidates.push({ name: `agent: ${name}`, path: path.join(ws, ".agent", `${name}.sock`), ws });
+    }
+  } else {
+    // No registry found at all -- either a pre-registry deploy, or nothing
+    // ever configured. Keep the old generic root-mode check as a fallback
+    // so status/doctor/repair still say SOMETHING useful in that case.
+    candidates.unshift({ name: "root (systemd)", path: "/run/agent-enforcer/main.sock" });
+  }
+
   for (const c of candidates) {
     if (!c.path) {
       results[c.name] = { checked: false, reason: "not configured" };
       continue;
     }
     const r = await checkDaemon(c.path);
-    results[c.name] = { path: c.path, checked: true, ...r };
+    results[c.name] = { path: c.path, checked: true, ws: c.ws, ...r };
   }
-  return results;
+  return { results, registryPath };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -346,7 +385,7 @@ async function runDoctor() {
   }
 
   // Check all endpoints
-  const endpoints = await checkAllSockets();
+  const { results: endpoints } = await checkAllSockets();
   const aliveCount = Object.values(endpoints).filter(e => e.alive).length;
   if (aliveCount > 0) {
     check(true, `${aliveCount}/${Object.keys(endpoints).length} endpoints alive`);
@@ -582,7 +621,7 @@ async function runRepair(targets, opts) {
         // repair` couldn't see a perfectly healthy root-mode daemon and
         // auto-started a second, unsupervised user-mode one right next to
         // it -- pure resource duplication, not intended behavior.
-        const allSockets = await checkAllSockets();
+        const { results: allSockets } = await checkAllSockets();
         const liveElsewhere = Object.entries(allSockets).find(([, s]) => s.alive);
         if (liveElsewhere) {
           console.log(`    ~ Already served by ${liveElsewhere[0]} (${liveElsewhere[1].path}) -- not starting another`);
@@ -853,12 +892,16 @@ program
   .description("Quick daemon health overview [Diag]")
   .option("--json", "Output JSON")
   .action(async (opts) => {
-    const results = await checkAllSockets();
+    const { results, registryPath } = await checkAllSockets();
     if (opts.json) {
-      console.log(JSON.stringify(results, null, 2));
+      console.log(JSON.stringify({ results, registryPath }, null, 2));
       return;
     }
     console.log("=== Socket Status ===");
+    if (registryPath) {
+      const agentCount = Object.keys(results).filter((n) => n.startsWith("agent: ")).length;
+      console.log(`  (${agentCount} registered agent(s), registry: ${registryPath})`);
+    }
     for (const [name, info] of Object.entries(results)) {
       if (!info.checked) {
         console.log(`  ${name}: — not configured`);
