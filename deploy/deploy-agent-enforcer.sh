@@ -127,8 +127,23 @@ fi
 # $AGENT_WORKSPACE/.agent -- which this script itself guarantees is the
 # real socket location, since it always registers the workspace into the
 # shared registry a few lines above this.
-install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$VAR_DIR"
-install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$AGENT_WORKSPACE"
+# $VAR_DIR and $AGENT_WORKSPACE are ancestors of the socket -- `ls`/connect/
+# open() on anything beneath a directory needs EXECUTE (traversal) on every
+# directory in the path, not just permission on the final file. These two
+# were group=$SERVICE_GROUP (root in root-mode) mode 0750, so a client in
+# CLIENT_GROUP but not SERVICE_GROUP had a flat `---` on both and could
+# never even reach $AGENT_WORKSPACE/.agent, regardless of how correctly
+# THAT directory and the socket file itself were set up. Found live,
+# 2026-08-08, immediately after the previous fix: plain `ls` (no sudo)
+# still failed with EACCES even though `sudo ls -la` on the socket file
+# itself showed the correct root:ack-clients ownership -- group was right,
+# traversal wasn't. Fixed with `0710` (owner rwx, group --x, other ---):
+# CLIENT_GROUP gets bare pass-through, no read/write, can't list contents
+# or touch anything else in these directories -- same "the agent only ever
+# needs the socket, never direct file access" boundary as before, just
+# actually reachable now.
+install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 0710 "$VAR_DIR"
+install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 0710 "$AGENT_WORKSPACE"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$LOG_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$INSTALL_LIB"
 install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 2750 "$AGENT_WORKSPACE/.agent"
