@@ -563,14 +563,22 @@ async function runRepair(targets, opts) {
           break;
         }
         if (opts.reinstall) {
-          // Overwrite all
-          let copied = 0;
-          for (const f of fs.readdirSync(srcHabits)) {
-            if (f.endsWith(".yaml")) {
-              const dest = path.join(habitsDir, f);
-              fs.copyFileSync(path.join(srcHabits, f), dest);
-              copied++;
+          const srcFiles = fs.readdirSync(srcHabits).filter(f => f.endsWith(".yaml"));
+          const willOverwrite = srcFiles.filter(f => fs.existsSync(path.join(habitsDir, f)));
+          if (willOverwrite.length > 0 && !opts.yes) {
+            console.log(`    ⚠ --reinstall will OVERWRITE ${willOverwrite.length} existing habit file(s),`);
+            console.log(`      discarding any local edits to them:`);
+            for (const f of willOverwrite) console.log(`        - ${f}`);
+            const answer = (await ask("    Proceed? [y/N] ")).trim().toLowerCase();
+            if (answer !== "y" && answer !== "yes") {
+              console.log("    ✗ Skipped -- habits left untouched. Re-run with --yes to skip this prompt.");
+              break;
             }
+          }
+          let copied = 0;
+          for (const f of srcFiles) {
+            fs.copyFileSync(path.join(srcHabits, f), path.join(habitsDir, f));
+            copied++;
           }
           console.log(`    ✓ Re-seeded ${copied} habit files`);
           fixed++;
@@ -760,13 +768,13 @@ program
   .alias("install") // backward-compat: v1.2.1 and earlier called this "install"
   .description("Set up daemon + monitor + watchdog + companion [Core]")
   .option("--yes", "Non-interactive, sensible defaults")
-  .option("--all", "Everything: root mode + all components + Python bindings")
+  .option("--all", "Everything: root mode + all components + Python bindings, for every detected harness (or just --harness if that's also given)")
   .option("--user", "User-mode (default)")
   .option("--root", "Root mode (systemd)")
   .option("--service-user <name>", "Root-equivalent boundary via a dedicated non-root service user (implies --root); default name if given no value elsewhere: ack-enforcer")
   .option("--workspace <path>", "Workspace path (default: ~/.agent-character-kit/workspace)")
   .option("--socket <mode>", "Socket: unix | tcp (default: unix)")
-  .option("--harness <name>", "Harness: claude | cursor | gemini | opencode | hermes | generic")
+  .option("--harness <name>", "Harness for hook/companion config: claude | cursor | gemini | opencode | hermes | generic. Only claude/hermes/opencode are auto-detected and get real auto-naming (node/src/agent-identity.js) -- cursor/gemini get hook generation but must be named explicitly here every time, and always fall back to the harness-agnostic 'generic' agent name.")
   .option("--python", "Also install Python ACK bindings (auto with --all)")
   .option("--no-python", "Skip Python ACK bindings")
   .option("--vectors", "Also install the optional 'vectors' extra (numpy + sentence-transformers, semantic search) -- needs --python, root auto-runs pip")
@@ -1006,7 +1014,8 @@ program
   .command("repair")
   .description("Auto-fix problems (workspace, habits, constitution, daemon) [Diag]")
   .argument("[targets...]", "What to fix: workspace, habits, constitution, daemon (omit for all)")
-  .option("--reinstall", "Re-seed habits from bundled set (overwrites existing)")
+  .option("--reinstall", "Re-seed habits from bundled set -- DESTRUCTIVE: overwrites existing habit files, discarding local edits. Prompts for confirmation naming each file that will be clobbered unless --yes is also given.")
+  .option("--yes", "Skip the --reinstall confirmation prompt (for scripted/non-interactive use)")
   .action(runRepair);
 
 // ─── Habit management ──────────────────────────────────────────────────────

@@ -566,38 +566,49 @@ async function main(callerOpts) {
   const plannedInstalls = [];
   let rootSocketGlobal = null;
 
-  // --all: root mode, all components, non-interactive
+  // --all: root mode, all COMPONENTS (monitor+watchdog+companion+python),
+  // for every harness this run targets -- "Everything" means every detected
+  // harness too, not just one named "generic". Previously this silently
+  // installed a single harness (opts.harness || "generic") even though the
+  // flag's own description promised "Everything"; a bare `ack configure
+  // --all` on a machine with claude+hermes+opencode installed would wire up
+  // only "generic" with root privileges and never touch the other three,
+  // with nothing printed to say so. Fixed to loop the same way --yes does.
   if (opts.all) {
     opts.yes = true;
-    harness = opts.harness || "generic";
-    // No ws to scan for an identity file yet -- root mode's workspace is a
-    // fresh enforcement location, not necessarily the agent's own project
-    // dir. Falls through to the harness's own name (claude/hermes/opencode)
-    // or "generic".
-    const agentName = await resolveAgentName({ ws: null, harness, isDelegatedMultiAgent: false });
-    const agentWs = rootAgentWorkspace(agentName);
-    try {
-      ({ rootSocket: rootSocketGlobal } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser, agentWorkspace: agentWs }));
-    } catch (e) {
-      console.error(`\n${e.message}`);
-      rl.close();
-      process.exit(1);
+    const harnessList = opts.harness ? [opts.harness] : detectHarnesses();
+    for (const h of harnessList) {
+      // No ws to scan for an identity file yet -- root mode's workspace is a
+      // fresh enforcement location, not necessarily the agent's own project
+      // dir. Falls through to the harness's own name (claude/hermes/opencode)
+      // or "generic".
+      const agentName = await resolveAgentName({ ws: null, harness: h, isDelegatedMultiAgent: harnessList.length > 1 });
+      const agentWs = rootAgentWorkspace(agentName);
+      let rootSocket;
+      try {
+        ({ rootSocket } = await deployRootIfNeeded({ asRoot: true, serviceUser: opts.serviceUser, agentWorkspace: agentWs }));
+      } catch (e) {
+        console.error(`\n${e.message}`);
+        rl.close();
+        process.exit(1);
+      }
+      rootSocketGlobal = rootSocket;
+      plannedInstalls.push({
+        ws: agentWs,
+        socketMode: opts.socket || "unix",
+        harness: h,
+        agentName,
+        asRoot: true,
+        rootSocket,
+        doMonitor: true,
+        doWatchdog: true,
+        doCompanion: true,
+        doPython: opts.python !== false,
+        doVectors: opts.vectors === true,
+        doStartNow: opts.start !== false,
+        doWireClaudeConfig: h === "claude" && opts.writeClaudeConfig !== false,
+      });
     }
-    plannedInstalls.push({
-      ws: agentWs,
-      socketMode: opts.socket || "unix",
-      harness,
-      agentName,
-      asRoot: true,
-      rootSocket: rootSocketGlobal,
-      doMonitor: true,
-      doWatchdog: true,
-      doCompanion: true,
-      doPython: opts.python !== false,
-      doVectors: opts.vectors === true,
-      doStartNow: opts.start !== false,
-      doWireClaudeConfig: harness === "claude" && opts.writeClaudeConfig !== false,
-    });
   } else if (opts.yes) {
     // opts.harnesses (array) lets non-interactive callers set up several
     // harnesses in one main() call, sharing the seenWorkspaces de-dupe
@@ -678,7 +689,21 @@ async function main(callerOpts) {
     console.log("  right now, once per agent below — prompts for your sudo password");
     console.log("  itself, no separate manual step afterward. Full comparison: AGENTS.md");
     console.log("  § User-mode vs Root-mode.");
-    const privilegeChoice = await ask(rl, "\nPrivilege mode [1/2/3]", "1");
+    // No default -- this is the single most consequential decision in the
+    // whole wizard (whether sudo gets invoked at all), so it requires an
+    // explicit answer rather than a blank Enter silently picking ANYTHING,
+    // even the safe option. Loops on invalid input instead of guessing.
+    // Found in the same audit pass as the harness-menu fix, 2026-08-07:
+    // this used to default blank Enter straight to "1" (root) -- the MOST
+    // privileged option, not the safest one. Fail-safe design means an
+    // accidental keystroke should never land on the option that runs sudo.
+    let privilegeChoice = "";
+    while (!["1", "2", "3"].includes(privilegeChoice)) {
+      privilegeChoice = (await ask(rl, "\nPrivilege mode -- type 1, 2, or 3 (no default)")).trim();
+      if (!["1", "2", "3"].includes(privilegeChoice)) {
+        console.log(`"${privilegeChoice}" isn't 1, 2, or 3 -- try again.`);
+      }
+    }
 
     let asRootGlobal = false;
     let serviceUser = null;
@@ -739,16 +764,32 @@ async function main(callerOpts) {
         return;
       }
     } else {
+      // Same class of bug as the detected-harness menu above, found in the
+      // same audit pass, 2026-08-07: pressing Enter with nothing typed at
+      // all used to silently fall through to harnesses.push("generic")
+      // with zero visible warning that that's what would happen -- worse
+      // than the detected-harness case, since there wasn't even a numbered
+      // menu here to make the consequence visible.
       console.log("\nNo known harness detected on this machine.");
+      console.log("Known: claude, hermes, opencode (real auto-naming support).");
+      console.log("Any other name is accepted too, but only gets generic naming/detection.");
       while (true) {
         const prompt = harnesses.length
           ? "Another harness? (blank = done)"
-          : "Which harness? [claude | cursor | gemini | opencode | hermes | generic]";
+          : "Which harness? (blank = generic, a harness-agnostic fallback -- confirmed before proceeding)";
         const h = (await ask(rl, prompt, "")).toLowerCase().trim();
         if (!h) break;
         harnesses.push(h);
       }
-      if (harnesses.length === 0) harnesses.push("generic");
+      if (harnesses.length === 0) {
+        const confirmed = await yesNo(rl, "Nothing entered -- proceed with the generic harness?", true);
+        if (!confirmed) {
+          console.log("\nCancelled -- nothing configured.");
+          rl.close();
+          return;
+        }
+        harnesses.push("generic");
+      }
     }
 
     let doMonitorGlobal = false, doWatchdogGlobal = false;
