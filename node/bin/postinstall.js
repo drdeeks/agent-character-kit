@@ -65,11 +65,25 @@ function main() {
   const write = (line) => {
     try { fs.appendFileSync(log, line + "\n"); } catch { /* best-effort */ }
   };
-  // console.log here reaches the user's actual terminal during
-  // `npm install -g` -- npm streams lifecycle-script stdout live by
-  // default. The tmp log above stays too (useful after the terminal's
-  // scrolled away), but must never be the ONLY place this is recorded.
-  const say = (line) => { console.log(line); write(line); };
+  // console.log alone is NOT reliable here -- confirmed live, 2026-08-07:
+  // a real `npm install -g` of a real tarball correctly ran this script
+  // (proven by the tmp log below actually being written with this exact
+  // run's content) but nothing showed up in the terminal at all. npm's
+  // lifecycle-script stdout capture swallows it under real-world
+  // conditions this repo's install/test harness never hit. The standard
+  // workaround (used by other CLI packages with the same problem): write
+  // straight to /dev/tty, bypassing npm's stdout pipe entirely. Falls
+  // back silently if no controlling terminal exists (piped/CI installs) --
+  // the tmp log is still the last-resort record either way.
+  let tty = null;
+  try { tty = fs.openSync("/dev/tty", "w"); } catch { /* no controlling tty -- fine */ }
+  const say = (line) => {
+    console.log(line);
+    write(line);
+    if (tty !== null) {
+      try { fs.writeSync(tty, line + "\n"); } catch { /* best-effort */ }
+    }
+  };
 
   say(`\n[agent-character-kit] Installed. Detected: ${harnesses.join(", ")}.`);
   say(`[agent-character-kit] Nothing has been configured — the package install and setup are`);
@@ -77,6 +91,9 @@ function main() {
   say(`  ack configure          step-by-step interactive setup`);
   say(`  ack configure --yes    auto-detect and configure now, no prompts`);
   write("ack postinstall: done (install-only, no configuration).");
+  if (tty !== null) {
+    try { fs.closeSync(tty); } catch { /* best-effort */ }
+  }
 }
 
 main();
