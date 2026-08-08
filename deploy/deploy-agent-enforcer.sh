@@ -99,16 +99,16 @@ fi
 # client, not a filesystem consumer of the workspace).
 install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 2750 "$RUN_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$VAR_DIR"
-install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$VAR_DIR/workspace"
-install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$VAR_DIR/workspace/.agent"
+install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$AGENT_WORKSPACE"
+install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$AGENT_WORKSPACE/.agent"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$LOG_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$INSTALL_LIB"
 
 # Seed a baseline constitution so the enforcer is NOT born in violation of itself.
 # The agent (or a later install step) overrides these; the enforcer owns the file
 # (service-user-writable only) so the agent cannot delete its own constraints.
-if [ ! -f "$VAR_DIR/workspace/.agent/constitution.yaml" ]; then
-  cat > "$VAR_DIR/workspace/.agent/constitution.yaml" <<'YAML'
+if [ ! -f "$AGENT_WORKSPACE/.agent/constitution.yaml" ]; then
+  cat > "$AGENT_WORKSPACE/.agent/constitution.yaml" <<'YAML'
 agent:
   id: ack-enforcer
   name: "ACK Enforcer Workspace"
@@ -129,20 +129,20 @@ hard_constraints:
 aspiration: "Behave with integrity under no observation"
 YAML
 fi
-if [ ! -f "$VAR_DIR/workspace/.agent/enforcer.yaml" ]; then
-  cat > "$VAR_DIR/workspace/.agent/enforcer.yaml" <<'YAML'
+if [ ! -f "$AGENT_WORKSPACE/.agent/enforcer.yaml" ]; then
+  cat > "$AGENT_WORKSPACE/.agent/enforcer.yaml" <<'YAML'
 # Open policy by default: no allow-list (everything permitted unless denied).
 # Set an `allow:` list to flip to default-deny. `deny:` is always enforced.
 YAML
 fi
-chown -R "$SERVICE_USER:$SERVICE_GROUP" "$VAR_DIR/workspace/.agent"
-chmod 0640 "$VAR_DIR/workspace/.agent/constitution.yaml" "$VAR_DIR/workspace/.agent/enforcer.yaml"
+chown -R "$SERVICE_USER:$SERVICE_GROUP" "$AGENT_WORKSPACE/.agent"
+chmod 0640 "$AGENT_WORKSPACE/.agent/constitution.yaml" "$AGENT_WORKSPACE/.agent/enforcer.yaml"
 
 # Seed habits from the repo's example workspace (single source of habit files).
 # Copies every *.yaml that isn't already present, so a redeploy never clobbers
 # habits the agent/user has since customized. The credential-leak guard lives
 # here too (hard enforcement) — no longer hardcoded inline.
-HABITS_DIR="$VAR_DIR/workspace/.agent/habits"
+HABITS_DIR="$AGENT_WORKSPACE/.agent/habits"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$HABITS_DIR"
 SRC_HABITS="$SRC_DIR/python/example_workspace/.agent/habits"
 if [ -d "$SRC_HABITS" ]; then
@@ -191,22 +191,82 @@ EOF
 chown "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_BIN"
 chmod 0755 "$INSTALL_BIN"
 
-# 4. Systemd units (enforcer + monitor + watchdog — templated to the chosen
+# 4. Register this agent's workspace in the shared registry the daemon
+#    reads at startup (agent_enforcer_daemon.js's resolveWorkspaces()).
+#    ONE enforcer holds every agent -- agents don't get their own top-level
+#    workspace or their own daemon/systemd unit, they get added to this
+#    daemon's list (drdeek, 2026-08-07: "the enforcer can hold all of
+#    them... the enforcer service at root gets additional socks added to
+#    it"). Idempotent: re-running this script for the same AGENT_WORKSPACE
+#    (a redeploy) doesn't duplicate the entry.
+REGISTRY="$VAR_DIR/workspaces.json"
+REGISTRY_HAD_OTHER_ENTRIES=false
+if [ -f "$REGISTRY" ]; then
+  if "$NODE_BIN" -e "
+    const fs = require('fs');
+    const list = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+    process.exit(Array.isArray(list) && list.filter(w => w !== process.argv[2]).length > 0 ? 0 : 1);
+  " "$REGISTRY" "$AGENT_WORKSPACE"; then
+    REGISTRY_HAD_OTHER_ENTRIES=true
+  fi
+fi
+"$NODE_BIN" -e "
+  const fs = require('fs');
+  const path = process.argv[1];
+  const ws = process.argv[2];
+  let list = [];
+  try { list = JSON.parse(fs.readFileSync(path, 'utf8')); if (!Array.isArray(list)) list = []; } catch {}
+  if (!list.includes(ws)) list.push(ws);
+  fs.writeFileSync(path, JSON.stringify(list, null, 2) + '\n');
+" "$REGISTRY" "$AGENT_WORKSPACE"
+chown "$SERVICE_USER:$SERVICE_GROUP" "$REGISTRY"
+chmod 0640 "$REGISTRY"
+echo ">> Registered $AGENT_WORKSPACE in $REGISTRY"
+
+# 5. Systemd units (enforcer + monitor + watchdog — templated to the chosen
 #    service user, self-respawning). The checked-in unit files hardcode
 #    User=root/Group=root as the safe default; sed-replace at deploy time
 #    rather than maintaining a second set of near-duplicate unit files per
-#    privilege mode.
+#    privilege mode. Exactly one of each unit regardless of how many agents
+#    are registered -- the monitor tracks all of them itself, same as the
+#    daemon does; neither gets a second instance per agent.
 for unit in agent-enforcer.service agent-character-monitor.service agent-character-watchdog.service; do
   sed -e "s/^User=root$/User=$SERVICE_USER/" \
       -e "s/^Group=root$/Group=$SERVICE_GROUP/" \
       "$SRC_DIR/deploy/$unit" > "/etc/systemd/system/$unit"
+  # The checked-in unit files' Environment=AGENT_WORKSPACE/ENFORCER_SOCKET
+  # lines are placeholder defaults -- without this, every deploy silently
+  # ignored whatever $AGENT_WORKSPACE/$ENFORCER_SOCKET this specific run
+  # actually computed and used the checked-in literal instead, regardless
+  # of which agent was actually being deployed. Only agent-enforcer.service
+  # has these keys; sed is a no-op on units that don't.
+  sed -i \
+    -e "s|^Environment=AGENT_WORKSPACE=.*|Environment=AGENT_WORKSPACE=$AGENT_WORKSPACE|" \
+    -e "s|^Environment=ENFORCER_SOCKET=.*|Environment=ENFORCER_SOCKET=$ENFORCER_SOCKET|" \
+    "/etc/systemd/system/$unit"
+  # Explicit registry path -- more robust than relying on the daemon's own
+  # path-guessing fallback, and the monitor needs to read this exact same
+  # file to know which agents to tail acks for.
+  if ! grep -q "^Environment=ACK_WORKSPACES_REGISTRY=" "/etc/systemd/system/$unit"; then
+    sed -i "/^\[Service\]/a Environment=ACK_WORKSPACES_REGISTRY=$REGISTRY" "/etc/systemd/system/$unit"
+  else
+    sed -i "s|^Environment=ACK_WORKSPACES_REGISTRY=.*|Environment=ACK_WORKSPACES_REGISTRY=$REGISTRY|" "/etc/systemd/system/$unit"
+  fi
   chown root:root "/etc/systemd/system/$unit"
   chmod 0644 "/etc/systemd/system/$unit"
 done
 
-# 5. Enable + start all three
+# 6. Enable + start all three. `enable --now` is a no-op on an already-active
+#    unit, so if this run just added a NEW agent to an already-populated
+#    registry, the running daemon/monitor need an explicit restart to
+#    actually pick up the new workspace -- otherwise the new agent's socket
+#    silently never appears until the next unrelated restart.
 systemctl daemon-reload
 systemctl enable --now agent-enforcer.service agent-character-monitor.service agent-character-watchdog.service
+if [ "$REGISTRY_HAD_OTHER_ENTRIES" = "true" ]; then
+  echo ">> New agent added to an existing registry -- restarting enforcer + monitor to pick it up..."
+  systemctl restart agent-enforcer.service agent-character-monitor.service
+fi
 
 echo ">> Done. Status:"
 systemctl status agent-enforcer.service agent-character-monitor.service agent-character-watchdog.service --no-pager || true

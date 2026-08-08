@@ -1002,10 +1002,25 @@ function resolveWorkspaces() {
     }
   }
 
-  // Registry file: ~/.agent-character-kit/workspaces.json (JSON array of paths)
-  const registryPath = path.join(process.env.HOME || "/root", ".agent-character-kit", "workspaces.json");
+  // Registry file (JSON array of agent workspace paths). Priority:
+  //   1. ACK_WORKSPACES_REGISTRY -- explicit override.
+  //   2. /var/lib/agent-character-kit/workspaces.json -- the real location
+  //      for root/service-user mode. A HOME-based path doesn't work there:
+  //      a --no-create-home service user has no HOME at all, and even if
+  //      it did, /root/ isn't readable by a non-root service user anyway.
+  //      /var/lib/agent-character-kit/ is already owned by whichever
+  //      service user deploy-agent-enforcer.sh set up, so both the
+  //      deploying root process and the running daemon can reach it.
+  //   3. $HOME/.agent-character-kit/workspaces.json -- unchanged, plain
+  //      user-mode default (same-uid daemon, real HOME available).
+  const registryPath = process.env.ACK_WORKSPACES_REGISTRY
+    || (fs.existsSync("/var/lib/agent-character-kit/workspaces.json")
+      ? "/var/lib/agent-character-kit/workspaces.json"
+      : path.join(process.env.HOME || "/root", ".agent-character-kit", "workspaces.json"));
+  let hasRegistry = false;
   try {
     if (fs.existsSync(registryPath)) {
+      hasRegistry = true;
       const list = JSON.parse(fs.readFileSync(registryPath, "utf8"));
       if (Array.isArray(list)) {
         for (const ws of list) {
@@ -1015,7 +1030,15 @@ function resolveWorkspaces() {
     }
   } catch { /* best-effort */ }
 
-  return [...workspaces];
+  // hasRegistry forces multi-workspace mode even with exactly one agent so
+  // far, not just "more than one" -- root/service-user deploys always
+  // create this registry (deploy-agent-enforcer.sh), so a real
+  // registry-backed deploy gets consistent agent-named sockets from the
+  // very first agent onward. Without this, agent #1 would get the old
+  // generic socket name via single-workspace mode, then have its socket
+  // path silently change out from under it the moment agent #2 got added
+  // and multi-workspace mode kicked in for the first time.
+  return { list: [...workspaces], hasRegistry };
 }
 
 function startMultiWorkspaceDaemon(workspaces) {
@@ -1024,10 +1047,22 @@ function startMultiWorkspaceDaemon(workspaces) {
 
   for (const ws of workspaces) {
     const envOverrides = { ...process.env, AGENT_WORKSPACE: ws };
-    // Each workspace gets its own socket under its .agent/ dir
-    const sock = process.env.ENFORCER_SOCKET && workspaces.length === 1
-      ? process.env.ENFORCER_SOCKET
-      : path.join(ws, ".agent", "enforcer.sock");
+    // Each workspace gets its own socket under its .agent/ dir, named after
+    // the workspace's own directory name -- install.js already names each
+    // agent's nested workspace dir after its resolved agent name (identity
+    // file, or a real prompt, or the harness name), so the basename IS the
+    // agent name already. No separate naming step needed here; this just
+    // stops hardcoding the literal filename "enforcer.sock" for every
+    // single agent indistinguishably (drdeek, 2026-08-07: "how do you know
+    // if you have 12 agents running at the same time on one sock which one
+    // is doing what?"). Deliberately no "just one workspace, use the bare
+    // ENFORCER_SOCKET env var instead" special case: once this function
+    // runs at all (multi-workspace mode, forced by a real registry from
+    // agent #1 onward -- see resolveWorkspaces' hasRegistry), naming needs
+    // to be consistent regardless of how many agents happen to be
+    // registered THIS run. Without this, agent #1 would get a generic name
+    // now and silently change socket path the moment agent #2 showed up.
+    const sock = path.join(ws, ".agent", `${path.basename(ws)}.sock`);
 
     // Create a temporary Enforcer to read its config values
     const tmpEnforcer = new Enforcer();
@@ -1243,8 +1278,8 @@ class EnforcerWithConfig extends Enforcer {
 }
 
 // ─── Bootstrap ──────────────────────────────────────────────────────────────────
-const workspaces = resolveWorkspaces();
-if (workspaces.length > 1 || process.env.AGENT_WORKSPACES) {
+const { list: workspaces, hasRegistry } = resolveWorkspaces();
+if (workspaces.length > 1 || process.env.AGENT_WORKSPACES || hasRegistry) {
   // Multi-workspace mode
   startMultiWorkspaceDaemon(workspaces);
   console.log(`ACK Enforcer daemon v${ACK_VERSION} started in multi-workspace mode.`);
