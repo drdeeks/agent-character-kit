@@ -107,6 +107,27 @@ These are dumb pipes to the CORE. They do not enforce anything; they ask the dae
 
 Requires Node ≥ 18. (Python only needed if you use a Python-plugin companion such as the Hermes example — other companions need only Node.)
 
+### Recommended: one command, installs and walks you through setup
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/drdeeks/agent-character-kit/main/install.sh | bash
+```
+
+Installs the package, then lands you straight in the real interactive `ack configure` wizard — privilege mode (root/service-user/user), harness detection, workspace, whether to start the daemon now. Real sudo prompt if you pick root or service-user mode, in your own terminal, not hidden inside an npm lifecycle hook. `npm install -g` on its own never configures anything, by design — this script is a separate, explicit thing you're choosing to run that does install-then-configure as one guided flow instead of two commands.
+
+Non-interactive (CI, automation): forward flags straight through, e.g. `curl -fsSL .../install.sh | bash -s -- --yes --root`.
+
+### Manual: npm, then `ack configure` yourself
+
+```bash
+npm install -g @drdeeks/character-kit
+ack configure          # interactive wizard
+# or
+ack configure --yes    # non-interactive, sane defaults
+```
+
+### From source (contributing, or running a local checkout)
+
 ```bash
 git clone https://github.com/drdeeks/agent-character-kit.git
 cd agent-character-kit && cd node && npm install && cd ..
