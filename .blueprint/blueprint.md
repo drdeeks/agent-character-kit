@@ -2239,3 +2239,94 @@ the three real attribution categories (file/code reference, past-tense
 action, stated future effect) individually. 56/56 full suite passing,
 both new tests confirmed passing by name (`ok 36`, `ok 37`), not just by
 aggregate count.
+
+## CL-0012 — Real live root-mode teardown/reinstall, vectors-extra feature, postinstall removed
+
+```
+Date        : 2026-08-07 (evening)
+Contributor : claude-code-session
+Files Changed: node/bin/install.js, node/bin/ack.js, node/bin/preuninstall.js,
+               node/bin/postinstall.js (deleted), node/tests/install.test.js,
+               node/tests/postinstall.test.js (deleted), package.json,
+               .npmignore -> node/.npmignore, CHANGELOG.md
+Description : drdeek ran a real, full lockout-to-reinstall cycle on his own
+              machine tonight -- not simulated. In order:
+
+              1. Uploaded two artifacts (a 4-file tarball, and a full
+                 90MB repo tarball with .git) claiming to be a different,
+                 more robust ack-format/monitor system. Verified via git
+                 archaeology (exact-diff against every commit in this
+                 repo's history, plus the archived pre-rename
+                 agent-identity-kit repo) that both were real but stale
+                 snapshots from ~2026-07-11 to 07-16 -- same lineage, no
+                 unique content, safely superseded. Confirmed root
+                 (not node/) has been this project's real publish/install
+                 target since its very first published npm version
+                 (1.0.1) by downloading and inspecting the actual
+                 registry tarballs, not just reading package.json.
+              2. drdeek asked for a complete clean-slate teardown: all
+                 systemd units, processes, the npm global package, the
+                 workspace, and the Claude Code hook entries. Executed
+                 live -- and the daemon governing THIS session's own tool
+                 calls died mid-teardown (killing it was the intended
+                 last step), producing a real self-lockout identical in
+                 shape to KD-15/CL-0010's. Recovered via drdeek manually
+                 restarting a daemon from his own terminal (no
+                 self-recovery was possible from inside the lockout this
+                 time -- sudo needs a real terminal for a password, which
+                 a fail-closed session doesn't have).
+              3. Real global reinstall hit a genuine npm 11.18.0 quirk:
+                 an `allow-scripts` advisory warning that (confirmed by
+                 reading npm's own bundled source, not just its --help
+                 text) is unconditional in this release regardless of any
+                 config -- both of npm's own suggested fix commands are
+                 real and correctly documented for a FUTURE enforcing
+                 release, inert in this one. Also found and fixed a real,
+                 separate bug while chasing this: `.npmignore` had been at
+                 the repo root the whole time, which npm never reads --
+                 the actual package directory (node/, or root depending on
+                 which package.json is packing) needs its own copy. A live
+                 dev-session audit log had been shipping in every
+                 published tarball as a result.
+              4. drdeek asked for the vectors-extra feature (see the
+                 commits themselves for detail: dfe7da0, c8bdd03) --
+                 implemented, tested (8 new tests, all confirmed passing
+                 by name), packed, and installed from a real tarball for
+                 drdeek to test himself.
+              5. drdeek caught, live, that installing produced ZERO
+                 visible pointer message telling him what to run next --
+                 unlike every other npm CLI package. Root cause found via
+                 the postinstall script's own tmp fallback log (not
+                 guessed): the script genuinely ran correctly every time
+                 (proven by the log's own timestamps matching each real
+                 install), but npm's lifecycle-script stdout capture never
+                 reliably reached the real terminal, despite this file's
+                 own prior comment claiming (from earlier, less
+                 adversarial testing) that it usually does.
+              6. First fix: write straight to /dev/tty, bypassing npm's
+                 stdout pipe -- confirmed working by drdeek in his own
+                 real terminal (this session's own Bash tool has no
+                 controlling tty at all and could not verify its own fix).
+              7. drdeek's actual call, once the /dev/tty fix was proven to
+                 work: remove the postinstall script entirely rather than
+                 keep the workaround. Root-mode's real file generation
+                 (systemd units, root-owned dirs) already happens inside
+                 `ack configure`'s interactive flow via a real
+                 `spawnSync("sudo", [...], {stdio:"inherit"})` call --
+                 confirmed this was already true before touching anything,
+                 not assumed. Removing postinstall does not touch that
+                 path at all; it only removes the now-redundant install-
+                 time pointer message (redundant because `ack status`'s
+                 first-run nudge and bare `ack`'s own command listing
+                 cover the same ground) and, as a side effect, the
+                 package no longer declares ANY lifecycle script -- so
+                 npm's allow-scripts warning has nothing left to warn
+                 about, closing that complaint too, not just working
+                 around it.
+Tests Passing: 61/61 (64 minus the 3 postinstall-specific tests, which
+               were deleted along with the file they tested -- nothing
+               else broke)
+Rollback Ref : f9d5cb0 (/dev/tty fix, kept in history even though
+               superseded), then the postinstall-removal commit
+               immediately after this entry
+```

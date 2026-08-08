@@ -2,10 +2,14 @@
 /**
  * preuninstall.js — runs ONLY as npm's preuninstall lifecycle hook.
  *
- * Mirrors postinstall.js's own scoping guards exactly (MOD-004,
- * blueprint.md FEAT-003): whatever conditions cause postinstall.js to
- * configure something, the same conditions must cause this to consider
- * removing it, or the two hooks drift into asymmetric behavior over time.
+ * Uses the same scoping guards postinstall.js used to (MOD-004, blueprint.md
+ * FEAT-003) -- postinstall.js itself is gone now (removed 2026-08-07: it
+ * never configured anything anyway per MOD-005, only printed a pointer
+ * message, and npm never reliably streamed that message to the real
+ * terminal). What this actually reverses is whatever `ack configure` set
+ * up, so these guards -- is this a real global install, is this running
+ * from an actual node_modules tree -- still have to hold before touching
+ * anything.
  *
  * What it does when both guards hold:
  *   - Kills the daemon, monitor, and watchdog if they're actually running
@@ -171,7 +175,7 @@ function main() {
     return; // silent no-op -- local dev uninstall, or not global
   }
 
-  say("\n[agent-character-kit] preuninstall: reversing postinstall's effects...");
+  say("\n[agent-character-kit] preuninstall: reversing what `ack configure` set up...");
 
   const REPO = path.resolve(__dirname, "..", "..");
   const DAEMON_MARKER = path.join("node", "enforcer", "agent_enforcer_daemon.js");

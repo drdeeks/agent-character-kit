@@ -31,6 +31,50 @@ Append-only, newest entry on top. Never rewrite a past entry.
 end to end — no sudo access during development (see blueprint KD-17).
 Syntax-checked only; needs real verification with real sudo.
 
+**Update, later the same day:** the gap above is closed. drdeek ran a real
+root-mode deploy, a full teardown (systemd units, service processes, npm
+global package, workspace, Claude Code hooks — everything), and a fresh
+reinstall, all with real sudo. Found and fixed live during that pass:
+`deploy-agent-enforcer.sh` never installed the daemon's own npm
+dependencies (KD-18); `ack repair` checked only one socket before
+auto-activating a duplicate daemon (KD-20); `status` was silently gated
+behind `ACK_AUTH_TOKEN` even though a bare CLI invocation has no token of
+its own, which was the real reason KD-20's first fix looked like it didn't
+work (KD-26).
+
+**Also fixed, same day (post-install/uninstall UX, all found via drdeek's
+own live testing, not review):**
+- The acknowledgment grammar's "resonates true because X" closer read as
+  an abstract truth-claim, not attribution to real work — replaced with a
+  `<habit> <connector> <real work attribution>` structure; the reason must
+  now reference a real file/change, a past action actually taken, or a
+  stated future effect. Verified via full git archaeology that this
+  formula was described before but never actually implemented anywhere in
+  this project's history.
+- The Python companion's optional `vectors` extra (numpy +
+  sentence-transformers) is now a real opt-in prompt in `ack configure`,
+  only shown when the Python companion is actually selected; root mode
+  auto-runs the real `pip3 install` (with a PEP 668 `--break-system-packages`
+  retry) instead of only printing the command.
+- `.npmignore` had been sitting at the repo root the whole time, silently
+  inert — npm only reads an ignore file from the actual package directory
+  being packed (`node/`, or root depending on which `package.json` is in
+  play). A real dev-session audit log had been shipping in every published
+  tarball as a result. Moved to `node/.npmignore`, verified via a real
+  `npm pack --dry-run` before/after.
+- Removed the `postinstall` lifecycle script entirely. Its only job was
+  printing a pointer to `ack configure`, and npm never reliably streamed
+  that script's stdout to the real terminal — confirmed live: the script
+  genuinely ran (its own fallback log proved it), but nothing appeared in
+  the terminal. Tried writing straight to `/dev/tty` as a workaround; it
+  worked, but drdeek's call was to remove the script instead of carrying
+  that workaround forward — `ack status`'s existing first-run nudge (now
+  the primary path, not a fallback) and the command list `ack` itself
+  prints cover the same ground without a lifecycle script's stdout
+  reliability problems, and without triggering npm's separate (and, as of
+  npm 11.18.0, permanently unsuppressable in this release) `allow-scripts`
+  advisory warning at all.
+
 ## 1.3.0 — 2026-08-07
 
 **Changed:**

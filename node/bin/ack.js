@@ -862,11 +862,12 @@ program
       if (info.error) console.log(`    error: ${info.error}`);
       if (info.workspace) console.log(`    workspace: ${info.workspace}`);
     }
-    // Fallback nudge for anyone `npm install -g`'d this with lifecycle
-    // scripts disabled (--ignore-scripts, or an allow-scripts policy that
-    // denied it) -- postinstall.js normally handles setup automatically,
-    // but if it never ran, this is the next place a curious/confused user
-    // is likely to look.
+    // There is no postinstall script (removed 2026-08-07 -- npm never
+    // reliably streamed its stdout to the real terminal, and its only job
+    // was this exact pointer message anyway). This nudge, shown whenever
+    // nothing looks configured yet, is now the PRIMARY way anyone learns
+    // to run `ack configure` after installing, not a fallback for an edge
+    // case.
     if (Object.values(results).every((r) => !r.checked || !r.alive) && looksNeverConfigured()) {
       console.log(`\n${FIRST_RUN_NUDGE}`);
     }

@@ -31,10 +31,10 @@ import { normalizeHabitName, buildHabitYaml, VALID_LEVELS } from "../src/habits/
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root
-// Same test postinstall.js uses: a real global/packed install always lands
-// under some node_modules/ tree; a local dev checkout never does. Used to
-// stop telling someone "install the package" when this exact invocation is
-// already running from an installed copy -- reconfirmed live twice
+// A real global/packed install always lands under some node_modules/ tree;
+// a local dev checkout never does. Used to stop telling someone "install
+// the package" when this exact invocation is already running from an
+// installed copy -- reconfirmed live twice
 // tonight, 2026-08-07 (KD-19 item 4): the banner printed unconditionally
 // even right after `ack configure --yes` ran through the global binary.
 const IS_GLOBAL_INSTALL = __dirname.split(path.sep).includes("node_modules");
@@ -179,10 +179,11 @@ export function claudeSettingsPath() {
 
 // Single source of truth for harness auto-detection -- was duplicated
 // between install.js's --yes path (which had none, silently defaulting to
-// "generic") and postinstall.js's own copy (used only for the pointer
-// message, never reaching install.js after MOD-005/CL-0007 removed
-// postinstall's auto-configure branch). Exported so both call sites use
-// exactly one implementation.
+// "generic") and postinstall.js's own copy (used only for its pointer
+// message). postinstall.js is gone entirely now (removed 2026-08-07 --
+// npm never reliably streamed its stdout, and that pointer message was
+// its only job), but this stays the one real implementation regardless of
+// how many call sites ever need harness detection.
 export function detectHarnesses() {
   const home = os.homedir();
   const candidates = [
@@ -964,9 +965,8 @@ async function main(callerOpts) {
   // MOD-007 / FEAT-001 Rules: "a liveness check failure must be reported as
   // a failure, never silently downgraded to a warning." The per-harness
   // detail is already printed above (Liveness: FAILED, with which specific
-  // component); throwing here is what stops postinstall.js's catch-free
-  // success path (and `ack install`'s own CLI wrapper) from reporting
-  // overall success when it demonstrably isn't true.
+  // component); throwing here is what stops `ack configure`'s own CLI
+  // wrapper from reporting overall success when it demonstrably isn't true.
   const failedLiveness = summaries.filter((s) => s.liveness && !s.liveness.allAlive);
   if (failedLiveness.length) {
     throw new Error(
