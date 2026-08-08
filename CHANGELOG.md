@@ -94,6 +94,70 @@ config set` deliberately left alone — pure passthrough, no per-agent
 resolution to hook into). Still open: repair's selective per-agent
 healing, and real systemd/sudo verification of the whole chain.
 
+**Update, later the same day (7b0b703): fail-safe audit of every
+interactive prompt/flag in `install.js` + `ack.js`.** Triggered by drdeek
+live-catching the harness-selection menu silently wiring all detected
+harnesses on blank Enter with no visible warning (fixed earlier same day,
+6d08403). Same bug class found and fixed in 5 more places: the
+privilege-mode prompt (blank Enter used to default to `"1"`/root+sudo,
+the MOST privileged option — now requires explicit 1/2/3, no default at
+all); the "no harness detected" fallback (blank input silently picked
+`"generic"` with zero warning — now explains and requires a y/N
+confirmation); `configure --all` (despite its own "Everything"
+description, only ever installed ONE harness — now loops over all
+detected harnesses, matching `--yes`); `repair --reinstall` (overwrote
+existing habit files with zero confirmation — now lists exactly which
+files get clobbered and requires y/N, with a `--yes` escape hatch for
+scripted use); `--harness` help text (falsely implied cursor/gemini get
+the same auto-detection/auto-naming as claude/hermes/opencode — they
+don't, only hook generation). 103/103 Node + 4/4 Python passing.
+
+**Update, later the same day (8be35f6): root cause of a live root-mode
+install self-lockout, found and fixed.** drdeek ran a real root-mode
+install (claude harness) to test the audit above; it wired the
+PreToolUse/UserPromptSubmit hooks into his own live `~/.claude/settings.json`
+as designed, then every subsequent tool call in that same session started
+failing — `"Enforcer unavailable: enforcer socket not found"` — fail-closed
+by design, so killing the daemon or deleting the socket didn't help either;
+recovery required manually stripping the hook keys back out of
+`settings.json` (`jq del(.hooks.PreToolUse, .hooks.UserPromptSubmit)`).
+Root cause, found by reading the deploy script directly rather than
+guessing: `deploy-agent-enforcer.sh` correctly set up the socket's
+directory (`RUN_DIR`, setgid + the `ack-clients` client group) but a
+second, unrelated `install -d` on `$AGENT_WORKSPACE/.agent` — the same
+path as `RUN_DIR` in the current per-agent architecture — ran right after
+and silently clobbered it back to `root:$SERVICE_GROUP`/0750, no setgid.
+The socket always came up `root:root`, unreachable by the agent's own uid
+no matter how many times the client group was granted or the session
+restarted. Fixed: reordered the two `install -d` calls so `RUN_DIR`'s
+cross-uid setup always wins; added a daemon-side `chownSync`-to-client-group
+on every socket bind (`agent_enforcer_daemon.js`, new `secureSocketFile()`
+helper) as defense in depth, independent of directory-setgid semantics,
+threaded through via a new `ACK_CLIENT_GROUP` env var on the systemd unit.
+Also fixed in the same pass: the misleading error message itself
+(`client.js`'s `fs.existsSync()` pre-check swallowed every stat error —
+ENOENT, EACCES, anything — into the same generic "socket not found" text,
+which is why a real permission-denied got reported as a missing file and
+cost real diagnostic time; now connects directly and reports the real
+`err.code`); the install summary's false "daemon + monitor + watchdog
+already running via systemd" claim (never checked, and
+`deployRootIfNeeded()` never actually deployed `deploy-ack-services.sh` at
+all — acknowledgments silently never got credited; now actually deploys
+monitor/watchdog if not already active, checked via `systemctl is-active`,
+and reports real state either way); stale pre-multi-agent Workspace/Ack-log
+paths in the summary (ignored `inst.ws`, the correct per-agent path, in
+favor of `process.env.AGENT_WORKSPACE` or a hardcoded single-workspace
+fallback left over from before the per-agent redesign). Also trimmed the
+privilege-mode prompt from a 24-line wall of text repeating in full on
+every single run to 5 lines with the same real information, after drdeek
+called out over-explaining the least consequential part of the wizard
+while under-explaining what the install summary actually did — full detail
+pushed to AGENTS.md instead of inlined every time. 104/104 Node tests
+passing. Still open, unchanged from above: repair's selective per-agent
+healing, and a *fresh* real systemd/sudo verification of the corrected
+socket-permission code specifically (the bug above was found via a real
+systemd deploy; the fix itself has not yet been re-verified against one).
+
 ## 1.4.0 — 2026-08-07
 
 **Fixed (security-relevant):**

@@ -500,12 +500,13 @@ append-only, newest entry on top, never rewrite a past entry. History before
   2026-08-07) but doesn't yet selectively heal just that one** — its
   auto-activate logic still reasons about one workspace at a time, not "N
   registered agents, some subset unhealthy."
-- **The full multi-agent chain (registry, per-agent deploy, agent-aware
-  monitor) is proven against real spawned processes in the test suite, not
-  against actual systemd.** Everything in "One enforcer, many agents" above
-  is real, tested code — but nobody has run `deploy-agent-enforcer.sh`
-  twice for two different agents against a real systemd instance yet.
-  Needs a human with real sudo.
+- **The full multi-agent chain has now been run against real systemd once
+  (2026-08-07, root mode, one agent) — and it surfaced a real bug** (see the
+  socket-permission gap above), now fixed but not yet re-verified live.
+  Still not done: two different agents deployed against a real systemd
+  instance in the same run (only ever proven against real spawned
+  processes in the test suite for the 2-agent case). Needs a human with
+  real sudo.
 
 Resolved same day, no longer gaps: `ack config show/verify/write-env` all
 gained a `--agent <name>` option (registry-aware, verified live against a
@@ -520,14 +521,23 @@ check, same as the Node version's own proof.
 untangled for real (not just worked around): the enforcer script no
 longer writes or enables the monitor/watchdog units at all, since it
 never installed their binaries anyway — `deploy-ack-services.sh` is now
-the sole owner of those two units.
-- **No middle ground between user-mode and full root-mode.** Today it's
-  binary: same-UID user-mode (agent can kill/edit the daemon and its config
-  — a reminder, not a boundary) or literal root (agent can't touch it at
-  all). A dedicated non-root service account (e.g. a system user
-  `ack-enforcer` that owns the daemon + config, distinct from both the human
-  operator and the agent's own UID) would give real write-protection without
-  requiring full root privileges. Not built.
+the sole owner of those two units. Service-user-mode (a dedicated non-root
+`ack-enforcer` account, real write-protection without full root) is also
+already built — see "User-mode vs Service-user-mode vs Root-mode" above —
+this list previously had a stale bullet claiming it wasn't; removed
+2026-08-07 after checking the actual code, not just the old bullet's word.
+- **A real root-mode socket-permission bug was found and fixed 2026-08-07
+  (8be35f6), but the FIX itself hasn't been re-verified against a live
+  systemd deploy yet** — only the bug was (drdeek hit it live: a fresh
+  root-mode install locked this very session out of its own tool calls for
+  over an hour, because the socket came up `root:root` instead of
+  `root:ack-clients`, two independent `install -d` calls on the same
+  directory in `deploy-agent-enforcer.sh` silently fighting each other).
+  The reordering + daemon-side `chownSync` fix is unit-tested (104/104) and
+  code-reviewed, but needs a fresh `sudo bash deploy-agent-enforcer.sh` run
+  and a real `ls -la` on the resulting socket to confirm the group is
+  actually `ack-clients` before trusting it in production. See CHANGELOG
+  1.5.0's second "Update, later the same day" entry for the full trace.
 - **Socket.dev supply-chain scan not yet run against this repo.** `socket`
   CLI is installed but has never been authenticated in any environment this
   work happened in (`socket whoami` → 401 / `token: (not set)`) — every
