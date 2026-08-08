@@ -6,11 +6,14 @@
  * Node-only — Python stays purely optional, needed only for the Hermes
  * companion binding, never for this self-healing infrastructure itself.
  *
- * Watches the external ack log the companion writes. For each entry it
- * validates the `Habit: <name> <closer> <reason>` statement and credits it
- * to the DAEMON's hold ledger via the submit_ack RPC. Runs as a separate
- * process (ideally root-owned) so the agent cannot forge or disable
- * acknowledgments from inside its own process.
+ * One enforcer holds every agent (agent_enforcer_daemon.js's registry-backed
+ * multi-workspace mode); this monitor mirrors that -- ONE process, but it
+ * tracks every registered agent individually, tailing EACH agent's own ack
+ * log and crediting EACH agent's own socket. drdeek, 2026-08-07: "The
+ * monitor needs to keep track of the agents, the daemon is keeping track of
+ * tool calls... the watchdog make sure that the monitor and the daemon are
+ * always active." One monitor, not one per agent -- but genuinely aware of
+ * all of them, not blind to anything past the first.
  *
  * Self-healing: ack_watchdog.js revives this process if it dies.
  */
@@ -25,21 +28,70 @@ import os from "os";
 // /usr/local/lib/agent-character-kit/, with no node/src sibling present
 // there. Same reason python/hermes_plugin's ack_monitor.py inlines its own
 // _rpc() rather than importing the repo's Python client.
-function resolveSocket() {
+
+// Same registry-path priority as agent_enforcer_daemon.js's own
+// resolveWorkspaces() and ack.js's checkAllSockets() -- all three MUST
+// agree on which file is "the" registry, or the monitor could credit a
+// socket the daemon isn't actually listening on.
+function resolveRegistryPath() {
+  if (process.env.ACK_WORKSPACES_REGISTRY) return process.env.ACK_WORKSPACES_REGISTRY;
+  if (fs.existsSync("/var/lib/agent-character-kit/workspaces.json")) {
+    return "/var/lib/agent-character-kit/workspaces.json";
+  }
+  const homeBased = path.join(os.homedir() || "/root", ".agent-character-kit", "workspaces.json");
+  return fs.existsSync(homeBased) ? homeBased : null;
+}
+
+function legacySocket() {
   if (process.env.ENFORCER_SOCKET) return process.env.ENFORCER_SOCKET;
   const ws = process.env.AGENT_WORKSPACE;
   if (ws) return path.join(ws, ".agent", "enforcer.sock");
   return path.join(os.homedir() || "/root", ".agent-character-kit", "workspace", ".agent", "enforcer.sock");
 }
-const SOCKET_PATH = resolveSocket();
 
-function rpc(method, params) {
+// Returns the list of agents to tail. Registry-backed when one exists (root
+// / service-user mode, or any deploy that populated it); otherwise exactly
+// one "default" agent using the original env-var-based behavior, so a plain
+// single-workspace user-mode setup (which never creates a registry) is
+// completely unaffected by any of this.
+function resolveAgents() {
+  const registryPath = resolveRegistryPath();
+  if (registryPath) {
+    try {
+      const list = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+      if (Array.isArray(list) && list.length) {
+        return list
+          .filter((ws) => typeof ws === "string" && ws.trim())
+          .map((ws) => {
+            const resolved = path.resolve(ws.trim());
+            const name = path.basename(resolved);
+            return {
+              name,
+              ws: resolved,
+              sock: path.join(resolved, ".agent", `${name}.sock`),
+              ackLog: path.join(resolved, ".agent", "ack.jsonl"),
+              statePath: path.join(resolved, ".agent", `.${name}-monitor.pos`),
+            };
+          });
+      }
+    } catch { /* malformed registry -- fall through to legacy single-agent mode */ }
+  }
+  return [{
+    name: "default",
+    ws: process.env.AGENT_WORKSPACE || null,
+    sock: legacySocket(),
+    ackLog: process.env.ACK_ACK_LOG || "/tmp/agent-character-kit-ack.jsonl",
+    statePath: process.env.ACK_MONITOR_STATE || "/var/lib/agent-character-kit/ack-monitor.pos",
+  }];
+}
+
+function rpc(sock, method, params) {
   return new Promise((resolve) => {
     const payload = JSON.stringify({ method, params, token: process.env.ACK_AUTH_TOKEN }) + "\n";
-    const isTcp = SOCKET_PATH.startsWith("tcp://");
+    const isTcp = sock.startsWith("tcp://");
     const socket = isTcp
-      ? (() => { const u = new URL(SOCKET_PATH); return net.createConnection(parseInt(u.port, 10) || 8753, u.hostname || "127.0.0.1"); })()
-      : net.createConnection(SOCKET_PATH);
+      ? (() => { const u = new URL(sock); return net.createConnection(parseInt(u.port, 10) || 8753, u.hostname || "127.0.0.1"); })()
+      : net.createConnection(sock);
     let data = "";
     const timeout = setTimeout(() => { socket.destroy(); resolve(null); }, 5000);
     socket.on("connect", () => socket.write(payload));
@@ -55,49 +107,50 @@ function rpc(method, params) {
   });
 }
 
-const ACK_LOG = process.env.ACK_ACK_LOG || "/tmp/agent-character-kit-ack.jsonl";
 const PIDFILE = process.env.ACK_MONITOR_PID || "/var/lib/agent-character-kit/ack-monitor.pid";
-const STATE = process.env.ACK_MONITOR_STATE || "/var/lib/agent-character-kit/ack-monitor.pos";
 
-function log(msg) {
-  console.log(`${new Date().toISOString()} [ack-monitor] ${msg}`);
+function log(agentName, msg) {
+  console.log(`${new Date().toISOString()} [ack-monitor:${agentName}] ${msg}`);
 }
-function logError(msg) {
-  console.error(`${new Date().toISOString()} [ack-monitor] ${msg}`);
+function logError(agentName, msg) {
+  console.error(`${new Date().toISOString()} [ack-monitor:${agentName}] ${msg}`);
 }
 
-function readPos() {
+function readPos(statePath) {
   try {
-    if (fs.existsSync(STATE)) {
-      const [ino, off] = fs.readFileSync(STATE, "utf8").trim().split(/\s+/).map(Number);
+    if (fs.existsSync(statePath)) {
+      const [ino, off] = fs.readFileSync(statePath, "utf8").trim().split(/\s+/).map(Number);
       return { ino, off };
     }
   } catch { /* best-effort */ }
   return { ino: null, off: 0 };
 }
 
-function writePos(ino, off) {
+function writePos(statePath, ino, off) {
   try {
-    fs.mkdirSync(path.dirname(STATE), { recursive: true });
-    fs.writeFileSync(STATE, `${ino} ${off}`);
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    fs.writeFileSync(statePath, `${ino} ${off}`);
   } catch { /* best-effort */ }
 }
 
-async function tail() {
-  if (!fs.existsSync(ACK_LOG)) return;
+// Tails ONE agent's own ack log and credits ONE agent's own socket. Never
+// touches another agent's state -- each agent's tail position, log, and
+// socket are entirely independent, so one agent's acks can never be
+// misattributed to another's hold ledger.
+async function tailAgent(agent) {
+  if (!fs.existsSync(agent.ackLog)) return;
   let st;
   try {
-    st = fs.statSync(ACK_LOG);
+    st = fs.statSync(agent.ackLog);
   } catch {
     return;
   }
-  let { ino: lastIno, off } = readPos();
-  // Log rotated (inode changed) -> re-read from start.
-  if (lastIno !== st.ino) off = 0;
+  let { ino: lastIno, off } = readPos(agent.statePath);
+  if (lastIno !== st.ino) off = 0; // rotated -> re-read from start
 
   let fd;
   try {
-    fd = fs.openSync(ACK_LOG, "r");
+    fd = fs.openSync(agent.ackLog, "r");
     const size = st.size;
     if (off > size) off = 0; // truncated
     const buf = Buffer.alloc(size - off);
@@ -115,21 +168,21 @@ async function tail() {
       const statement = entry.statement;
       const session = entry.session_id || "default";
       if (!statement) continue;
-      const res = await rpc("submit_ack", { session_id: session, statement });
+      const res = await rpc(agent.sock, "submit_ack", { session_id: session, statement });
       if (res && res.ok) {
-        log(`credited ack for ${session} (acked=${res.acked})`);
+        log(agent.name, `credited ack for ${session} (acked=${res.acked})`);
       } else {
-        logError(`ack rejected for ${session}: ${(res && res.error) || "unknown error"}`);
+        logError(agent.name, `ack rejected for ${session}: ${(res && res.error) || "unknown error"}`);
       }
     }
     off = size;
   } catch (exc) {
-    logError(`tail error: ${exc.message}`);
+    logError(agent.name, `tail error: ${exc.message}`);
     return;
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
   }
-  writePos(st.ino, off);
+  writePos(agent.statePath, st.ino, off);
 }
 
 async function main() {
@@ -137,15 +190,24 @@ async function main() {
     fs.mkdirSync(path.dirname(PIDFILE), { recursive: true });
     fs.writeFileSync(PIDFILE, String(process.pid));
   } catch (exc) {
-    logError(`could not write pidfile ${PIDFILE}: ${exc.message}`);
+    console.error(`could not write pidfile ${PIDFILE}: ${exc.message}`);
   }
-  log(`ack monitor started (log=${ACK_LOG})`);
+  const startupAgents = resolveAgents();
+  console.log(`${new Date().toISOString()} [ack-monitor] started, tracking ${startupAgents.length} agent(s): ${startupAgents.map((a) => a.name).join(", ")}`);
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    try {
-      await tail();
-    } catch (exc) {
-      logError(`unexpected: ${exc.message}`);
+    // Re-resolved every tick, not just at startup: a new agent registered
+    // after this monitor started (deploy-agent-enforcer.sh restarts the
+    // enforcer + monitor when that happens, but re-reading here as well
+    // means a manual registry edit or a restart race still gets picked up
+    // on the very next tick rather than needing yet another restart).
+    const agents = resolveAgents();
+    for (const agent of agents) {
+      try {
+        await tailAgent(agent);
+      } catch (exc) {
+        logError(agent.name, `unexpected: ${exc.message}`);
+      }
     }
     await new Promise((r) => setTimeout(r, 1000));
   }

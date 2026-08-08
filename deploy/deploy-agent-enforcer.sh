@@ -43,6 +43,15 @@ ENFORCER_SOCKET="${ENFORCER_SOCKET:-/run/agent-enforcer/main.sock}"
 INSTALL_BIN="${ACK_INSTALL_BIN:-/usr/local/bin/agent-enforcer-daemon}"
 RUN_DIR="$(dirname "$ENFORCER_SOCKET")"
 VAR_DIR="$(dirname "$AGENT_WORKSPACE")"
+# Fixed, independent of AGENT_WORKSPACE's nesting depth -- deliberately NOT
+# derived from $VAR_DIR (dirname of AGENT_WORKSPACE). With agents nested
+# under workspace/agents/<name>/, $VAR_DIR would resolve to
+# .../workspace/agents, one level off from where agent_enforcer_daemon.js's
+# resolveWorkspaces() and ack.js's checkAllSockets() both actually default
+# to looking (/var/lib/agent-character-kit/workspaces.json) whenever
+# ACK_WORKSPACES_REGISTRY isn't explicitly set -- which is the normal case
+# for a human just running `ack status` by hand, not through systemd's env.
+ACK_VAR_ROOT="${ACK_VAR_ROOT:-/var/lib/agent-character-kit}"
 LOG_DIR="${ACK_LOG_DIR:-/var/log/agent-character-kit}"
 
 # Privilege model inputs.
@@ -199,7 +208,8 @@ chmod 0755 "$INSTALL_BIN"
 #    them... the enforcer service at root gets additional socks added to
 #    it"). Idempotent: re-running this script for the same AGENT_WORKSPACE
 #    (a redeploy) doesn't duplicate the entry.
-REGISTRY="$VAR_DIR/workspaces.json"
+REGISTRY="$ACK_VAR_ROOT/workspaces.json"
+install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$ACK_VAR_ROOT"
 REGISTRY_HAD_OTHER_ENTRIES=false
 if [ -f "$REGISTRY" ]; then
   if "$NODE_BIN" -e "

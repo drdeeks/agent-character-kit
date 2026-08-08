@@ -39,6 +39,21 @@ sed -e "s/^User=root$/User=$SERVICE_USER/" -e "s/^Group=root$/Group=$SERVICE_GRO
   "$SRC_DIR/deploy/agent-character-monitor.service" > /etc/systemd/system/agent-character-monitor.service
 sed -e "s/^User=root$/User=$SERVICE_USER/" -e "s/^Group=root$/Group=$SERVICE_GROUP/" \
   "$SRC_DIR/deploy/agent-character-watchdog.service" > /etc/systemd/system/agent-character-watchdog.service
+# Same registry path deploy-agent-enforcer.sh writes to (ACK_VAR_ROOT there,
+# same default here) -- this script runs SECOND per the documented 2-step
+# flow and would otherwise silently overwrite whatever registry env line
+# that script already set, since both scripts independently manage these
+# same two unit files. Real duplication between the two scripts, not fixed
+# here -- this keeps them from actively fighting each other in the
+# meantime.
+ACK_VAR_ROOT="${ACK_VAR_ROOT:-/var/lib/agent-character-kit}"
+for unit in agent-character-monitor.service agent-character-watchdog.service; do
+  if ! grep -q "^Environment=ACK_WORKSPACES_REGISTRY=" "/etc/systemd/system/$unit"; then
+    sed -i "/^\[Service\]/a Environment=ACK_WORKSPACES_REGISTRY=$ACK_VAR_ROOT/workspaces.json" "/etc/systemd/system/$unit"
+  else
+    sed -i "s|^Environment=ACK_WORKSPACES_REGISTRY=.*|Environment=ACK_WORKSPACES_REGISTRY=$ACK_VAR_ROOT/workspaces.json|" "/etc/systemd/system/$unit"
+  fi
+done
 chown root:root /etc/systemd/system/agent-character-monitor.service /etc/systemd/system/agent-character-watchdog.service
 chmod 0644 /etc/systemd/system/agent-character-monitor.service /etc/systemd/system/agent-character-watchdog.service
 
