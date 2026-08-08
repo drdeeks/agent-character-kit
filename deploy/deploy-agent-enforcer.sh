@@ -106,44 +106,45 @@ fi
 # only ever needs the socket, never direct file access (it's a thin RPC
 # client, not a filesystem consumer of the workspace).
 #
-# WRONG PREVIOUSLY, in two stages, both found live: this used to derive the
-# cross-uid directory from RUN_DIR="$(dirname "$ENFORCER_SOCKET")" instead
-# of $AGENT_WORKSPACE/.agent directly, on the assumption the two paths
-# always coincide in the current per-agent architecture. That's only true
-# if ENFORCER_SOCKET happens to be explicitly set to match -- nothing in
-# the real call chain (install.js's deployRootIfNeeded, this script's own
-# `ENFORCER_SOCKET="${ENFORCER_SOCKET:-/run/agent-enforcer/main.sock}"`
-# default) ever does that, so RUN_DIR was actually /run/agent-enforcer --
-# a directory the daemon never even looks at once a registry exists
-# (agent_enforcer_daemon.js's resolveWorkspaces() sets hasRegistry=true,
-# which unconditionally routes to startMultiWorkspaceDaemon(), which
-# computes each socket path from the workspace itself and never reads
-# ENFORCER_SOCKET at all). First fix (2026-08-07, reordering the two
-# install -d calls so RUN_DIR's settings "win") was solving a real
-# clobbering bug but at the wrong path, so it never actually took effect --
-# confirmed live 2026-08-08 (fresh daemon restart, socket still root:root).
-# Fixed for real by dropping RUN_DIR from this decision entirely and
-# applying the cross-uid setup directly, unconditionally, to
-# $AGENT_WORKSPACE/.agent -- which this script itself guarantees is the
-# real socket location, since it always registers the workspace into the
-# shared registry a few lines above this.
-# $VAR_DIR and $AGENT_WORKSPACE are ancestors of the socket -- `ls`/connect/
-# open() on anything beneath a directory needs EXECUTE (traversal) on every
-# directory in the path, not just permission on the final file. These two
-# were group=$SERVICE_GROUP (root in root-mode) mode 0750, so a client in
-# CLIENT_GROUP but not SERVICE_GROUP had a flat `---` on both and could
-# never even reach $AGENT_WORKSPACE/.agent, regardless of how correctly
-# THAT directory and the socket file itself were set up. Found live,
-# 2026-08-08, immediately after the previous fix: plain `ls` (no sudo)
-# still failed with EACCES even though `sudo ls -la` on the socket file
-# itself showed the correct root:ack-clients ownership -- group was right,
-# traversal wasn't. Fixed with `0710` (owner rwx, group --x, other ---):
-# CLIENT_GROUP gets bare pass-through, no read/write, can't list contents
-# or touch anything else in these directories -- same "the agent only ever
-# needs the socket, never direct file access" boundary as before, just
-# actually reachable now.
-install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 0710 "$VAR_DIR"
-install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 0710 "$AGENT_WORKSPACE"
+# `ls`/connect/open() on anything beneath a directory needs EXECUTE
+# (traversal) on EVERY directory in the path, not just permission on the
+# final file -- and $AGENT_WORKSPACE is nested arbitrarily deep under
+# $ACK_VAR_ROOT (install.js's rootAgentWorkspace() always produces
+# $ACK_VAR_ROOT/workspace/agents/<name>, three levels down). Wrong three
+# times in a row tonight, each attempt fixing a real but incomplete subset:
+# (1) derived the cross-uid dir from RUN_DIR="$(dirname "$ENFORCER_SOCKET")",
+# which the daemon never even reads once a registry exists (it routes to
+# startMultiWorkspaceDaemon(), which computes sockets from the workspace
+# itself); (2) fixed $VAR_DIR (dirname of $AGENT_WORKSPACE, i.e. just ONE
+# level up) and $AGENT_WORKSPACE directly, but left $ACK_VAR_ROOT itself
+# untouched -- a SEPARATE, higher ancestor two levels further up when
+# $AGENT_WORKSPACE is nested this deep, confirmed live via
+# `namei -l .../claude.sock`: blocked at $ACK_VAR_ROOT
+# (/var/lib/agent-character-kit) before traversal even reached $VAR_DIR.
+# Fixed for real: walk EVERY directory level from $ACK_VAR_ROOT down to
+# $AGENT_WORKSPACE (inclusive), granting the client group bare traversal
+# (0710: owner rwx, group --x, other none -- no read, can't list contents
+# or touch anything else) at each one, regardless of how many levels of
+# nesting there are. Falls back to just fixing $AGENT_WORKSPACE's immediate
+# parent if it somehow isn't nested under $ACK_VAR_ROOT at all (an
+# unsupported override, not the real deployment shape), rather than ever
+# touching an unrelated system directory.
+install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 0710 "$ACK_VAR_ROOT"
+case "$AGENT_WORKSPACE" in
+  "$ACK_VAR_ROOT"/*)
+    rel="${AGENT_WORKSPACE#"$ACK_VAR_ROOT"/}"
+    cur="$ACK_VAR_ROOT"
+    IFS='/' read -ra _parts <<< "$rel"
+    for _part in "${_parts[@]}"; do
+      cur="$cur/$_part"
+      install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 0710 "$cur"
+    done
+    ;;
+  *)
+    install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 0710 "$VAR_DIR"
+    install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 0710 "$AGENT_WORKSPACE"
+    ;;
+esac
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$LOG_DIR"
 install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$INSTALL_LIB"
 install -d -o "$SERVICE_USER" -g "$CLIENT_GROUP" -m 2750 "$AGENT_WORKSPACE/.agent"
@@ -179,7 +180,15 @@ if [ ! -f "$AGENT_WORKSPACE/.agent/enforcer.yaml" ]; then
 # Set an `allow:` list to flip to default-deny. `deny:` is always enforced.
 YAML
 fi
-chown -R "$SERVICE_USER:$SERVICE_GROUP" "$AGENT_WORKSPACE/.agent"
+# NOT -R: a recursive chown here would reset the .agent DIRECTORY itself
+# back to $SERVICE_GROUP, undoing its CLIENT_GROUP+setgid setup from above
+# (a landmine found live, 2026-08-08 -- didn't trigger in that test only
+# because $VAR_DIR/$AGENT_WORKSPACE blocked traversal first; would have
+# been the next blocker once those were fixed). Only the two files this
+# step just wrote need root-only ownership -- the agent must never be able
+# to edit its own constraints (line ~153) -- the directory's own group
+# stays exactly as line ~149 set it.
+chown "$SERVICE_USER:$SERVICE_GROUP" "$AGENT_WORKSPACE/.agent/constitution.yaml" "$AGENT_WORKSPACE/.agent/enforcer.yaml"
 chmod 0640 "$AGENT_WORKSPACE/.agent/constitution.yaml" "$AGENT_WORKSPACE/.agent/enforcer.yaml"
 
 # Seed habits from the repo's example workspace (single source of habit files).
@@ -244,7 +253,12 @@ chmod 0755 "$INSTALL_BIN"
 #    it"). Idempotent: re-running this script for the same AGENT_WORKSPACE
 #    (a redeploy) doesn't duplicate the entry.
 REGISTRY="$ACK_VAR_ROOT/workspaces.json"
-install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 "$ACK_VAR_ROOT"
+# $ACK_VAR_ROOT already created above (CLIENT_GROUP/0710, needed for socket
+# traversal) -- NOT re-created here. This used to redundantly `install -d`
+# it again with $SERVICE_GROUP/0750, clobbering that setup back to
+# unreachable every single deploy (found live, 2026-08-08, same session as
+# the traversal fix itself -- this was the reason that fix appeared not to
+# work on the very next test).
 "$NODE_BIN" -e "
   const fs = require('fs');
   const path = process.argv[1];
