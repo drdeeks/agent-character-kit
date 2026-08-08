@@ -125,6 +125,22 @@ function readWorkspacesRegistry() {
   return { registryPath: null, agents: [] };
 }
 
+// Looks up one registered agent by name (its workspace dir's own basename,
+// same as what resolveAgentName() in agent-identity.js assigned it at
+// deploy time) and returns its resolved paths -- used by `ack config
+// show/verify/write-env --agent <name>` to target a specific agent instead
+// of the single default workspace.
+function resolveAgentByName(name) {
+  const { agents } = readWorkspacesRegistry();
+  const match = agents.find((ws) => path.basename(ws) === name);
+  if (!match) return null;
+  return {
+    ws: match,
+    sock: path.join(match, ".agent", `${name}.sock`),
+    ackLog: path.join(match, ".agent", "ack.jsonl"),
+  };
+}
+
 async function checkAllSockets() {
   const results = {};
   const candidates = [
@@ -817,7 +833,20 @@ const configCmd = program
 configCmd
   .command("show")
   .description("Show resolved configuration paths")
-  .action(() => {
+  .option("--agent <name>", "Show a specific registered agent's config instead of the default single workspace")
+  .action((opts) => {
+    if (opts.agent) {
+      const agent = resolveAgentByName(opts.agent);
+      if (!agent) {
+        console.error(`No registered agent named '${opts.agent}'. Run 'ack config show' with no --agent to see the registry.`);
+        process.exit(1);
+      }
+      console.log(`Agent: ${opts.agent}`);
+      console.log("AGENT_WORKSPACE:", agent.ws);
+      console.log("ENFORCER_SOCKET:", agent.sock);
+      console.log("ACK_ACK_LOG:", agent.ackLog);
+      return;
+    }
     console.log("AGENT_WORKSPACE:", resolveWorkspace());
     console.log("ENFORCER_SOCKET:", resolveSocket());
     console.log("ACK_ACK_LOG:", resolveAckLog());
@@ -826,25 +855,55 @@ configCmd
     for (const key of ["AGENT_WORKSPACE", "ENFORCER_SOCKET", "ACK_ACK_LOG", "ACK_HABITS_DIR"]) {
       console.log(`  ${key}: ${process.env[key] || "(unset — using default)"}`);
     }
+    const { registryPath, agents } = readWorkspacesRegistry();
+    if (registryPath) {
+      console.log("");
+      console.log(`Registered agents (${agents.length}, registry: ${registryPath}):`);
+      for (const ws of agents) {
+        console.log(`  ${path.basename(ws)}  ->  ${ws}`);
+      }
+      console.log("Use --agent <name> to show that agent's resolved paths specifically.");
+    }
   });
 
 configCmd
   .command("verify")
   .description("Verify all paths exist and daemon is reachable")
-  .action(async () => {
-    const ws = resolveWorkspace();
-    const habitsDir = path.join(ws, ".agent", "habits");
-    const constitution = path.join(ws, ".agent", "constitution.yaml");
-    const sock = resolveSocket();
-    const ackLogPath = resolveAckLog();
+  .option("--agent <name>", "Verify a specific registered agent instead of every registered agent (or the default single workspace, if none are registered)")
+  .action(async (opts) => {
+    const verifyOne = async (ws, sock, ackLogPath, label) => {
+      if (label) console.log(`\n=== ${label} ===`);
+      const habitsDir = path.join(ws, ".agent", "habits");
+      const constitution = path.join(ws, ".agent", "constitution.yaml");
+      console.log("Workspace:", ws, fs.existsSync(ws) ? "✓" : "✗");
+      console.log("  habits:", fs.existsSync(habitsDir) ? "✓" : "✗");
+      console.log("  constitution:", fs.existsSync(constitution) ? "✓" : "✗");
+      console.log("Socket:", sock);
+      const daemon = await checkDaemon(sock);
+      console.log("  daemon:", daemon.alive ? "✓ reachable" : `✗ ${daemon.error || "unreachable"}`);
+      console.log("Ack log:", ackLogPath, fs.existsSync(ackLogPath) ? "✓" : "✗");
+    };
 
-    console.log("Workspace:", ws, fs.existsSync(ws) ? "✓" : "✗");
-    console.log("  habits:", fs.existsSync(habitsDir) ? "✓" : "✗");
-    console.log("  constitution:", fs.existsSync(constitution) ? "✓" : "✗");
-    console.log("Socket:", sock);
-    const daemon = await checkDaemon(sock);
-    console.log("  daemon:", daemon.alive ? "✓ reachable" : `✗ ${daemon.error || "unreachable"}`);
-    console.log("Ack log:", ackLogPath, fs.existsSync(ackLogPath) ? "✓" : "✗");
+    if (opts.agent) {
+      const agent = resolveAgentByName(opts.agent);
+      if (!agent) {
+        console.error(`No registered agent named '${opts.agent}'.`);
+        process.exit(1);
+      }
+      await verifyOne(agent.ws, agent.sock, agent.ackLog, null);
+      return;
+    }
+
+    const { registryPath, agents } = readWorkspacesRegistry();
+    if (registryPath && agents.length) {
+      for (const ws of agents) {
+        const name = path.basename(ws);
+        await verifyOne(ws, path.join(ws, ".agent", `${name}.sock`), path.join(ws, ".agent", "ack.jsonl"), `agent: ${name}`);
+      }
+      return;
+    }
+    // No registry -- original single-workspace behavior, unchanged.
+    await verifyOne(resolveWorkspace(), resolveSocket(), resolveAckLog(), null);
   });
 
 configCmd
@@ -871,14 +930,26 @@ configCmd
   .command("write-env")
   .description("Write resolved .env to file")
   .argument("[file]", "Output file path (default: workspace/.env)")
-  .action((file) => {
-    const target = file
-      ? path.resolve(file)
-      : path.join(resolveWorkspace(), ".env");
+  .option("--agent <name>", "Write a specific registered agent's .env instead of the default single workspace")
+  .action((file, opts) => {
+    let ws, sock, ackLogPath;
+    if (opts.agent) {
+      const agent = resolveAgentByName(opts.agent);
+      if (!agent) {
+        console.error(`No registered agent named '${opts.agent}'.`);
+        process.exit(1);
+      }
+      ({ ws, sock, ackLog: ackLogPath } = agent);
+    } else {
+      ws = resolveWorkspace();
+      sock = resolveSocket();
+      ackLogPath = resolveAckLog();
+    }
+    const target = file ? path.resolve(file) : path.join(ws, ".env");
     const lines = [
-      `AGENT_WORKSPACE=${resolveWorkspace()}`,
-      `ENFORCER_SOCKET=${resolveSocket()}`,
-      `ACK_ACK_LOG=${resolveAckLog()}`,
+      `AGENT_WORKSPACE=${ws}`,
+      `ENFORCER_SOCKET=${sock}`,
+      `ACK_ACK_LOG=${ackLogPath}`,
     ];
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, lines.join("\n") + "\n");
