@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # it) but kept for parity with the Node side's ACK_VERSION. Was stuck at
 # 1.2.1 while the other 4 "bump together" files had already moved to 1.5.0
 # -- corrected 2026-08-12.
-ACK_VERSION = "1.5.0"
+ACK_VERSION = "1.6.0"
 
 # Optional env escape hatch: set ACK_DISABLE=1 to turn the plugin into a
 # no-op (never use in production — it defeats the purpose).
