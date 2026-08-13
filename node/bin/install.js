@@ -1186,7 +1186,7 @@ async function main(callerOpts) {
     console.log("Workspace:     ", s.absWs);
     console.log("Socket:        ", s.sock);
     console.log("Ack log:       ", s.ackLog);
-    console.log("Daemon pid:    ", s.daemonPid ?? "(not started)");
+    console.log("Daemon pid:    ", String(s.daemonPid ?? "(not started)"));
     console.log("Companion:     ", s.companionMsg);
     console.log("Monitor/Watch: ", s.monitorMsg);
     if (s.liveness) {
