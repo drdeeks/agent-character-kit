@@ -861,7 +861,7 @@ async function main(callerOpts) {
           const found = discoverAgentWorkspaces(scanRoot);
           if (found.length === 0) {
             console.log(`No SOUL.md / .agent/constitution.yaml found under ${scanRoot}.`);
-            hWs = await ask(rl, "Workspace path", path.join(os.homedir(), ".agent-character-kit", h));
+            hWs = await ask(rl, "Workspace path", opts.workspace || path.join(os.homedir(), ".agent-character-kit", h));
           } else {
             console.log("Found:");
             found.forEach((f, i) => console.log(`  ${i + 1}) ${f.dir}  (${f.marker})`));
@@ -870,7 +870,7 @@ async function main(callerOpts) {
             hWs = (!Number.isNaN(idx) && found[idx - 1]) ? found[idx - 1].dir : pick;
           }
         } else {
-          hWs = await ask(rl, "Workspace path", path.join(os.homedir(), ".agent-character-kit", h));
+          hWs = await ask(rl, "Workspace path", opts.workspace || path.join(os.homedir(), ".agent-character-kit", h));
         }
         hWs = path.resolve(hWs);
         if (!firstNonRootWs) firstNonRootWs = hWs;

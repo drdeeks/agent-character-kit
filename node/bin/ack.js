@@ -21,9 +21,10 @@ import { EnforcerClient } from "../src/enforcer/client.js";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import { normalizeHabitName, buildHabitYaml, VALID_LEVELS } from "../src/habits/build.js";
+import { buildAgentList, parseMainMenuChoice, parseAgentMenuChoice } from "../src/manage-menu.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -177,6 +178,22 @@ async function checkAllSockets() {
   return { results, registryPath };
 }
 
+// Shared by `ack config verify` and `ack manage`'s per-agent status view --
+// one real implementation instead of two that can drift.
+async function verifyAgentReport(ws, sock, ackLogPath, label) {
+  if (label) console.log(`\n=== ${label} ===`);
+  const habitsDir = path.join(ws, ".agent", "habits");
+  const constitution = path.join(ws, ".agent", "constitution.yaml");
+  console.log("Workspace:", ws, fs.existsSync(ws) ? "✓" : "✗");
+  console.log("  habits:", fs.existsSync(habitsDir) ? "✓" : "✗");
+  console.log("  constitution:", fs.existsSync(constitution) ? "✓" : "✗");
+  console.log("Socket:", sock);
+  const daemon = await checkDaemon(sock);
+  console.log("  daemon:", daemon.alive ? "✓ reachable" : `✗ ${daemon.error || "unreachable"}`);
+  console.log("Ack log:", ackLogPath, fs.existsSync(ackLogPath) ? "✓" : "✗");
+  return { daemonAlive: daemon.alive };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Utility
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -292,6 +309,241 @@ function isWorkspaceActive(workspace) {
   const habitsDir = path.join(workspace, ".agent", "habits");
   if (!fs.existsSync(habitsDir)) return false;
   return fs.readdirSync(habitsDir).some(f => f.endsWith(".yaml"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  `ack manage` -- daemon control helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// User-mode agents each run their own daemon process -- start/stop is a
+// direct spawn/kill (reviveDaemon/killDaemonPid above), same as `ack
+// repair --auto-activate`. Root-mode agents share ONE systemd-managed
+// daemon (agent-enforcer.service, deploy-agent-enforcer.sh) serving every
+// registered agent through the registry -- there is no per-agent process to
+// start/stop there, so "start/stop/restart" for a root-mode agent is a
+// systemctl call that affects EVERY root-mode agent at once. The menu says
+// so before running it rather than implying it's scoped to just the one
+// selected agent.
+
+function daemonPidForWorkspace(ws) {
+  const match = findEnforcerDaemons().find((d) => d.workspace === ws);
+  return match ? match.pid : null;
+}
+
+function stopUserDaemon(ws) {
+  const pid = daemonPidForWorkspace(ws);
+  if (!pid) return false;
+  return killDaemonPid(pid);
+}
+
+function systemctlDaemon(action) {
+  console.log(`\nRunning: sudo systemctl ${action} agent-enforcer.service`);
+  console.log("(shared by every root-mode agent -- you may be prompted for your sudo password)\n");
+  const result = spawnSync("sudo", ["systemctl", action, "agent-enforcer.service"], { stdio: "inherit" });
+  return !result.error && result.status === 0;
+}
+
+// Polls the socket instead of trusting a spawned pid or a systemctl exit
+// code -- both can report "started" while the process dies moments later
+// (missing constitution.yaml, port conflict, etc). 5 attempts / 250ms each,
+// well inside the client's own request timeout, so a genuine failure isn't
+// masked by a slower unrelated timeout firing first (same shape as
+// install.js's verifyLiveness()).
+async function reportDaemonLiveness(sock) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const result = await checkDaemon(sock);
+    if (result.alive) {
+      console.log("Confirmed alive.");
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const final = await checkDaemon(sock);
+  console.log(`Did NOT come up: ${final.error || "still unreachable"} -- check the workspace has a constitution.yaml (ack doctor / ack repair).`);
+  return false;
+}
+
+// Removes a workspace from the registry file (user-mode registries under
+// $HOME are directly writable; root-mode ones under /var/lib need sudo --
+// EACCES is reported back rather than crashed on). Mirrors
+// _registerWorkspace()'s own registry-file shape in
+// agent_enforcer_daemon.js so both directions of the same operation agree
+// on format. The daemon holds its workspace list in memory from when it
+// started, so this alone doesn't stop it serving the removed agent until
+// it's restarted -- callers are expected to say so.
+function removeAgentFromRegistry(registryPath, ws) {
+  try {
+    const list = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+    const next = Array.isArray(list) ? list.filter((w) => w !== ws) : [];
+    fs.writeFileSync(registryPath, JSON.stringify(next, null, 2) + "\n");
+    return { ok: true, remaining: next.length };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  `ack manage` -- interactive menu
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function runManage() {
+  while (true) {
+    const { registryPath, agents: registryAgents } = readWorkspacesRegistry();
+    const agents = buildAgentList({
+      registryPath,
+      registryAgents,
+      defaultWs: resolveWorkspace(),
+      defaultSock: resolveSocket(),
+      defaultAckLog: resolveAckLog(),
+    });
+
+    console.log("\n=== Agent Character Kit — Manage ===\n");
+    for (let i = 0; i < agents.length; i++) {
+      const a = agents[i];
+      const daemon = await checkDaemon(a.sock);
+      const state = daemon.alive ? "🟢 alive" : "🔴 dead";
+      console.log(`  ${i + 1}) ${a.name.padEnd(20)} ${state}   ${a.ws}`);
+    }
+    console.log(`  A) Add new agent (runs 'ack configure')`);
+    console.log(`  R) Refresh`);
+    console.log(`  Q) Quit`);
+
+    const raw = await ask("\nChoice: ");
+    const choice = parseMainMenuChoice(raw, agents.length);
+
+    if (choice.action === "quit") return;
+    if (choice.action === "refresh") continue;
+    if (choice.action === "invalid") {
+      console.log(`"${choice.raw}" isn't a valid choice.`);
+      continue;
+    }
+    if (choice.action === "add") {
+      spawnSync(process.execPath, [SELF, "configure"], { stdio: "inherit" });
+      continue;
+    }
+    // select
+    await runAgentMenu(agents[choice.index]);
+  }
+}
+
+async function runAgentMenu(agent) {
+  while (true) {
+    console.log(`\n=== agent: ${agent.name} ${agent.rootMode ? "(root-mode, shared daemon)" : "(user-mode)"} ===`);
+    console.log("Workspace:", agent.ws);
+    console.log("Socket:", agent.sock);
+    const daemon = await checkDaemon(agent.sock);
+    console.log("Daemon:", daemon.alive ? "🟢 alive" : "🔴 dead");
+    const habits = listHabitsForWorkspace(agent.ws, { print: false });
+    console.log("Habits:", habits.length);
+
+    console.log("");
+    console.log("  1) Full status report");
+    console.log("  2) List habits");
+    console.log("  3) Create habit");
+    console.log("  4) Delete habit");
+    console.log(`  5) Start daemon${daemon.alive ? "  (already running)" : ""}`);
+    console.log(`  6) Stop daemon${!daemon.alive ? "   (not running)" : ""}`);
+    console.log("  7) Restart daemon");
+    console.log("  8) Re-run configure for this agent");
+    console.log(`  9) Remove agent from registry${agent.rootMode === false && agent.name === "default" ? "  (n/a -- not registry-backed)" : ""}`);
+    console.log("  B) Back");
+    console.log("  Q) Quit");
+
+    const raw = await ask("\nChoice: ");
+    const choice = parseAgentMenuChoice(raw);
+
+    if (choice.action === "invalid") {
+      console.log(`"${choice.raw}" isn't a valid choice.`);
+      continue;
+    }
+    if (choice.action === "back") return;
+    if (choice.action === "quit") process.exit(0);
+
+    if (choice.action === "status") {
+      await verifyAgentReport(agent.ws, agent.sock, agent.ackLog, null);
+    } else if (choice.action === "habits") {
+      listHabitsForWorkspace(agent.ws);
+    } else if (choice.action === "habit-create") {
+      await createHabitInteractive(agent.ws, undefined, {});
+    } else if (choice.action === "habit-delete") {
+      const rows = listHabitsForWorkspace(agent.ws);
+      if (rows.length === 0) continue;
+      const pick = (await ask("Habit name to delete (blank to cancel): ")).trim();
+      if (!pick) continue;
+      const fileName = normalizeHabitName(pick);
+      const file = path.join(agent.ws, ".agent", "habits", `${fileName}.yaml`);
+      if (!fs.existsSync(file)) {
+        console.log("No such habit:", file);
+        continue;
+      }
+      const confirmed = (await ask(`Delete ${file}? [y/N] `)).trim().toLowerCase();
+      if (confirmed === "y" || confirmed === "yes") {
+        fs.unlinkSync(file);
+        console.log("Deleted:", file);
+      } else {
+        console.log("Cancelled.");
+      }
+    } else if (choice.action === "daemon-start") {
+      if (daemon.alive) {
+        console.log("Already running.");
+      } else if (agent.rootMode) {
+        systemctlDaemon("start");
+        await reportDaemonLiveness(agent.sock);
+      } else {
+        const pid = reviveDaemon(agent.ws);
+        console.log(`Spawned daemon (pid ${pid}) -- checking it actually came up...`);
+        await reportDaemonLiveness(agent.sock);
+      }
+    } else if (choice.action === "daemon-stop") {
+      if (!daemon.alive) {
+        console.log("Not running.");
+      } else if (agent.rootMode) {
+        systemctlDaemon("stop");
+      } else {
+        console.log(stopUserDaemon(agent.ws) ? "Stopped." : "Could not find/stop the daemon process.");
+      }
+    } else if (choice.action === "daemon-restart") {
+      if (agent.rootMode) {
+        systemctlDaemon("restart");
+        await reportDaemonLiveness(agent.sock);
+      } else {
+        if (daemon.alive) stopUserDaemon(agent.ws);
+        const pid = reviveDaemon(agent.ws);
+        console.log(`Spawned daemon (pid ${pid}) -- checking it actually came up...`);
+        await reportDaemonLiveness(agent.sock);
+      }
+    } else if (choice.action === "reconfigure") {
+      console.log(`\nLaunching 'ack configure' -- when it asks for a workspace path, use:\n  ${agent.ws}\n`);
+      spawnSync(process.execPath, [SELF, "configure", "--workspace", agent.ws], { stdio: "inherit" });
+    } else if (choice.action === "remove") {
+      const { registryPath } = readWorkspacesRegistry();
+      if (!registryPath) {
+        console.log("Not registry-backed -- nothing to remove.");
+        continue;
+      }
+      const confirmed = (await ask(`Remove '${agent.name}' (${agent.ws}) from the registry? [y/N] `)).trim().toLowerCase();
+      if (confirmed !== "y" && confirmed !== "yes") {
+        console.log("Cancelled.");
+        continue;
+      }
+      const result = removeAgentFromRegistry(registryPath, agent.ws);
+      if (!result.ok) {
+        console.log(`Could not update registry: ${result.error}`);
+        if (agent.rootMode) console.log(`Root-mode registry is likely owned by root -- try: sudo -e ${registryPath}`);
+        continue;
+      }
+      console.log(`Removed. ${result.remaining} agent(s) remain in the registry.`);
+      if (daemon.alive) {
+        console.log("The daemon still has this workspace loaded from when it started.");
+        const restart = (await ask("Restart the daemon now so it stops serving this agent? [y/N] ")).trim().toLowerCase();
+        if (restart === "y" || restart === "yes") {
+          if (agent.rootMode) systemctlDaemon("restart");
+          else { stopUserDaemon(agent.ws); }
+        }
+      }
+      return; // agent no longer exists -- back to the (refreshed) main menu
+    }
+  }
 }
 
 
@@ -832,6 +1084,13 @@ program
     await main();
   });
 
+program
+  .command("manage")
+  .description("Interactive menu: view/change every registered agent's config, habits, and daemon [Core]")
+  .action(async () => {
+    await runManage();
+  });
+
 // ─── Configuration ─────────────────────────────────────────────────────────
 
 const configCmd = program
@@ -879,26 +1138,13 @@ configCmd
   .description("Verify all paths exist and daemon is reachable")
   .option("--agent <name>", "Verify a specific registered agent instead of every registered agent (or the default single workspace, if none are registered)")
   .action(async (opts) => {
-    const verifyOne = async (ws, sock, ackLogPath, label) => {
-      if (label) console.log(`\n=== ${label} ===`);
-      const habitsDir = path.join(ws, ".agent", "habits");
-      const constitution = path.join(ws, ".agent", "constitution.yaml");
-      console.log("Workspace:", ws, fs.existsSync(ws) ? "✓" : "✗");
-      console.log("  habits:", fs.existsSync(habitsDir) ? "✓" : "✗");
-      console.log("  constitution:", fs.existsSync(constitution) ? "✓" : "✗");
-      console.log("Socket:", sock);
-      const daemon = await checkDaemon(sock);
-      console.log("  daemon:", daemon.alive ? "✓ reachable" : `✗ ${daemon.error || "unreachable"}`);
-      console.log("Ack log:", ackLogPath, fs.existsSync(ackLogPath) ? "✓" : "✗");
-    };
-
     if (opts.agent) {
       const agent = resolveAgentByName(opts.agent);
       if (!agent) {
         console.error(`No registered agent named '${opts.agent}'.`);
         process.exit(1);
       }
-      await verifyOne(agent.ws, agent.sock, agent.ackLog, null);
+      await verifyAgentReport(agent.ws, agent.sock, agent.ackLog, null);
       return;
     }
 
@@ -906,12 +1152,12 @@ configCmd
     if (registryPath && agents.length) {
       for (const ws of agents) {
         const name = path.basename(ws);
-        await verifyOne(ws, path.join(ws, ".agent", `${name}.sock`), path.join(ws, ".agent", "ack.jsonl"), `agent: ${name}`);
+        await verifyAgentReport(ws, path.join(ws, ".agent", `${name}.sock`), path.join(ws, ".agent", "ack.jsonl"), `agent: ${name}`);
       }
       return;
     }
     // No registry -- original single-workspace behavior, unchanged.
-    await verifyOne(resolveWorkspace(), resolveSocket(), resolveAckLog(), null);
+    await verifyAgentReport(resolveWorkspace(), resolveSocket(), resolveAckLog(), null);
   });
 
 configCmd
@@ -1024,6 +1270,87 @@ const habitCmd = program
   .command("habit")
   .description("Manage enforcement habits [Habits]");
 
+// Shared by `ack habit create` and `ack manage`'s per-agent habit-create
+// action. MOD-009: every field is asked, none hardcoded/defaulted -- an
+// empty answer is rejected with a reprompt, flag or interactive, same rule
+// either way (FEAT-004). YAML text comes from the shared builder
+// (node/src/habits/build.js) -- this was the third of three independent,
+// near-identical implementations before being collapsed into one.
+// nameFlag/opts are optional (undefined -> always prompted); used for the
+// CLI's positional <name> + flag options, absent in the manage-menu caller.
+async function createHabitInteractive(ws, nameFlag, opts = {}) {
+  const habitsDir = path.join(ws, ".agent", "habits");
+  fs.mkdirSync(habitsDir, { recursive: true });
+
+  const askRequired = async (flagVal, question) => {
+    let v = flagVal;
+    while (!v || !v.trim()) {
+      if (v !== undefined && !v.trim()) console.error("This can't be empty.");
+      v = await ask(question);
+    }
+    return v.trim();
+  };
+
+  const askLevel = async (flagVal) => {
+    let v = flagVal;
+    while (!v || !VALID_LEVELS.includes(v.trim().toLowerCase())) {
+      if (v !== undefined) console.error(`Invalid level "${v}" -- must be one of: ${VALID_LEVELS.join(", ")}`);
+      v = await ask(`Enforcement level (${VALID_LEVELS.join("/")}): `);
+    }
+    return v.trim().toLowerCase();
+  };
+
+  let fileName, file;
+  while (true) {
+    const name = await askRequired(nameFlag, "Habit name (kebab-case): ");
+    fileName = normalizeHabitName(name);
+    file = path.join(habitsDir, `${fileName}.yaml`);
+    if (!fs.existsSync(file)) break;
+    console.error("Habit already exists:", file);
+    if (nameFlag) process.exit(1); // non-interactive caller passed a fixed name -- can't reprompt around it
+    nameFlag = undefined;
+  }
+
+  const prompt = await askRequired(opts.prompt, "Prompt (self-question): ");
+  const logic = await askRequired(opts.logic, "Logic (why this governs your actions): ");
+  const evidence = await askRequired(opts.evidence, "Evidence (how to verify this specific habit was actually applied): ");
+  const level = await askLevel(opts.level);
+
+  const yaml = buildHabitYaml({ name: fileName, prompt, logic, evidence, level });
+  fs.writeFileSync(file, yaml);
+  console.log("Created:", file);
+  return file;
+}
+
+// Shared by `ack habit list` and `ack manage`'s per-agent status/habits
+// view. Returns the parsed {name, prompt, file} rows (empty array if none)
+// instead of only printing, so callers can also just count them.
+function listHabitsForWorkspace(ws, { print = true } = {}) {
+  const habitsDir = path.join(ws, ".agent", "habits");
+  if (!fs.existsSync(habitsDir)) {
+    if (print) console.log("No habits directory at", habitsDir);
+    return [];
+  }
+  const files = fs.readdirSync(habitsDir).filter(f => f.endsWith(".yaml"));
+  if (files.length === 0) {
+    if (print) console.log("No habit files found in", habitsDir);
+    return [];
+  }
+  const rows = files.map((f) => {
+    const content = fs.readFileSync(path.join(habitsDir, f), "utf8");
+    // Quote is OPTIONAL -- YAML allows unquoted plain scalars for both
+    // fields, and roughly half the bundled habits actually use that form.
+    // A quote-required regex silently showed "(no prompt)" for them.
+    const nameMatch = content.match(/^name:\s*"?([^"\n]*)/m);
+    const promptMatch = content.match(/^prompt:\s*"?([^"\n]*)/m);
+    return { name: nameMatch?.[1]?.trim() || f, prompt: promptMatch?.[1]?.trim() || "(no prompt)", file: f };
+  });
+  if (print) {
+    for (const r of rows) console.log(`  ${r.name}: ${r.prompt}`);
+  }
+  return rows;
+}
+
 habitCmd
   .command("create")
   .description("Create a new habit YAML file")
@@ -1037,88 +1364,54 @@ habitCmd
       console.error("Habit name is required");
       process.exit(1);
     }
-    const ws = resolveWorkspace();
-    const habitsDir = path.join(ws, ".agent", "habits");
-    fs.mkdirSync(habitsDir, { recursive: true });
-    const fileName = normalizeHabitName(name);
-    const file = path.join(habitsDir, `${fileName}.yaml`);
-    if (fs.existsSync(file)) {
-      console.error("Habit already exists:", file);
-      process.exit(1);
-    }
-
-    // MOD-009: every field is asked, none hardcoded/defaulted. An empty
-    // answer is rejected with a reprompt -- flag or interactive, same rule
-    // either way, matching FEAT-004's Rules. YAML text itself comes from
-    // the shared builder (node/src/habits/build.js) -- this was the third
-    // of three independent, near-identical implementations of the same
-    // logic before being collapsed into one (blueprint.md MOD-009).
-    const askRequired = async (flagVal, question) => {
-      let v = flagVal;
-      while (!v || !v.trim()) {
-        if (v !== undefined && !v.trim()) console.error("This can't be empty.");
-        v = await ask(question);
-      }
-      return v.trim();
-    };
-
-    const askLevel = async (flagVal) => {
-      let v = flagVal;
-      while (!v || !VALID_LEVELS.includes(v.trim().toLowerCase())) {
-        if (v !== undefined) console.error(`Invalid level "${v}" -- must be one of: ${VALID_LEVELS.join(", ")}`);
-        v = await ask(`Enforcement level (${VALID_LEVELS.join("/")}): `);
-      }
-      return v.trim().toLowerCase();
-    };
-
-    const prompt = await askRequired(opts.prompt, "Prompt (self-question): ");
-    const logic = await askRequired(opts.logic, "Logic (why this governs your actions): ");
-    const evidence = await askRequired(opts.evidence, "Evidence (how to verify this specific habit was actually applied): ");
-    const level = await askLevel(opts.level);
-
-    const yaml = buildHabitYaml({ name: fileName, prompt, logic, evidence, level });
-    fs.writeFileSync(file, yaml);
-    console.log("Created:", file);
+    await createHabitInteractive(resolveWorkspace(), name, opts);
   });
 
 habitCmd
   .command("list")
   .description("List all habits with prompts")
   .action(() => {
+    listHabitsForWorkspace(resolveWorkspace());
+  });
+
+habitCmd
+  .command("delete")
+  .description("Delete a habit YAML file")
+  .argument("<name>", "Habit name (as shown by `ack habit list`, or the filename)")
+  .option("-y, --yes", "Skip confirmation prompt")
+  .action(async (name, opts) => {
     const ws = resolveWorkspace();
     const habitsDir = path.join(ws, ".agent", "habits");
-    if (!fs.existsSync(habitsDir)) {
-      console.log("No habits directory at", habitsDir);
-      return;
+    const fileName = normalizeHabitName(name);
+    const file = path.join(habitsDir, `${fileName}.yaml`);
+    if (!fs.existsSync(file)) {
+      console.error("No such habit:", file);
+      process.exit(1);
     }
-    const files = fs.readdirSync(habitsDir).filter(f => f.endsWith(".yaml"));
-    if (files.length === 0) {
-      console.log("No habit files found in", habitsDir);
-      return;
+    if (!opts.yes) {
+      const confirmed = (await ask(`Delete ${file}? [y/N] `)).trim().toLowerCase();
+      if (confirmed !== "y" && confirmed !== "yes") {
+        console.log("Cancelled.");
+        return;
+      }
     }
-    for (const f of files) {
-      const content = fs.readFileSync(path.join(habitsDir, f), "utf8");
-      // Quote is OPTIONAL -- YAML allows unquoted plain scalars for both
-      // fields, and roughly half the bundled habits actually use that form.
-      // A quote-required regex silently showed "(no prompt)" for them.
-      const nameMatch = content.match(/^name:\s*"?([^"\n]*)/m);
-      const promptMatch = content.match(/^prompt:\s*"?([^"\n]*)/m);
-      console.log(`  ${nameMatch?.[1]?.trim() || f}: ${promptMatch?.[1]?.trim() || "(no prompt)"}`);
-    }
+    fs.unlinkSync(file);
+    console.log("Deleted:", file);
   });
 
 // ─── Custom help text ──────────────────────────────────────────────────────
 
 program.addHelpText("after", `
 Category summary:
-  [Core]     hook, configure
+  [Core]     hook, configure, manage
   [Config]   config show, config verify, config set, config write-env
   [Diag]     status, doctor, repair (doctor reports + repair cleans stale daemons/sockets, auto-activates)
-  [Habits]   habit create, habit list
+  [Habits]   habit create, habit list, habit delete
 
 Examples:
   ack configure --yes                        quick user-mode setup
   ack configure --all                        root-mode setup + Python bindings
+  ack manage                                 interactive menu: view/edit every agent
   ack doctor                                 full diagnostic report
   ack repair                                 auto-fix workspace/habits/daemon
   ack habit create verify-workspace          create a new habit
@@ -1136,9 +1429,55 @@ program.parse();
 //  CLI helpers
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Line-buffered stdin reader. The original version resolved on a single raw
+// "data" event and .trim()'d the whole chunk -- fine for the one-shot habit
+// prompts this was written for, but silently wrong the moment more than one
+// answer arrives in the same chunk (piped/scripted stdin, or just fast
+// typing/paste over a laggy SSH session): "1\n1\nb\nq\n" became one garbage
+// answer instead of four real ones. `ack manage`'s menu loop asks many
+// sequential questions per session, so this now actually queues complete
+// lines and hands them out one at a time, same semantics a real
+// line-oriented readline would give.
+const _askQueue = [];
+let _askWaiter = null;
+let _askListenerInstalled = false;
+
+function _installAskListener() {
+  if (_askListenerInstalled) return;
+  _askListenerInstalled = true;
+  let leftover = "";
+  const flushWaiter = () => {
+    if (!_askWaiter) return;
+    const w = _askWaiter;
+    _askWaiter = null;
+    w();
+  };
+  process.stdin.on("data", (d) => {
+    leftover += d.toString();
+    let idx;
+    while ((idx = leftover.indexOf("\n")) !== -1) {
+      _askQueue.push(leftover.slice(0, idx).replace(/\r$/, ""));
+      leftover = leftover.slice(idx + 1);
+    }
+    flushWaiter();
+  });
+  process.stdin.on("end", () => {
+    if (leftover) { _askQueue.push(leftover); leftover = ""; }
+    // Stdin is gone -- resolve any pending ask() with "" rather than hang
+    // forever (each caller's parser treats blank as a safe default: quit
+    // the top menu, back-out of a submenu, cancel a delete confirmation).
+    if (_askWaiter) { _askQueue.push(""); flushWaiter(); }
+  });
+}
+
 function ask(q) {
-  return new Promise(r => {
-    process.stdout.write(q);
-    process.stdin.once("data", d => r(d.toString().trim()));
+  if (q) process.stdout.write(q);
+  _installAskListener();
+  return new Promise((resolve) => {
+    const attempt = () => {
+      if (_askQueue.length > 0) resolve(_askQueue.shift().trim());
+      else _askWaiter = attempt;
+    };
+    attempt();
   });
 }

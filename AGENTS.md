@@ -478,10 +478,11 @@ append-only, newest entry on top, never rewrite a past entry. History before
   `constitution.yaml` (`hard_constraints`) and `enforcer.yaml` (allow/deny)
   *exist* — nothing prints their contents, and there's no `ack constitution
   show/add/remove` or `ack policy show/allow/deny` to change them
-  interactively. The only path today is hand-editing the YAML files
-  directly (see "Customize" above). Habits (`ack habit list/create`) are the
-  one part of this that IS interactive — hard blocks and allow/deny policy
-  are not.
+  interactively, including from `ack manage` below. The only path today is
+  hand-editing the YAML files directly (see "Customize" above). Habits
+  (`ack habit list/create/delete`, and `ack manage`'s per-agent habit
+  actions) are the one part of this that IS interactive — hard blocks and
+  allow/deny policy are not.
 - **No CLI access to the audit trail.** Every allow/deny decision is
   genuinely logged (`enforcer-audit.jsonl` from the daemon,
   `tool-audit.jsonl` from the companion side), but there is no `ack log` /
@@ -509,6 +510,25 @@ append-only, newest entry on top, never rewrite a past entry. History before
   deployed against a real systemd instance in the same run (only ever
   proven against real spawned processes in the test suite for the 2-agent
   case). Needs a human with real sudo.
+
+Resolved 2026-08-12: there was no re-enterable place to see every registered
+agent and change one without re-running the whole `ack configure` wizard —
+`ack config show/verify --agent` could report on a specific agent but not
+browse or act on one. `ack manage` is a real interactive menu now: lists
+every agent (registry-backed, or the single default workspace when no
+registry exists) with live daemon status, then per agent: full status
+report, list/create/delete habits, start/stop/restart the daemon (verifies
+real liveness by polling the socket, not just trusting a spawned pid or a
+systemctl exit code — root-mode daemon control is clearly labeled as
+affecting the ONE shared `agent-enforcer.service`, not just that agent),
+re-run `ack configure` scoped to that workspace, and remove an agent from
+the registry (with the daemon-restart-to-take-effect caveat surfaced, not
+silently assumed). Menu-choice parsing and agent-list building are pure,
+independently unit-tested functions (`node/src/manage-menu.js`), same
+pattern as `parseHarnessMenuChoice` in `install.js`; the interactive flow
+itself is covered by real spawned-process tests
+(`node/tests/ack-manage.test.js`) that check actual file/registry/daemon
+state, not just exit codes.
 
 Resolved same day, no longer gaps: `ack config show/verify/write-env` all
 gained a `--agent <name>` option (registry-aware, verified live against a
@@ -559,7 +579,8 @@ by a green JS test suite, only by an actual run against real system state.
 |------|------|
 | `node/enforcer/agent_enforcer_daemon.js` | **CORE** — the enforcer (single source of truth) |
 | `node/src/enforcer/client.js` | Node thin client |
-| `node/bin/ack.js` | CLI (`hook/install/status/doctor/repair/config/habit`) |
+| `node/bin/ack.js` | CLI (`hook/configure/manage/status/doctor/repair/config/habit`) |
+| `node/src/manage-menu.js` | Pure, unit-tested menu logic for `ack manage` (agent-list building, choice parsing) |
 | `python/hermes_plugin/` | **COMPANION** — example Python-plugin client (one of several) |
 | `python/agent_character_kit/enforcer.py` | Python client (`EnforcerClient`) to the CORE |
 | `supervise.py` | stdlib-only cross-platform supervisor |
