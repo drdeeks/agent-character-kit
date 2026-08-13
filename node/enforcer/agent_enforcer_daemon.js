@@ -471,17 +471,19 @@ export class Enforcer {
     }
   }
 
-  _audit(tool, command, result) {
+  _audit(tool, command, result, kind = "execute_tool", extra = {}) {
     try {
       const dir = path.join(this.cfg.AGENT_DIR, "logs");
       fssync.mkdirSync(dir, { recursive: true });
       const entry = {
         ts: new Date().toISOString(),
         character_hash: this.characterHash,
+        kind,
         tool,
         command: (command || "").slice(0, this.auditMaxCommandChars),
         decision: result.denied ? "deny" : "allow",
         reason: result.reason || null,
+        ...extra,
       };
       fssync.appendFileSync(path.join(dir, "enforcer-audit.jsonl"), JSON.stringify(entry) + "\n");
     } catch {
@@ -684,7 +686,7 @@ export class Enforcer {
         const since = st.lastCommitCheckMs || 0;
         const commit = this._verifyCommitSince(since);
         if (!commit.ok) {
-          return {
+          const result = {
             hold: true,
             reason: "TOOL ACCESS HELD — commit discipline not satisfied: " + commit.reason
               + ` (${filesTouchedCount}/${this.fileChangeThreshold} files touched, `
@@ -692,17 +694,24 @@ export class Enforcer {
             commit_required: true,
             commit_min_chars: this.commitMinChars,
           };
+          this._audit(tool, session, { denied: true, reason: result.reason }, "tool_tick",
+            { session, tick_count: st.count });
+          return result;
         }
         // Commit discipline satisfied — reset both trackers for the next window.
         st.filesTouched = new Set();
         st.cyclesSinceCommit = 0;
         st.lastCommitCheckMs = Date.now();
       }
-      return {
+      const result = {
         hold: true,
         reason: "state two habit names, and how they apply to the work you've been doing.",
       };
+      this._audit(tool, session, { denied: true, reason: result.reason }, "tool_tick",
+        { session, tick_count: st.count });
+      return result;
     }
+    this._audit(tool, session, { denied: false }, "tool_tick", { session, tick_count: st.count });
     return { hold: false };
   }
 
@@ -715,6 +724,7 @@ export class Enforcer {
   // habits it just used. It must pick from the rest of the set.
   submitAck(session, statement) {
     if (!statement || typeof statement !== "string") {
+      this._audit("submit_ack", statement, { denied: true, reason: "no statement" }, "submit_ack", { session });
       return { ok: false, error: "no statement" };
     }
     // Grammar: <habit> <connector> <real work attribution>. Deliberately
@@ -727,15 +737,22 @@ export class Enforcer {
     const m = statement.match(
       /^habit:\s*(\S+)\s*(?:why:|because|matters\s+because|applies\s+because)\s*[-–:]?\s*(.+)$/i
     );
-    if (!m) return { ok: false, error: "bad format — use: Habit: <name> <connector: why: | because | matters because | applies because> <how it applies to work you did or will affect>" };
+    if (!m) {
+      this._audit("submit_ack", statement, { denied: true, reason: "bad format" }, "submit_ack", { session });
+      return { ok: false, error: "bad format — use: Habit: <name> <connector: why: | because | matters because | applies because> <how it applies to work you did or will affect>" };
+    }
     const name = m[1];
     const reason = m[2].trim();
     const norm = this._normName(name);
     if (!this._habitNamesNorm().has(norm)) {
+      this._audit("submit_ack", statement, { denied: true, reason: `unknown habit: ${name}` }, "submit_ack", { session, habit: name });
       return { ok: false, error: `unknown habit: ${name}` };
     }
     // Require a substantive, engaged reason — not filler.
-    if (reason.length < this.minAckReasonChars) return { ok: false, error: "reason too short — state WHY this habit governs this action (specific, situation-tied)" };
+    if (reason.length < this.minAckReasonChars) {
+      this._audit("submit_ack", statement, { denied: true, reason: "reason too short" }, "submit_ack", { session, habit: name });
+      return { ok: false, error: "reason too short — state WHY this habit governs this action (specific, situation-tied)" };
+    }
     // Require the reason to attribute to REAL work — a concrete file/code
     // reference, a past-tense action actually taken, or a stated future
     // effect — not a generic truth-claim about the habit ("it's important
@@ -744,6 +761,7 @@ export class Enforcer {
     // work attribution": regex can't verify the claim is true, but it can
     // reject reasons that don't even attempt to point at concrete work.
     if (!WORK_ATTRIBUTION_RE.test(reason)) {
+      this._audit("submit_ack", statement, { denied: true, reason: "no real work attribution" }, "submit_ack", { session, habit: name });
       return {
         ok: false,
         error: "reason doesn't attribute to real work — reference the actual file/change/action from this session, or state how it will affect future work (not just why the habit is generically true)",
@@ -759,10 +777,12 @@ export class Enforcer {
     // genuinely cycling through the habit pool is the only way through,
     // not something two names can satisfy forever.
     if (st.usedHabitNames.includes(norm)) {
+      this._audit("submit_ack", statement, { denied: true, reason: "habit reused within window" }, "submit_ack", { session, habit: name });
       return { ok: false, error: `already acknowledged recently — cite a habit not in your last ${this.maxHabitNameHistory} distinct acknowledgments` };
     }
     // No reuse of a prior ack's exact reason for this session (forces real engagement).
     if (st.reasons.includes(reason.toLowerCase())) {
+      this._audit("submit_ack", statement, { denied: true, reason: "reason reused" }, "submit_ack", { session, habit: name });
       return { ok: false, error: "reason reused — state a genuinely different reason, not one you already gave" };
     }
     // Every accepted acknowledgment shifts the rolling window — including ones
@@ -780,8 +800,10 @@ export class Enforcer {
     // as the first cycle.
     if (st.acked >= this.requiredAcks) {
       st.acked = 0;
+      this._audit("submit_ack", statement, { denied: false }, "submit_ack", { session, habit: name, cycle_complete: true });
       return { ok: true, cycle_complete: true };
     }
+    this._audit("submit_ack", statement, { denied: false }, "submit_ack", { session, habit: name, cycle_complete: false });
     return { ok: true, acked: st.acked };
   }
 }

@@ -63,6 +63,23 @@ def _legacy_sock():
                          "workspace", ".agent", "enforcer.sock")
 
 
+def _legacy_ack_log():
+    """Same resolution shape as _legacy_sock() above -- previously defaulted
+    to /tmp/agent-character-kit-ack.jsonl, not guaranteed persistent (tmpfs
+    on many distros). The registry-backed multi-agent path already puts each
+    agent's ack log at <workspace>/.agent/ack.jsonl; this matches that same
+    convention for the legacy single-agent default instead of a third,
+    ephemeral one."""
+    log = os.environ.get("ACK_ACK_LOG")
+    if log:
+        return log
+    ws = os.environ.get("AGENT_WORKSPACE")
+    if ws:
+        return os.path.join(ws, ".agent", "ack.jsonl")
+    return os.path.join(os.environ.get("HOME", "/root"), ".agent-character-kit",
+                         "workspace", ".agent", "ack.jsonl")
+
+
 def _resolve_agents():
     """Returns the list of agents to tail: registry-backed when one exists
     (root/service-user mode, or any deploy that populated it), otherwise
@@ -97,7 +114,7 @@ def _resolve_agents():
         "name": "default",
         "ws": os.environ.get("AGENT_WORKSPACE"),
         "sock": _legacy_sock(),
-        "ack_log": os.environ.get("ACK_ACK_LOG", "/tmp/agent-character-kit-ack.jsonl"),
+        "ack_log": _legacy_ack_log(),
         "state_path": os.environ.get("ACK_MONITOR_STATE", "/var/lib/agent-character-kit/ack-monitor.pos"),
     }]
 

@@ -14,6 +14,12 @@ const AUDIT_DIR = path.join(
   "var", "log", "agent-enforcer"
 );
 const AUDIT_LOG = path.join(AUDIT_DIR, "tool-audit.jsonl");
+// Same persistent directory as AUDIT_LOG above -- previously defaulted to
+// /tmp/..., which is not guaranteed to survive a reboot (tmpfs on many
+// distros) and isn't a real "always retrievable" record. Explicit env
+// override still wins; only the built-in default changed.
+const DEFAULT_ACK_LOG = path.join(AUDIT_DIR, "agent-character-kit-ack.jsonl");
+const DEFAULT_INJECT_LOG = path.join(AUDIT_DIR, "ack-inject-log.jsonl");
 
 /**
  * Character Hook — Core enforcement for all tool calls.
@@ -289,7 +295,7 @@ export async function processToolCall(payload, options = {}) {
 
 function _logInjection(prompts) {
   try {
-    const logPath = process.env.ACK_INJECT_LOG || "/tmp/ack-inject-log.jsonl";
+    const logPath = process.env.ACK_INJECT_LOG || DEFAULT_INJECT_LOG;
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
     fs.appendFileSync(logPath, JSON.stringify({
       ts: new Date().toISOString(), count: prompts.length, prompts,
@@ -378,7 +384,7 @@ export function detectAckFromTranscript(transcriptPath, sessionId) {
         .join("\n");
       const matches = text.match(ACK_STATEMENT_RE);
       if (matches && matches.length) {
-        const ackLog = process.env.ACK_ACK_LOG || "/tmp/agent-character-kit-ack.jsonl";
+        const ackLog = process.env.ACK_ACK_LOG || DEFAULT_ACK_LOG;
         fs.mkdirSync(path.dirname(ackLog), { recursive: true });
         for (const statement of matches) {
           fs.appendFileSync(ackLog, JSON.stringify({

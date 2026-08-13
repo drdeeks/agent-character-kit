@@ -1,4 +1,4 @@
-# AGENTS.md — Agent Character Kit (ACK) v1.1.0
+# AGENTS.md — Agent Character Kit (ACK) v1.5.0
 
 > **This is the single source of truth for ACK.** README.md is a short overview
 > that points here. There is no other install/customize doc — if you're reading

@@ -49,6 +49,19 @@ function legacySocket() {
   return path.join(os.homedir() || "/root", ".agent-character-kit", "workspace", ".agent", "enforcer.sock");
 }
 
+// Same resolution shape as legacySocket() above -- previously defaulted to
+// /tmp/agent-character-kit-ack.jsonl, not guaranteed persistent (tmpfs on
+// many distros). The registry-backed multi-agent path (below) already puts
+// each agent's ack log at <workspace>/.agent/ack.jsonl; this makes the
+// legacy single-agent default match that same convention instead of a
+// third, ephemeral one.
+function legacyAckLog() {
+  if (process.env.ACK_ACK_LOG) return process.env.ACK_ACK_LOG;
+  const ws = process.env.AGENT_WORKSPACE;
+  if (ws) return path.join(ws, ".agent", "ack.jsonl");
+  return path.join(os.homedir() || "/root", ".agent-character-kit", "workspace", ".agent", "ack.jsonl");
+}
+
 // Returns the list of agents to tail. Registry-backed when one exists (root
 // / service-user mode, or any deploy that populated it); otherwise exactly
 // one "default" agent using the original env-var-based behavior, so a plain
@@ -80,7 +93,7 @@ function resolveAgents() {
     name: "default",
     ws: process.env.AGENT_WORKSPACE || null,
     sock: legacySocket(),
-    ackLog: process.env.ACK_ACK_LOG || "/tmp/agent-character-kit-ack.jsonl",
+    ackLog: legacyAckLog(),
     statePath: process.env.ACK_MONITOR_STATE || "/var/lib/agent-character-kit/ack-monitor.pos",
   }];
 }

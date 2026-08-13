@@ -40,12 +40,38 @@ logger = logging.getLogger(__name__)
 
 # Kept in sync with node/src/version.js / /VERSION at repo root -- bump all
 # together. Currently unused within this module (no RPC or log line reads
-# it) but kept for parity with the Node side's ACK_VERSION.
-ACK_VERSION = "1.2.1"
+# it) but kept for parity with the Node side's ACK_VERSION. Was stuck at
+# 1.2.1 while the other 4 "bump together" files had already moved to 1.5.0
+# -- corrected 2026-08-12.
+ACK_VERSION = "1.5.0"
 
 # Optional env escape hatch: set ACK_DISABLE=1 to turn the plugin into a
 # no-op (never use in production — it defeats the purpose).
 _DISABLE = os.environ.get("ACK_DISABLE") == "1"
+
+
+def _default_workspace() -> str:
+    """Same resolution shape used throughout this module and the Node side's
+    resolveWorkspaces()/legacySocket(): explicit AGENT_WORKSPACE, else the
+    plain user-mode default under HOME."""
+    return os.environ.get("AGENT_WORKSPACE") or os.path.join(
+        os.environ.get("HOME", "/root"), ".agent-character-kit", "workspace"
+    )
+
+
+def _default_ack_log() -> str:
+    """<workspace>/.agent/ack.jsonl -- matches the Node daemon's own
+    per-workspace logs convention. Previously defaulted to
+    /tmp/agent-character-kit-ack.jsonl in 3 places in this file, not
+    guaranteed persistent (tmpfs on many distros); this is meant to be an
+    always-retrievable record, not scratch state."""
+    return os.path.join(_default_workspace(), ".agent", "ack.jsonl")
+
+
+def _default_inject_log() -> str:
+    """Same shape as _default_ack_log() above, for the habit-prompt
+    injection log."""
+    return os.path.join(_default_workspace(), ".agent", "ack-inject-log.jsonl")
 
 
 def _get_client():
@@ -238,7 +264,7 @@ def _detect_ack(session_id: str, text: str) -> None:
         return
     try:
         cfg = _load_config()
-        log = Path(cfg.get("ack_log", "/tmp/agent-character-kit-ack.jsonl"))
+        log = Path(cfg.get("ack_log", _default_ack_log()))
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("a", encoding="utf-8") as fh:
             for s in stmts:
@@ -275,8 +301,8 @@ def _load_config() -> Dict[str, Any]:
     )
     defaults: Dict[str, Any] = {
         "habits_dir": env_habits or str(repo_habits),
-        "inject_log": os.environ.get("ACK_INJECT_LOG", "/tmp/ack-inject-log.jsonl"),
-        "ack_log": os.environ.get("ACK_ACK_LOG", "/tmp/agent-character-kit-ack.jsonl"),
+        "inject_log": os.environ.get("ACK_INJECT_LOG", _default_inject_log()),
+        "ack_log": os.environ.get("ACK_ACK_LOG", _default_ack_log()),
         "inject_enabled": True,
     }
     try:
@@ -330,7 +356,7 @@ def _log_injection(cfg: Dict[str, Any], prompts: List[str]) -> None:
     This is what the monitor reads — NOT the agent's self-report.
     """
     try:
-        log = Path(cfg.get("inject_log", "/tmp/ack-inject-log.jsonl"))
+        log = Path(cfg.get("inject_log", _default_inject_log()))
         log.parent.mkdir(parents=True, exist_ok=True)
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(),
