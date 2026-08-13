@@ -1061,15 +1061,27 @@ function resolveWorkspaces() {
   let hasRegistry = false;
   try {
     if (fs.existsSync(registryPath)) {
-      hasRegistry = true;
+      // hasRegistry is set only after a successful read+parse, not on mere
+      // existence. A root-owned registry from an unrelated root/service-user
+      // deploy is unreadable (EACCES) to a plain user -- that's not "this
+      // user has a multi-agent registry," it's "no registry applies to me."
+      // Treating existence alone as hasRegistry=true forced single-workspace
+      // user-mode installs into multi-workspace socket naming
+      // (path.basename(ws) => the literal string "workspace", not an agent
+      // name), which nothing in ack.js's status/liveness checks looks for.
       const list = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+      hasRegistry = true;
       if (Array.isArray(list)) {
         for (const ws of list) {
           if (typeof ws === "string" && ws.trim()) workspaces.add(path.resolve(ws.trim()));
         }
       }
     }
-  } catch { /* best-effort */ }
+  } catch (e) {
+    if (e.code !== "EACCES") {
+      console.error(`Warning: registry at ${registryPath} exists but could not be read/parsed (${e.code || e.message}) -- treating as absent.`);
+    }
+  }
 
   // hasRegistry forces multi-workspace mode even with exactly one agent so
   // far, not just "more than one" -- root/service-user deploys always
