@@ -2,6 +2,54 @@
 
 Append-only, newest entry on top. Never rewrite a past entry.
 
+## Unreleased
+
+**Added — `ack manage`: interactive menu for viewing/editing every agent
+(2026-08-12, 0ee7233):**
+
+There was no re-enterable way to see every registered agent and change one
+without re-running the whole `ack configure` wizard from scratch. `ack
+manage` lists every agent (registry-backed, or the single default workspace
+when no registry exists) with live daemon status, then per agent: full
+status report, list/create/delete habits, start/stop/restart the daemon,
+re-run `ack configure` scoped to that workspace, and remove an agent from
+the registry. Daemon start/restart poll the socket to confirm real
+liveness instead of trusting a spawned pid or systemctl's exit code.
+Root-mode daemon control is labeled as affecting the ONE shared
+`agent-enforcer.service`, not just the selected agent. Also added `ack
+habit delete`. Menu-choice parsing and agent-list building are pure,
+unit-tested functions (`node/src/manage-menu.js`); covered end-to-end by
+`node/tests/ack-manage.test.js` (real spawned-process walks checking actual
+file/registry/daemon state).
+
+Fixed `ack.js`'s `ask()` stdin helper in the same pass: it resolved on a
+single raw `data` event and `.trim()`'d the whole chunk, so multiple
+answers landing in one chunk (piped input, fast typing/paste) silently
+collapsed into one garbage answer. Now properly line-buffers.
+
+**Fixed — ack/inject logs no longer default to `/tmp` (2026-08-12, d9866a4):**
+
+`character.js`, both `ack_monitor.js`/`.py`, and `hermes_plugin/__init__.py`
+defaulted the ack-detection and habit-injection logs to `/tmp/...` —
+tmpfs on many distros, doesn't survive a reboot, not a real
+always-retrievable record. Now resolve into the persistent
+`<workspace>/.agent/` directory instead. Also: `agent_enforcer_daemon.js`'s
+`_audit()` now logs every `tool_tick` and `submit_ack` outcome (holds,
+denial reasons, unknown-habit, reused-ack, cycle-complete) to
+`enforcer-audit.jsonl`, not just tool-call allow/deny decisions.
+
+**Fixed — root-owned registry silently broke plain-user `ack configure`
+(2026-08-12, bad9207):**
+
+`resolveWorkspaces()` set `hasRegistry=true` as soon as the registry file
+*existed*, before attempting to read it — so a root-owned registry left
+over from an unrelated root-mode deploy (unreadable, EACCES, to a plain
+user) still forced a single-user `ack configure` into multi-workspace
+socket naming, which nothing in `ack.js`'s status/liveness checks looks
+for — every liveness check reported the daemon dead even though it was
+alive and correct. `hasRegistry` now only flips after a successful
+read+parse. Full suite went from 94/104 to 104/104 passing once fixed.
+
 ## 1.5.0 — 2026-08-07
 
 **Added — real multi-agent support (KD-21, 5 commits: b7a62bc, 152e5eb,

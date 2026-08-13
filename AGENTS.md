@@ -460,10 +460,13 @@ Single source of truth: `node/src/version.js` (`VERSION`). `ack.js`, the
 daemon (`agent_enforcer_daemon.js`, re-exported as `ACK_VERSION`), and
 `node/src/index.js` all import from there — nowhere else in the Node side
 should hardcode a version literal. Root `VERSION`, root `package.json`,
-`node/package.json`, and the Hermes plugin's `python/hermes_plugin/__init__.py`
-`ACK_VERSION` are separate files (npm/Python ecosystem conventions and a
-plain version stamp) that still need bumping by hand alongside
-`node/src/version.js` — **bump all five together** when cutting a release.
+`node/package.json`, the Hermes plugin's `python/hermes_plugin/__init__.py`
+`ACK_VERSION`, and `python/pyproject.toml`'s `version` are separate files
+(npm/PyPI ecosystem conventions and a plain version stamp) that still need
+bumping by hand alongside `node/src/version.js` — **bump all six together**
+when cutting a release. (`python/pyproject.toml` drifted to a stale `0.1.0`
+for a while before being folded into this list on 2026-08-13 — it's a real
+member of the set, not an independently-versioned package.)
 
 **Changelog:** `CHANGELOG.md` at repo root, started with the 1.2.0 release —
 append-only, newest entry on top, never rewrite a past entry. History before
@@ -496,7 +499,19 @@ append-only, newest entry on top, never rewrite a past entry. History before
   "agent-character-kit"`) — see `node/corpus/README.md`. Left this way
   deliberately per `HABIT_POLICY.md` §3 (knowledge/memory is a separate
   skill from character enforcement) rather than assuming it should be
-  restored to a CLI; revisit if that assumption is wrong.
+  restored to a CLI; revisit if that assumption is wrong. The Python side
+  now matches: `python/agent_character_kit/__main__.py` (the `aik-py`
+  console script — `hook`/`enforcer`/`index`/`memory`/`knowledge`/`semantic`
+  subcommands) was removed 2026-08-13 — it was undocumented, orphaned
+  (nothing imported it, no docs referenced it), and its `cmd_hook`
+  duplicated hermes_plugin's own normalize/format/fail-closed logic in a
+  second, divergent implementation — exactly the "second engine" §1/§5
+  warns against. The underlying library modules it wrapped
+  (`memory.py`/`semantic.py`/`DocumentIndexer` in `__init__.py`) are
+  untouched and still library-only, same as the Node side. Python's real
+  and only CLI-adjacent surface is `hermes_plugin/` (a companion, not a
+  general-purpose CLI) — matches "Node-only core, Python is the Hermes
+  companion," not a parallel full application.
 - **`ack repair` can see which specific agent is down (registry-aware as of
   2026-08-07) but doesn't yet selectively heal just that one** — its
   auto-activate logic still reasons about one workspace at a time, not "N

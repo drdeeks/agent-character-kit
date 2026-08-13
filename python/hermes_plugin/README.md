@@ -21,9 +21,14 @@ reason + reflection ("this isn't a rule to work around — it's who we are").
 
 ## Fail-closed (never fails open)
 
-- If the enforcer can't load → **block**.
-- If no valid `constitution.yaml` is present → **block**. An agent without a
-  loaded character is not trusted to act.
+- If the enforcer daemon can't be reached → **block**. A guard that fails
+  open is no guard.
+- If no `constitution.yaml` is present on disk, the daemon does NOT block —
+  it merges onto an embedded default character (safe hard constraints +
+  secret-leak guard, see `DEFAULT_CONSTITUTION` in
+  `agent_enforcer_daemon.js`), so the kit works out of the box with zero
+  config files. A file on disk overrides (merges on top of) that default;
+  it's never required for the daemon to run.
 
 ## Install
 

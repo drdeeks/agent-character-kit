@@ -52,6 +52,8 @@
     "python/",
     "deploy/",
     "README.md",
+    "AGENTS.md",
+    "CHANGELOG.md",
     "LICENSE",
     "!**/__pycache__/**",
     "!**/*.pyc",
