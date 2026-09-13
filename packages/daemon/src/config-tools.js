@@ -17,15 +17,35 @@ export const CONFIG_TOOL_NAMES = [
   "set_character_config",
 ];
 
+const habitItem = {
+  type: "object",
+  properties: {
+    file: { type: "string" },
+    name: { type: "string" },
+    prompt: { type: "string" },
+  },
+};
+
 export const CONFIG_TOOLS = [
   {
     name: "list_habits",
-    description: "List on-disk habit YAML files in the workspace.",
+    title: "List habits",
+    description: "Use when the user wants to see on-disk habit YAML files. Does not evaluate policy.",
     inputSchema: { type: "object", properties: {} },
+    outputSchema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+        habits: { type: "array", items: habitItem },
+        error: { type: "string" },
+      },
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
   {
     name: "write_habit",
-    description: "Create or replace a habit YAML file, then reload.",
+    title: "Write habit",
+    description: "Use when the user wants to create or replace one habit YAML file, then reload.",
     inputSchema: {
       type: "object",
       properties: {
@@ -37,24 +57,58 @@ export const CONFIG_TOOLS = [
       },
       required: ["name", "prompt", "logic", "evidence", "level"],
     },
+    outputSchema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+        file: { type: "string" },
+        character_hash: { type: "string" },
+        error: { type: "string" },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
   {
     name: "delete_habit",
-    description: "Delete a habit YAML file, then reload.",
+    title: "Delete habit",
+    description: "Use when the user wants to delete one habit YAML file, then reload.",
     inputSchema: {
       type: "object",
       properties: { name: { type: "string" } },
       required: ["name"],
     },
+    outputSchema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+        deleted: { type: "string" },
+        character_hash: { type: "string" },
+        error: { type: "string" },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
   },
   {
     name: "get_character_config",
-    description: "Read constitution hard_constraints, enforcer allow/deny/frequency, and habits. Does not evaluate policy.",
+    title: "Get character config",
+    description: "Use when the user wants to read hard constraints, allow/deny, frequency, and habits. Does not evaluate policy.",
     inputSchema: { type: "object", properties: {} },
+    outputSchema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+        workspace: { type: "string" },
+        character_hash: { type: "string" },
+        error: { type: "string" },
+      },
+      additionalProperties: true,
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
   {
     name: "set_character_config",
-    description: "Patch constitution.yaml and/or enforcer.yaml, then reload. Omitted fields stay. Does not evaluate policy.",
+    title: "Set character config",
+    description: "Use when the user wants to patch constitution.yaml and/or enforcer.yaml, then reload. Omitted fields stay. Does not evaluate policy.",
     inputSchema: {
       type: "object",
       properties: {
@@ -65,6 +119,15 @@ export const CONFIG_TOOLS = [
         required_acks: { type: "integer" },
       },
     },
+    outputSchema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+        character_hash: { type: "string" },
+        error: { type: "string" },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
 ];
 

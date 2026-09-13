@@ -46,9 +46,28 @@ describe("MCP HTTP JSON-RPC", () => {
     });
     assert.equal(list.result.tools.length, MCP_TOOLS.length);
     assert.ok(list.result.tools.some((t) => t.name === "execute_tool"));
+    for (const t of list.result.tools) {
+      assert.equal(typeof t.title, "string", t.name);
+      assert.equal(typeof t.description, "string", t.name);
+      assert.equal(t.inputSchema?.type, "object", t.name);
+      assert.equal(t.outputSchema?.type, "object", t.name);
+      assert.equal(typeof t.annotations?.readOnlyHint, "boolean", t.name);
+      assert.equal(typeof t.annotations?.destructiveHint, "boolean", t.name);
+    }
+    const reads = ["list_habits", "get_habit", "get_character_config", "heartbeat", "status", "pick_prompt"];
+    for (const name of reads) {
+      const t = list.result.tools.find((x) => x.name === name);
+      assert.equal(t.annotations.readOnlyHint, true, name);
+    }
+    const writes = ["write_habit", "set_character_config", "execute_tool", "submit_ack", "reload", "tool_tick"];
+    for (const name of writes) {
+      const t = list.result.tools.find((x) => x.name === name);
+      assert.equal(t.annotations.readOnlyHint, false, name);
+    }
+    assert.equal(list.result.tools.find((x) => x.name === "delete_habit").annotations.destructiveHint, true);
   });
 
-  it("tools/call execute_tool returns a v0 deny in content, not MCP isError", () => {
+  it("tools/call execute_tool returns a v0 deny in structuredContent, not MCP isError", () => {
     const out = handleMcpJsonRpc(fakeEnforcer(), {
       jsonrpc: "2.0",
       id: 3,
@@ -56,9 +75,10 @@ describe("MCP HTTP JSON-RPC", () => {
       params: { name: "execute_tool", arguments: { tool: "Bash", command: "rm -rf /" } },
     }, { version: "1.6.0" });
     assert.equal(out.result.isError, false);
-    const body = JSON.parse(out.result.content[0].text);
-    assert.equal(body.denied, true);
-    assert.equal(body.reason, "rm -rf /");
+    assert.equal(out.result.structuredContent.denied, true);
+    assert.equal(out.result.structuredContent.reason, "rm -rf /");
+    assert.equal(out.result.content[0].type, "text");
+    assert.match(out.result.content[0].text, /Blocked/);
   });
 
   it("reads bearer token from headers", () => {

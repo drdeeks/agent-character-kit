@@ -44,7 +44,11 @@ The third is a different product.
 - `src/` — Chat Completions mapper for custom OpenAI-compatible HTTP hosts
 - `mcp.json` — streamable-http to `http://127.0.0.1:8754/mcp` (daemon must
   be started with `ACK_MCP_HTTP`). `.mcp.json` is the Codex fallback.
-  No Apps SDK widget.
+  `mcp-server/` is a pointer README, not a second Node server.
+  No Apps SDK widget. MCP tools work without GET `/config`.
+- Auth is `ACK_AUTH_TOKEN` bearer on the loopback daemon, not OAuth 2.1
+  (no user-cloud resource). HTTPS is for an internet endpoint; `127.0.0.1`
+  stays HTTP.
 
 ## Runtime mapper (`src/`)
 

@@ -28,10 +28,38 @@ const V0_METHODS = [
   "register_workspace",
 ];
 
+const RO = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const RW = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
+
+export function mcpReadable(data) {
+  if (!data || typeof data !== "object") return String(data ?? "");
+  if (typeof data.error === "string") return data.error;
+  if (data.denied === true) return `Blocked: ${data.reason || "denied"}`;
+  if (data.denied === false) return "Allowed";
+  if (Array.isArray(data.habits)) return `Found ${data.habits.length} habits`;
+  if (Array.isArray(data.prompts)) return `Found ${data.prompts.length} habit prompts`;
+  if (data.status === "ok") return `Heartbeat ok (${data.version || "ack"})`;
+  if (data.ok === true && data.character_hash) return `Reloaded ${data.character_hash}`;
+  if (data.ok === true) return "ok";
+  if (typeof data.name === "string") return `Habit ${data.name}`;
+  return JSON.stringify(data);
+}
+
+export function mcpToolResult(data) {
+  const isError = !!(data && typeof data.error === "string");
+  const structuredContent = data && typeof data === "object" ? data : { value: data };
+  return {
+    structuredContent,
+    content: [{ type: "text", text: mcpReadable(data) }],
+    isError,
+  };
+}
+
 export const MCP_TOOLS = [
   {
     name: "execute_tool",
-    description: "Gate a tool call. Fail-closed. Same v0 method Watchtower uses.",
+    title: "Gate tool call",
+    description: "Use when a host tool is about to run. Fail-closed. Same v0 method Watchtower uses. Does not replace authorization.",
     inputSchema: {
       type: "object",
       properties: {
@@ -41,19 +69,41 @@ export const MCP_TOOLS = [
       },
       required: ["tool"],
     },
+    outputSchema: {
+      type: "object",
+      properties: {
+        denied: { type: "boolean" },
+        reason: { type: "string" },
+        reflection: { type: "string" },
+        error: { type: "string" },
+      },
+    },
+    annotations: RW,
   },
   {
     name: "get_habit",
-    description: "Return one habit's prompt/assert/evidence/logic.",
+    title: "Get habit",
+    description: "Use when the user or agent needs one habit's prompt, assert, evidence, and logic.",
     inputSchema: {
       type: "object",
       properties: { name: { type: "string" } },
       required: ["name"],
     },
+    outputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        prompt: { type: "string" },
+        error: { type: "string" },
+      },
+      additionalProperties: true,
+    },
+    annotations: RO,
   },
   {
     name: "submit_ack",
-    description: "Submit a habit acknowledgment statement.",
+    title: "Submit acknowledgment",
+    description: "Use when the agent must submit a habit acknowledgment with real work attribution.",
     inputSchema: {
       type: "object",
       properties: {
@@ -62,33 +112,83 @@ export const MCP_TOOLS = [
       },
       required: ["statement"],
     },
+    outputSchema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+        error: { type: "string" },
+      },
+    },
+    annotations: RW,
   },
   {
     name: "heartbeat",
-    description: "Agent liveness ping.",
+    title: "Heartbeat",
+    description: "Use to ping daemon liveness. Same v0 method Watchtower uses.",
     inputSchema: { type: "object", properties: {} },
+    outputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string" },
+        version: { type: "string" },
+        character_hash: { type: "string" },
+        error: { type: "string" },
+      },
+    },
+    annotations: RO,
   },
   {
     name: "status",
-    description: "Daemon health (unauthenticated on v0; token still required here if ACK_AUTH_TOKEN is set for other methods).",
+    title: "Daemon status",
+    description: "Use to read daemon health. v0 status is unauthenticated; MCP still sends the bearer token when ACK_AUTH_TOKEN is set.",
     inputSchema: { type: "object", properties: {} },
+    outputSchema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+        version: { type: "string" },
+        workspace: { type: "string" },
+        error: { type: "string" },
+      },
+    },
+    annotations: RO,
   },
   {
     name: "reload",
-    description: "Re-read constitution/habits/policy.",
+    title: "Reload character",
+    description: "Use after YAML edits to re-read constitution, habits, and policy.",
     inputSchema: { type: "object", properties: {} },
+    outputSchema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean" },
+        character_hash: { type: "string" },
+        error: { type: "string" },
+      },
+    },
+    annotations: RW,
   },
   {
     name: "pick_prompt",
-    description: "Next 2–3 habit prompt strings for injection. Fail-open.",
+    title: "Pick habit prompts",
+    description: "Use for fail-open injection: next 2–3 habit prompt strings only.",
     inputSchema: {
       type: "object",
       properties: { session_id: { type: "string" } },
     },
+    outputSchema: {
+      type: "object",
+      properties: {
+        prompts: { type: "array", items: { type: "string" } },
+        error: { type: "string" },
+      },
+    },
+    annotations: RO,
   },
   {
     name: "tool_tick",
-    description: "Count a tool use toward the hold window.",
+    title: "Count tool tick",
+    description: "Use to count a non-search tool toward the hold window. Not a Watchtower v0 method.",
     inputSchema: {
       type: "object",
       properties: {
@@ -97,6 +197,15 @@ export const MCP_TOOLS = [
         file_path: { type: "string" },
       },
     },
+    outputSchema: {
+      type: "object",
+      properties: {
+        hold: { type: "boolean" },
+        reason: { type: "string" },
+        error: { type: "string" },
+      },
+    },
+    annotations: RW,
   },
   ...CONFIG_TOOLS,
 ];
@@ -175,10 +284,7 @@ export function handleMcpJsonRpc(enforcer, message, options = {}) {
         });
       }
       const out = runConfigTool(enforcer, name, args);
-      return rpcResult(id ?? null, {
-        content: [{ type: "text", text: JSON.stringify(out) }],
-        isError: !!(out && out.error),
-      });
+      return rpcResult(id ?? null, mcpToolResult(out));
     }
     if (!name || !V0_METHODS.includes(name)) {
       return rpcError(id ?? null, -32602, `unknown tool: ${name || "(missing)"}`);
@@ -192,12 +298,7 @@ export function handleMcpJsonRpc(enforcer, message, options = {}) {
       includePid: options.includePid,
       registerWorkspace: options.registerWorkspace,
     });
-    const isError = !!(v0 && v0.error);
-    const result = {
-      content: [{ type: "text", text: JSON.stringify(v0) }],
-      isError,
-    };
-    return rpcResult(id ?? null, result);
+    return rpcResult(id ?? null, mcpToolResult(v0));
   }
   return rpcError(id ?? null, -32601, `method not found: ${method}`);
 }

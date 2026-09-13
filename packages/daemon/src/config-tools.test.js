@@ -70,8 +70,8 @@ describe("config MCP tools", () => {
       method: "tools/call",
       params: { name: "get_character_config", arguments: {} },
     });
-    const body = JSON.parse(call.result.content[0].text);
-    assert.equal(body.ok, true);
-    assert.equal(body.workspace, ws);
+    assert.equal(call.result.structuredContent.ok, true);
+    assert.equal(call.result.structuredContent.workspace, ws);
+    assert.equal(call.result.content[0].type, "text");
   });
 });

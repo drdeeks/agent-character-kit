@@ -17,14 +17,27 @@ Codex still uses this package's skills and hooks for the gate.
 
 ## Layout
 
-- `plugin.json` — portable Agent Plugins manifest
-- `mcp.json` — optional streamable HTTP to the ACK daemon (`ACK_MCP_HTTP`)
+OpenAI's current plugin guide is MCP-first (`skills/` + MCP server +
+`README.md`; UI optional). ACK maps that onto **one daemon**, not a nested
+`mcp-server/src` package:
+
+- `plugin.json` — portable Agent Plugins manifest (stable name + 1.7.0)
+- `mcp.json` — streamable HTTP to the ACK daemon (`ACK_MCP_HTTP`)
+- `mcp-server/README.md` — pointer only; live server is `packages/daemon`
 - `.mcp.json` — Codex fallback copy of that MCP pointer
 - `.codex-plugin/plugin.json` — Codex fallback
 - `skills/character-enforcement/` — hold, ack, fail-closed
 - `skills/configure-character/` — add/update/delete habits, allow/deny, frequency, workspace
 - `hooks/` — Codex `PreToolUse` / `SessionStart` exec `ack hook` (daemon RPC, no local policy)
 - `src/` — optional Chat Completions mapper for custom OpenAI-compatible HTTP hosts (still must not evaluate constitution)
+
+MCP tools have title, description, input/output schemas, and safety
+annotations. Reads (`list_habits`, `get_habit`, `get_character_config`,
+`heartbeat`, `status`, `pick_prompt`) are separate from writes
+(`write_habit`, `set_character_config`, `execute_tool`, `submit_ack`,
+`reload`, `tool_tick`). `delete_habit` is the destructive write. Results
+return `structuredContent` plus readable `content`. No secrets in results.
+GET `/config` is optional localhost HTML; tools work without it.
 
 ## Local marketplace
 

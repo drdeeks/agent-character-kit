@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+test("OpenAI plugin does not nest a second MCP server tree", () => {
+  assert.equal(existsSync(path.join(root, "mcp-server", "src")), false);
+  const pointer = readFileSync(path.join(root, "mcp-server", "README.md"), "utf8");
+  assert.match(pointer, /packages\/daemon/);
+  assert.match(pointer, /Do not put a second MCP server here/);
+});
 
 test("mcp.json is streamable-http to the local ACK daemon", () => {
   const mcp = JSON.parse(readFileSync(path.join(root, "mcp.json"), "utf8"));

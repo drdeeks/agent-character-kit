@@ -9,6 +9,17 @@ Append-only, newest entry on top. Never rewrite a past entry.
 npm: `@drdeeks/character-kit@1.7.0`. Same kit, not a 2.0.0 socket cutover.
 Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
 
+**Changed — OpenAI plugin MCP tools match the current plugin guide
+(2026-09-13):**
+
+MCP stays on the ACK daemon (`ACK_MCP_HTTP`, `POST /mcp`). No nested
+`mcp-server/src`, no `@modelcontextprotocol/sdk` second engine, no Apps
+SDK widgets. Each tool now has title, description, inputSchema,
+outputSchema, and safety annotations. Reads and writes stay separate.
+`tools/call` returns `structuredContent` plus readable `content`. Plugin
+`mcp-server/README.md` is a pointer. Auth remains bearer `ACK_AUTH_TOKEN`
+on loopback (not OAuth 2.1).
+
 **Fixed — Enforcer `heartbeat` after the packages/daemon move
 (2026-09-13):**
 
