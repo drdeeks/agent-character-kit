@@ -5,7 +5,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/drdeeks/agent-character-kit/main/install.sh | bash
 #
-# Installs npm package @drdeeks/character-kit (current kit: 1.7.0), then
+# Installs npm package @drdeeks/character-kit (current kit: 1.8.0), then
 # execs `ack configure`. npm install -g still never configures on its own.
 #
 # Why this exists instead of an npm postinstall script: npm's lifecycle
@@ -64,7 +64,7 @@ say ""
 say "── Installing ${PACKAGE} ──"
 if [ -n "${ACK_INSTALL_FROM:-}" ]; then
   # Dev/testing override: install from a local tarball or directory path
-  # instead of the registry (e.g. ACK_INSTALL_FROM=./drdeeks-character-kit-1.7.0.tgz).
+  # instead of the registry (e.g. ACK_INSTALL_FROM=./drdeeks-character-kit-1.8.0.tgz).
   say "(ACK_INSTALL_FROM set -- installing from local path: ${ACK_INSTALL_FROM})"
   npm install -g "$ACK_INSTALL_FROM" --allow-scripts="$PACKAGE" || npm install -g "$ACK_INSTALL_FROM"
 else

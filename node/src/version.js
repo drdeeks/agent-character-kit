@@ -7,4 +7,4 @@
 // character kit is ONLY the habit system; memory/knowledge is a separate,
 // heavier skill the daemon has no business depending on just to know its
 // own version number).
-export const VERSION = "1.7.0";
+export const VERSION = "1.8.0";

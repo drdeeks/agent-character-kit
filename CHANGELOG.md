@@ -4,6 +4,21 @@ Append-only, newest entry on top. Never rewrite a past entry.
 
 ## Unreleased
 
+## 1.8.0 — 2026-09-13
+
+npm: `@drdeeks/character-kit@1.8.0`. Same kit, not a 2.0.0 socket cutover.
+Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
+
+**Changed — kit stamp 1.8.0
+(2026-09-13):**
+
+Bump `VERSION`, `node/src/version.js`, root/`node`/`packages/*`/`plugins/*`
+`package.json`, OpenAI `plugin.json` + `.codex-plugin/plugin.json`, Hermes
+`ACK_VERSION` / `plugin.yaml` / `pyproject.toml`, README, `install.sh`,
+`AGENTS.md`. This stamp is the unpublished 1.7.0 tree plus Codex interface
+metadata and the `js-yaml` 4.3.2 / 3.15.2 CVE patch. Detailed bullets stay
+under 1.7.0 (append-only). Do not rewrite that section.
+
 ## 1.7.0 — 2026-09-13
 
 npm: `@drdeeks/character-kit@1.7.0`. Same kit, not a 2.0.0 socket cutover.

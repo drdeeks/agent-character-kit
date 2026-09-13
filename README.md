@@ -127,7 +127,7 @@ ack configure          # interactive wizard
 ack configure --yes    # non-interactive, sane defaults
 ```
 
-npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.7.0**.
+npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.8.0**.
 After configure:
 
 ```bash

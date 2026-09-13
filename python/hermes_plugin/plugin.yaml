@@ -1,5 +1,5 @@
 name: "agent-character-kit"
-version: "1.7.0"
+version: "1.8.0"
 description: "Enforce agent character (constitution, habits, policy) on every tool call via the Agent Character Kit enforcer. Fail-closed: blocks when the enforcer is unreachable or misconfigured."
 author: "drdeeks"
 entry_point: "__init__.py"
