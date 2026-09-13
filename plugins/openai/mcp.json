@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "ack": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8754/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ACK_AUTH_TOKEN}"
+      }
+    }
+  }
+}

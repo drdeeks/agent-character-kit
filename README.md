@@ -45,7 +45,7 @@ The enforcement reinforces the reflection. The randomization prevents gaming. Th
 
 ## What You Get
 
-- **CORE**: `node/enforcer/agent_enforcer_daemon.js` — single enforcement engine, out-of-process, fail-closed
+- **CORE**: `packages/daemon` (Enforcer + v0 RPC + optional MCP HTTP) bootstrapped by `node/enforcer/agent_enforcer_daemon.js` — out-of-process, fail-closed
 - **COMPANIONS**: Thin clients (Hermes plugin, `ack hook` for Claude/Cursor/Gemini/Codex) — zero policy, just RPC
 - **Default character embedded** — works with zero config; disk config merges on top
 - **Harness-agnostic** — any agent with pre-tool-call hook works
@@ -56,7 +56,7 @@ The enforcement reinforces the reflection. The randomization prevents gaming. Th
 
 **This is a deterrent and a constant reminder, not a security boundary.**
 
-The gate hard-blocks the one non-negotiable floor (`rm -rf /`) and pasted secrets by default. Everything else opinionated — `sudo`, `git push --force`, `chmod 777` — is deliberately NOT a hard block; it lives as habit-level guidance instead (so it nudges rather than cages, and stays editable without touching the daemon — see `DEFAULT_CONSTITUTION` in `agent_enforcer_daemon.js`). The gate reminds the agent of its character on every block. It makes *doing the right thing* the default and *deviation* visible. That is the whole point: a lightweight, persistent nudge — not a cage.
+The gate hard-blocks the one non-negotiable floor (`rm -rf /`) and pasted secrets by default. Everything else opinionated — `sudo`, `git push --force`, `chmod 777` — is deliberately NOT a hard block; it lives as habit-level guidance instead (so it nudges rather than cages, and stays editable without touching the daemon — see `DEFAULT_CONSTITUTION` in `packages/daemon/src/enforcer.js`). The gate reminds the agent of its character on every block. It makes *doing the right thing* the default and *deviation* visible. That is the whole point: a lightweight, persistent nudge — not a cage.
 
 **It is explicitly NOT foolproof.** A determined agent can walk around it:
 
@@ -76,7 +76,8 @@ We do **not** try to close those gaps. Decoding and deep-inspecting every comman
 
 ### CORE — the enforcer daemon (the only thing that decides)
 
-- **File:** `node/enforcer/agent_enforcer_daemon.js`
+- **Files:** `packages/daemon/src/enforcer.js` (class + embedded defaults), `dispatch-v0.js`, JSONL listen. `node/enforcer/agent_enforcer_daemon.js` is env-load + unix/tcp bootstrap and still the process you start.
+- Optional MCP: set `ACK_MCP_HTTP` (e.g. `8754`) for POST `/mcp` and a config menu at `/config`. Off by default. Unix/tcp NDJSON is unchanged.
 - Plain Node process. Platform-agnostic: same binary on Linux/macOS/Windows.
 - **Embeds a default character** (safe hard constraints + secret-leak guard), so it works with **zero config files**. Config on disk *overrides* (merges on top of) the embedded default — never mandatory.
 - **Transport auto-selects (all self-resolving, no hardcoded host path):**
@@ -84,7 +85,7 @@ We do **not** try to close those gaps. Decoding and deep-inspecting every comman
   - Windows / cross-host / explicit → `ENFORCER_SOCKET=tcp://127.0.0.1:8753`
   - `/run/agent-enforcer/main.sock` remains only as the deepest fallback for a root-owned systemd install that sets it explicitly.
   - Clients read the same `ENFORCER_SOCKET` / `AGENT_WORKSPACE`, so they follow automatically. The interactive `ack configure` writes one `.env` that every component reads — no path is assumed.
-- **Out-of-process = tamper-resistant (NOT tamper-proof) — and only in root-mode.** The daemon always runs as a separate *process*, but in the default **user-mode** install it's the *same UID* as the agent, so any shell/exec tool the agent already has can `kill -9` it or edit its config directly — "separate process" alone is not a privilege boundary. Only the **root-mode** install (daemon + monitor + watchdog all root-owned via systemd) actually puts the enforcement outside the agent's reach. See **[AGENTS.md § User-mode vs Root-mode](AGENTS.md#user-mode-vs-root-mode--what-each-actually-prevents)** for the full breakdown of what each mode does and doesn't prevent. Either way, the *companion* plugin still runs inside the agent's own process and can be disabled by it (see the "not foolproof" note under Purpose).
+- **Out-of-process = tamper-resistant (NOT tamper-proof) — and only in root-mode.** The daemon always runs as a separate *process*, but in the default **user-mode** install it's the *same UID* as the agent, so any shell/exec tool the agent already has can `kill -9` it or edit its config directly — "separate process" alone is not a privilege boundary. Only the **root-mode** install (daemon + monitor + watchdog all root-owned via systemd) actually puts the enforcement outside the agent's reach. See **[AGENTS.md](AGENTS.md)** (User-mode vs Service-user-mode vs Root-mode) for the full breakdown of what each mode does and doesn't prevent. Either way, the *companion* plugin still runs inside the agent's own process and can be disabled by it (see the "not foolproof" note under Purpose).
 
 ### COMPANION — thin clients (hold NO policy)
 
@@ -124,6 +125,25 @@ npm install -g @drdeeks/character-kit
 ack configure          # interactive wizard
 # or
 ack configure --yes    # non-interactive, sane defaults
+```
+
+npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.7.0**.
+After configure:
+
+```bash
+ack status
+ack constitution show
+ack policy show
+ack habit list
+ack reload
+ack audit --denied
+```
+
+Optional localhost config menu — start the daemon with `ACK_MCP_HTTP` set
+(unix/tcp NDJSON stays on), then open `http://127.0.0.1:8754/config`:
+
+```bash
+export ACK_MCP_HTTP=8754
 ```
 
 ### From source (contributing, or running a local checkout)
@@ -180,8 +200,8 @@ ACK is harness-agnostic: the daemon enforces; the companion is just a thin clien
 
 ```bash
 cd python && pip install -e . && cd ..
-mkdir -p ~/.hermes/plugins/agent-character-kit
-cp -r python/hermes_plugin/* ~/.hermes/plugins/agent-character-kit/
+mkdir -p "$HOME/.hermes/plugins/agent-character-kit"
+cp -r python/hermes_plugin/* "$HOME/.hermes/plugins/agent-character-kit/"
 hermes plugins enable agent-character-kit   # grant tool-override (y) when asked
 # restart Hermes; pre_tool_call + pre_llm_call are now gated/injected by the CORE daemon
 ```

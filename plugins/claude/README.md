@@ -13,6 +13,8 @@ Policy stays in the live daemon. These hooks exec `ack hook claude`, not
 - `UserPromptSubmit` → `hooks/user-prompt-submit.js` → `ack hook claude` → daemon
 - `skills/character-enforcement/` — hold, ack, fail-closed
 - `skills/configure-character/` — habits, allow/deny, frequency, workspace
+- `.mcp.json` — optional HTTP MCP to the ACK daemon (`ACK_MCP_HTTP`,
+  `http://127.0.0.1:8754/mcp`). Gate still runs via `ack hook claude`.
 
 ## Honest limit
 

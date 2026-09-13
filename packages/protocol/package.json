@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit-protocol",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Versioned Character Kit protocol: envelopes, decisions, errors, capabilities",
   "type": "module",
   "main": "src/index.js",

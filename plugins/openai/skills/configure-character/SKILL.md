@@ -19,10 +19,10 @@ Load the matching reference before changing anything:
 
 1. Confirm `$AGENT_WORKSPACE` (default
    `$HOME/.agent-character-kit/workspace`).
-2. Prefer `ack habit create|list|delete` and `ack manage` over hand-editing
-   when those cover the change.
-3. After YAML edits, restart the daemon so `reload` takes effect. The
-   `reload` RPC exists; it is not yet a CLI flag.
+2. Prefer `ack habit create|list|delete`, `ack constitution`, `ack policy`,
+   and `ack manage` over hand-editing when those cover the change.
+3. After YAML edits, `ack reload` (or MCP `reload` /
+   `set_character_config`). Localhost menu: GET `/config` on `ACK_MCP_HTTP`.
 4. Verify with `ack status` and a deny probe of `rm -rf /` via `ack hook`.
 5. Do not evaluate policy in the plugin. Do not invent habit names.
 

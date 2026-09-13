@@ -1,0 +1,14 @@
+{
+  "name": "@drdeeks/character-kit-daemon",
+  "version": "1.7.0",
+  "description": "Character Kit enforcer socket RPC (v0 dispatch)",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

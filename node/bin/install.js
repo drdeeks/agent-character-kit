@@ -29,6 +29,7 @@ import { spawn, spawnSync } from "child_process";
 import { fileURLToPath, pathToFileURL } from "url";
 import { normalizeHabitName, buildHabitYaml, VALID_LEVELS } from "../src/habits/build.js";
 import { resolveAgentName } from "../src/agent-identity.js";
+import { detectHarnesses } from "../src/detect-harnesses.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, "..", ".."); // package root
@@ -184,16 +185,7 @@ export function claudeSettingsPath() {
 // "generic") and postinstall.js's own copy (used only for its pointer
 // message). Exported so both call sites use exactly one implementation,
 // regardless of how many more ever need harness detection.
-export function detectHarnesses() {
-  const home = os.homedir();
-  const candidates = [
-    { harness: "claude", marker: path.join(home, ".claude", "settings.json") },
-    { harness: "hermes", marker: path.join(home, ".hermes") },
-    { harness: "opencode", marker: path.join(home, ".config", "opencode") },
-  ];
-  const found = candidates.filter((c) => fs.existsSync(c.marker)).map((c) => c.harness);
-  return found.length ? found : ["generic"];
-}
+export { detectHarnesses } from "../src/detect-harnesses.js";
 
 // Merge (not clobber) our PreToolUse + UserPromptSubmit entries into the
 // user's real settings.json. Re-running install replaces our own prior

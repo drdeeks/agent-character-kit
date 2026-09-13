@@ -1,4 +1,4 @@
-# AGENTS.md — Agent Character Kit (ACK) v1.6.0
+# AGENTS.md — Agent Character Kit (ACK) v1.7.0
 
 > **This is the single source of truth for ACK.** README.md is a short overview
 > that points here. There is no other install/customize doc — if you're reading
@@ -8,9 +8,11 @@
 > Superseded files go to `.trash/` at this repo root (dated context dir, original
 > names). Never `rm`. Never leave a stub beside the new SoT.
 >
-> v2 refactor: `docs/refactor-plan.md`. Change log: `CHANGELOG.md` (Unreleased).
-> Live socket is still the 1.6.0 daemon. New `packages/` and `plugins/` are
-> additive until Phase 3 cutover.
+> v2 refactor: `docs/refactor-plan.md`. Change log: `CHANGELOG.md`.
+> Live kit version is **1.7.0** (`npm i -g @drdeeks/character-kit`).
+> `packages/` are kit folders (CLI, daemon extract, protocol, core, events,
+> companion), not new products. Do not bump to 2.0.0 until the socket is
+> explicitly cut over.
 
 ---
 
@@ -65,7 +67,11 @@ Cursor, Codex, a shell wrapper) can use it.
 ```
 
 ### CORE — the enforcer daemon (the only thing that decides)
-- **File:** `node/enforcer/agent_enforcer_daemon.js`
+- **Files:** `packages/daemon/src/enforcer.js` (Enforcer class, embedded defaults),
+  `dispatch-v0.js`, `jsonl-server.js`, `registry.js`, optional `mcp-http.js`.
+  `node/enforcer/agent_enforcer_daemon.js` is env-load + socket bootstrap.
+- Optional MCP HTTP: `ACK_MCP_HTTP` → POST `/mcp` and GET `/config` (localhost
+  character menu). Off by default. Watchtower stays on unix/tcp v0 NDJSON.
 - Plain Node process. Platform-agnostic: same binary on Linux/macOS/Windows.
 - **Embeds a default character** (safe hard constraints + secret-leak guard), so
   it works with **zero config files**. Config on disk *overrides* (merges on top
@@ -193,6 +199,18 @@ at all; see blueprint CL-0008/KD-16 for the full trace.
 
 Requires Node ≥ 18. (Python only needed if you use a Python-plugin
 companion such as the Hermes example — other companions need only Node.)
+
+Published package: **`@drdeeks/character-kit`** (npm). `npm install -g`
+never configures anything; run `ack configure` after.
+
+```bash
+npm install -g @drdeeks/character-kit
+ack configure          # interactive wizard
+# or
+ack configure --yes    # non-interactive, sane defaults
+```
+
+From source:
 
 ```bash
 git clone https://github.com/drdeeks/agent-character-kit.git
@@ -443,11 +461,21 @@ behavior:
 The embedded secret-leak guard is **always on** even with no habit file. Your
 habit *adds* to it; it does not replace it.
 
-**Reload:** the daemon has a `reload` RPC (re-reads constitution/habits/policy,
-recomputes the character hash) but it isn't yet wired to a CLI flag — restart
-the daemon process to pick up changes (`systemctl restart
-agent-enforcer.service` under systemd, or just let the supervisor notice the
-process exit and restart it).
+**CLI (same YAML, then `ack reload` if the daemon is up):**
+- `ack constitution show|add|remove` — `hard_constraints`
+- `ack policy show` — deny/allow/hold frequency
+- `ack policy deny add|remove` / `ack policy allow add|remove`
+- `ack policy set hold-every <n>` / `ack policy set required-acks <n>`
+- `ack habit create|list|delete` and `ack manage` for habits
+- Localhost menu: `ACK_MCP_HTTP=8754` then `http://127.0.0.1:8754/config`
+
+On-disk `hard_constraints:` **replaces** the embedded array. Keep `rm -rf /`
+in the list unless you mean to drop it.
+
+**Reload:** `ack reload` calls the daemon `reload` RPC (re-reads
+constitution/habits/policy, recomputes the character hash). Use `--agent
+<name>` for a registered workspace. If the daemon is down, files are still
+written; start the daemon and reload.
 
 ---
 
@@ -487,9 +515,9 @@ Update `CHANGELOG.md` and this file in the same pass as code changes.
 Do not ship a package/plugin tree that this file map does not name.
 
 Workspace packages (`packages/*/package.json`, `plugins/openai`,
-`plugins/hermes`) currently stamp 1.6.0 to match the live kit. Bump them
-with the six files above when cutting **2.0.0** (refactor-plan Phase 8).
-Do not bump to 2.0.0 until the daemon speaks `packages/core` on the socket.
+`plugins/claude`, `plugins/hermes`) stamp **1.7.0** with the live kit.
+Bump them with the six files above on each release. Do not bump to 2.0.0
+until the socket is explicitly cut over (refactor-plan Phase 8).
 
 ### v2 status (2026-09-13)
 
@@ -511,8 +539,22 @@ sockets share `dispatchV0` (same method names). Daemon also appends
 `pick_prompt`; tool/ack facts from `_audit`). `createCompanion` default
 core is in-process for tests, not the live enforcer.
 
-Not done: Phase 3 daemon still lives in `agent_enforcer_daemon.js`; ACK
-MCP/streamable HTTP; CLI split into `packages/cli` (same kit); optional
+`ack` command bodies live under `packages/cli/src/` (commander +
+`configure` still in `node/bin/ack.js`). That includes `reload`, `audit`,
+`constitution`, and `policy`. Shared `ask()` / daemon-process helpers are
+`ask.js` and `daemons.js` in that same folder.
+
+v0 RPC dispatch, JSONL listen, socket perms, Enforcer class, and workspace
+registry live under `packages/daemon/src/`. `agent_enforcer_daemon.js` is
+env-load + socket bootstrap and re-exports `Enforcer` + `ACK_VERSION`.
+
+Opt-in MCP HTTP: set `ACK_MCP_HTTP` (off by default). POST `/mcp` JSON-RPC
+over `dispatchV0` plus config tools (`list_habits`, `write_habit`,
+`delete_habit`, `get_character_config`, `set_character_config`) that write
+YAML then reload. GET `/config` is a localhost HTML menu. Plugins point at
+`http://127.0.0.1:8754/mcp`. No Apps SDK widgets.
+
+Not done: ACK Apps SDK widgets; optional
 folder-split of the existing monitor/watchdog *components* (still this
 kit, still `ack configure`); deploy path updates; 2.0.0 release.
 
@@ -520,22 +562,14 @@ kit, still `ack configure`); deploy path updates; 2.0.0 release.
 
 ## Known gaps / future work
 
-- **No CLI visibility or interactive control over what's actually
-  blocked.** `ack doctor` / `ack config verify` only check whether
-  `constitution.yaml` (`hard_constraints`) and `enforcer.yaml` (allow/deny)
-  *exist* — nothing prints their contents, and there's no `ack constitution
-  show/add/remove` or `ack policy show/allow/deny` to change them
-  interactively, including from `ack manage` below. The only path today is
-  hand-editing the YAML files directly (see "Customize" above). Habits
-  (`ack habit list/create/delete`, and `ack manage`'s per-agent habit
-  actions) are the one part of this that IS interactive — hard blocks and
-  allow/deny policy are not.
-- **No CLI access to the audit trail.** Every allow/deny decision is
-  genuinely logged (`enforcer-audit.jsonl` from the daemon,
-  `tool-audit.jsonl` from the companion side), but there is no `ack log` /
-  `ack audit` command to view, tail, search, or filter it — a user has to
-  know the files exist and read the raw JSONL themselves. Not documented in
-  any `--help` output.
+- **`ack doctor` / `ack config verify` still only check that YAML files exist.**
+  Contents and edits are `ack constitution` / `ack policy`, MCP
+  `get_character_config` / `set_character_config`, and GET `/config`.
+- **Audit trail CLI is read-only and last-N.** `ack audit` prints recent
+  JSONL (`--source enforcer|events|companion|ack|all`, `--denied`,
+  `--limit`). It does not tail -f or search. Files are still
+  `enforcer-audit.jsonl`, `.agent/logs/events/*.jsonl`, companion
+  `tool-audit.jsonl`, and `ack.jsonl`.
 - **`node/corpus/`'s knowledge-indexing (`DocumentIndexer`/`SemanticSearch`)
   has no CLI surface.** It used to (`aik index run`, `aik semantic index`,
   via the now-deleted `aik.js`); `ack.js` never got an equivalent. Currently
@@ -639,14 +673,16 @@ by a green JS test suite, only by an actual run against real system state.
 | `packages/protocol/` | v0/v1 envelope, ToolDecision, errors, capabilities |
 | `packages/core/` | Host-neutral PolicyEngine + CharacterKitCore |
 | `packages/events/` | Canonical enforcement events + JSONL sink |
+| `packages/cli/` | `ack` command bodies (`hook`, `status`, `doctor`, `repair`, `manage`, `habit`, `reload`, `audit`, `constitution`, `policy`) |
 | `packages/companion/` | Thin client factory (no policy) |
-| `plugins/openai/` | Agent Plugins 1.0.0 package (plugin.json, skills, Codex hooks) plus Chat Completions mapper in `src/` |
+| `packages/daemon/` | Enforcer class, v0 dispatch, JSONL listen, registry, opt-in MCP HTTP + `/config` menu |
+| `plugins/openai/` | Agent Plugins 1.0.0 (`plugin.json`, `mcp.json`, skills, Codex hooks) plus Chat Completions mapper in `src/` |
 | `.agents/plugins/marketplace.json` | Local ChatGPT/Codex marketplace entry for `plugins/openai` |
-| `plugins/claude/` | Claude Code plugin (hooks + skill) |
+| `plugins/claude/` | Claude Code plugin (hooks, skills, `.mcp.json`) |
 | `plugins/hermes/` | Hermes-shaped Node adapter |
-| `node/enforcer/agent_enforcer_daemon.js` | **CORE daemon (1.6.0)** — live enforcer until Phase 3 cutover |
+| `node/enforcer/agent_enforcer_daemon.js` | **CORE bootstrap (1.7.0)** — env-load + unix/tcp listen; class lives in `packages/daemon` |
 | `node/src/enforcer/client.js` | Node thin client |
-| `node/bin/ack.js` | CLI (`hook/configure/manage/status/doctor/repair/config/habit`) |
+| `node/bin/ack.js` | CLI commander shell + `ack configure` |
 | `node/src/manage-menu.js` | Pure, unit-tested menu logic for `ack manage` (agent-list building, choice parsing) |
 | `python/hermes_plugin/` | **COMPANION** — example Python-plugin client (one of several) |
 | `python/agent_character_kit/enforcer.py` | Python client (`EnforcerClient`) to the CORE |
@@ -656,7 +692,7 @@ by a green JS test suite, only by an actual run against real system state.
 | `docs/adapters/` | OpenAI, Claude, Hermes adapter notes |
 | `CHANGELOG.md` | Append-only change tracking |
 | `deploy/` | Linux systemd unit + installer |
-| `VERSION` | version stamp (1.6.0 until 2.0.0 cut) |
+| `VERSION` | version stamp (1.7.0 until 2.0.0 cut) |
 
 ---
 

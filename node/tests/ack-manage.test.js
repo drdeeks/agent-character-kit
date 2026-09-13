@@ -21,9 +21,9 @@ test("buildAgentList: falls back to a single 'default' entry when no registry ex
   const agents = buildAgentList({
     registryPath: null,
     registryAgents: [],
-    defaultWs: "/home/x/.agent-character-kit/workspace",
-    defaultSock: "/home/x/.agent-character-kit/workspace/.agent/enforcer.sock",
-    defaultAckLog: "/home/x/.agent-character-kit/workspace/.agent/ack.jsonl",
+    defaultWs: "/tmp/ack/ws",
+    defaultSock: "/tmp/ack/ws/.agent/enforcer.sock",
+    defaultAckLog: "/tmp/ack/ws/.agent/ack.jsonl",
   });
   assert.equal(agents.length, 1);
   assert.equal(agents[0].name, "default");
@@ -32,21 +32,21 @@ test("buildAgentList: falls back to a single 'default' entry when no registry ex
 
 test("buildAgentList: registry-backed agents get <ws>/.agent/<name>.{sock,jsonl}, matching the daemon's own formula", () => {
   const agents = buildAgentList({
-    registryPath: "/home/x/.agent-character-kit/workspaces.json",
-    registryAgents: ["/home/x/.agent-character-kit/workspace/agents/claude", "/home/x/.agent-character-kit/workspace/agents/opencode"],
+    registryPath: "/tmp/ack/ws.json",
+    registryAgents: ["/tmp/ack/claude", "/tmp/ack/opencode"],
     defaultWs: "unused", defaultSock: "unused", defaultAckLog: "unused",
   });
   assert.equal(agents.length, 2);
   assert.equal(agents[0].name, "claude");
-  assert.equal(agents[0].sock, "/home/x/.agent-character-kit/workspace/agents/claude/.agent/claude.sock");
-  assert.equal(agents[0].ackLog, "/home/x/.agent-character-kit/workspace/agents/claude/.agent/ack.jsonl");
+  assert.equal(agents[0].sock, "/tmp/ack/claude/.agent/claude.sock");
+  assert.equal(agents[0].ackLog, "/tmp/ack/claude/.agent/ack.jsonl");
   assert.equal(agents[0].rootMode, false);
 });
 
 test("buildAgentList: rootMode is derived from the registry path (/var/lib -- root deploy only)", () => {
   const agents = buildAgentList({
-    registryPath: "/var/lib/agent-character-kit/workspaces.json",
-    registryAgents: ["/var/lib/agent-character-kit/workspace/agents/claude"],
+    registryPath: "/var/lib/ack/ws.json",
+    registryAgents: ["/var/lib/ack/claude"],
     defaultWs: "unused", defaultSock: "unused", defaultAckLog: "unused",
   });
   assert.equal(agents[0].rootMode, true);

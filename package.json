@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Agent character enforcement. Host-neutral core plus OpenAI, Claude, and Hermes companions. Fail-closed. Not a security boundary.",
   "main": "node/src/index.js",
   "exports": {
@@ -9,6 +9,8 @@
     "./core": "./packages/core/src/index.js",
     "./companion": "./packages/companion/src/index.js",
     "./events": "./packages/events/src/index.js",
+    "./cli": "./packages/cli/src/index.js",
+    "./daemon": "./packages/daemon/src/index.js",
     "./hooks": "./node/src/hooks/character.js"
   },
   "bin": {
@@ -23,7 +25,7 @@
     "plugins/hermes"
   ],
   "scripts": {
-    "test": "node --test node/tests/*.test.js packages/core/src/policy/engine.test.js packages/protocol/src/envelope.test.js plugins/openai/src/plugin-manifest.test.js",
+    "test": "node --test node/tests/*.test.js packages/core/src/policy/engine.test.js packages/protocol/src/envelope.test.js packages/daemon/src/*.test.js plugins/openai/src/plugin-manifest.test.js plugins/claude/plugin-manifest.test.js",
     "start": "node node/bin/ack.js",
     "ack-install": "node node/bin/install.js",
     "postinstall": "node node/bin/postinstall.js",
@@ -53,6 +55,7 @@
   },
   "files": [
     "VERSION",
+    "install.sh",
     "node/bin/",
     "node/src/",
     "node/enforcer/",

@@ -1,0 +1,20 @@
+{
+  "name": "ack-local",
+  "interface": {
+    "displayName": "Agent Character Kit"
+  },
+  "plugins": [
+    {
+      "name": "agent-character-kit",
+      "source": {
+        "source": "local",
+        "path": "./plugins/openai"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

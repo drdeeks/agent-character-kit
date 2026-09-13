@@ -4,6 +4,157 @@ Append-only, newest entry on top. Never rewrite a past entry.
 
 ## Unreleased
 
+## 1.7.0 — 2026-09-13
+
+npm: `@drdeeks/character-kit@1.7.0`. Same kit, not a 2.0.0 socket cutover.
+Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
+
+**Fixed — Enforcer `heartbeat` after the packages/daemon move
+(2026-09-13):**
+
+`heartbeat()` referenced `ACK_VERSION` which no longer existed in
+`enforcer.js`. The JSONL server caught the throw and returned
+`{ error: "invalid request" }`. Watchtower `sendHeartbeat` failed-closed.
+Import `VERSION` from `node/src/version.js`. Live-proved with
+`createCharacterKitClient` from `plugins/watchtower-adapter`:
+`execute_tool`, `get_habit`, `submit_ack`, `heartbeat`.
+
+**Fixed — `events.js` syntax
+(2026-09-13):**
+
+`policyReleasedEvent` was missing a `}` (`node --check` failed). Duplicate
+named `export { EventType, ... }` removed; functions already export at
+definition.
+
+**Changed — `install.sh` and npm pack for 1.7.0
+(2026-09-13):**
+
+Curl installer still `npm i -g @drdeeks/character-kit` then `ack configure`.
+Comments name 1.7.0. Root `files[]` includes `install.sh`.
+
+**Changed — kit tree passes forever-validation
+(2026-09-13):**
+
+Example habit YAML no longer embeds unfinished-stub, draft, PEM, or assignment samples.
+Manage/install tests use short `/tmp/ack/...` and `/var/lib/ack/...`
+paths. Directory scan: 0 errors.
+
+**Added — `ack constitution` and `ack policy`
+(2026-09-13):**
+
+CLI writes the same workspace YAML as the MCP config tools, then reloads
+if the daemon is up. `constitution show|add|remove` edits
+`hard_constraints`. `policy show`, `policy deny/allow add|remove`, and
+`policy set hold-every|required-acks` edit `enforcer.yaml`. README and
+AGENTS.md match the `packages/daemon` + `packages/cli` layout.
+`postinstall.js` imports `detectHarnesses` from a tiny module so npm
+install does not load `install.js` / `gray-matter`.
+
+**Added — config MCP tools and localhost /config menu
+(2026-09-13):**
+
+MCP tools `list_habits`, `write_habit`, `delete_habit`,
+`get_character_config`, `set_character_config` write workspace YAML then
+`reload`. They do not evaluate policy. Watchtower v0 methods unchanged.
+GET `/config` on `ACK_MCP_HTTP` is a small HTML menu (habits, hard
+constraints, allow/deny, hold frequency). Not an Apps SDK widget.
+
+**Added — plugin mcp.json pointers to ACK MCP HTTP
+(2026-09-13):**
+
+OpenAI `mcp.json` (Agent Plugins `streamable-http`) and Codex `.mcp.json`
+plus Claude `.mcp.json` (`type: http`) point at
+`http://127.0.0.1:8754/mcp`. Daemon still needs `ACK_MCP_HTTP`. Gate stays
+`ack hook`. No Apps SDK widgets.
+
+**Added — opt-in MCP streamable HTTP on the daemon
+(2026-09-13):**
+
+Set `ACK_MCP_HTTP` (`tcp://127.0.0.1:8754`, `host:port`, or a port) to
+serve POST JSON-RPC at `/mcp` (`initialize`, `tools/list`, `tools/call`
+over the same v0 methods). Off by default. Unix/tcp NDJSON unchanged.
+Watchtower still uses the four frozen v0 RPCs. No Apps SDK widgets, no
+plugin `mcp.json` yet. Auth is `Authorization: Bearer` / `X-Ack-Token`
+mapped onto `ACK_AUTH_TOKEN`.
+
+**Added — `ack reload` and `ack audit`
+(2026-09-13):**
+
+`ack reload` calls the existing daemon `reload` RPC and prints
+`character_hash`. `ack audit` reads last-N JSONL from enforcer-audit,
+events, companion tool-audit, or ack.jsonl (`--source`, `--denied`,
+`--limit`, `--json`). Closes the AGENTS.md "no CLI for audit trail" gap
+as read-only last-N, not tail/search. Same kit.
+
+**Changed — Enforcer class and workspace registry live in packages/daemon
+(2026-09-13):**
+
+`Enforcer` / `EnforcerWithConfig` / `resolveConfig` moved to
+`packages/daemon/src/enforcer.js`. `resolveWorkspaces` /
+`registerWorkspace` moved to `registry.js`. `agent_enforcer_daemon.js`
+is now env-load + socket bootstrap (~230 lines) and still re-exports
+`Enforcer` + `ACK_VERSION`. Watchtower v0 methods unchanged.
+
+**Changed — unix/tcp JSONL listen lives in packages/daemon
+(2026-09-13):**
+
+Single-workspace and multi-workspace servers now share
+`attachJsonlRpc` + `listenEnforcerSocket` (0660 socket, 0750 dir,
+ACK_CLIENT_GROUP chown, stale-unix unlink). Watchtower v0 methods
+unchanged. Enforcer class still in `agent_enforcer_daemon.js`.
+
+**Changed — v0 RPC table lives in packages/daemon
+(2026-09-13):**
+
+`dispatchV0` moved to `packages/daemon/src/dispatch-v0.js`. Unix and
+multi-workspace servers still call it. Method names unchanged. Watchtower
+still uses `execute_tool`, `get_habit`, `submit_ack`, `heartbeat`.
+
+**Changed — CLI command bodies live in packages/cli
+(2026-09-13):**
+
+Same `ack` binary. Implementations moved from `node/src/cli/` to
+`packages/cli/src/` (`@drdeeks/character-kit-cli`). `node/bin/ack.js`
+still owns commander + `configure`. Old `node/src/cli/` is in `.trash/`.
+Not a separate product.
+
+**Changed — ack repair and ack manage live in node/src/cli
+(2026-09-13):**
+
+`ack repair` is `node/src/cli/repair.js`. `ack manage` is `manage.js`.
+`node/bin/ack.js` is now the commander shell plus `ack configure` (still
+delegates to `install.js`). Same kit, same commands.
+
+**Changed — ack doctor and daemon-process helpers live in node/src/cli
+(2026-09-13):**
+
+`ack doctor` is `node/src/cli/doctor.js`. Process/socket helpers
+(`findEnforcerDaemons`, `reviveDaemon`, `cleanupStaleResources`, …) are
+`daemons.js`. PASS/FAIL printers are `report.js`. `ack repair` and
+`ack manage` still run from `node/bin/ack.js` and import those helpers.
+Same kit, same commands.
+
+**Changed — ack habit + stdin ask live in node/src/cli
+(2026-09-13):**
+
+`ack habit` create/list/delete and the line-buffered `ask()` prompt moved
+to `node/src/cli/habit.js` and `ask.js`. `ack manage` / `repair` import
+those. Commander still in `node/bin/ack.js`.
+
+**Changed — ack config/status share node/src/cli helpers
+(2026-09-13):**
+
+`ack config` (show/verify/set/write-env) and `ack status` run from
+`node/src/cli/`. Path/socket/registry helpers live in `workspace.js`.
+`ack doctor` / `repair` / `manage` still in `node/bin/ack.js` and import
+those helpers. Same kit, same commands.
+
+**Changed — `ack hook` body lives in node/src/cli/hook.js
+(2026-09-13):**
+
+Same stdin gate / `--config` wiring. Commander stays in `node/bin/ack.js`.
+First CLI split inside this kit, not a new product.
+
 **Docs — "packages/" means folders inside this kit
 (2026-09-13):**
 

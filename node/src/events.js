@@ -187,7 +187,7 @@ export function policyReleasedEvent(sessionId, policy, options = {}) {
     agentId: options.agentId,
     'policy': policy,
     ...options,
-  );
+  });
 }
 
 export function toolRequestedEvent(sessionId, tool, options = {}) {
@@ -235,5 +235,3 @@ export default {
   toolCompletedEvent,
 };
 
-// Export default for easy import
-export { baseEvent, actionRecord, outcomeRecord, interventionRecord, EventType };

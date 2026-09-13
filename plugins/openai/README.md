@@ -10,12 +10,16 @@ compatibility fallback.
 This is **not** a ChatGPT App. OpenAI's
 [build-chatgpt-app](https://github.com/openai/plugins/blob/main/plugins/openai-developers/skills/build-chatgpt-app/SKILL.md)
 skill scaffolds an MCP server + widget (`_meta.ui.resourceUri`,
-`window.openai`). ACK does not bundle that until the daemon speaks
-streamable HTTP. Codex uses this package's skills and hooks instead.
+`window.openai`). ACK does not ship that widget. Optional MCP is
+`mcp.json` (Codex fallback `.mcp.json`) pointing at the daemon's
+streamable HTTP (`ACK_MCP_HTTP`, default `http://127.0.0.1:8754/mcp`).
+Codex still uses this package's skills and hooks for the gate.
 
 ## Layout
 
 - `plugin.json` — portable Agent Plugins manifest
+- `mcp.json` — optional streamable HTTP to the ACK daemon (`ACK_MCP_HTTP`)
+- `.mcp.json` — Codex fallback copy of that MCP pointer
 - `.codex-plugin/plugin.json` — Codex fallback
 - `skills/character-enforcement/` — hold, ack, fail-closed
 - `skills/configure-character/` — add/update/delete habits, allow/deny, frequency, workspace

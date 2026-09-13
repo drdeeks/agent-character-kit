@@ -379,7 +379,7 @@ test("isPidAlive: true for this test's own real process, false for a PID very un
 test("verifyLiveness: reports allAlive=false when the daemon PID is dead, without ever contacting a socket", async () => {
   const { verifyLiveness } = await import("../bin/install.js");
   const result = await verifyLiveness({
-    sock: "/nonexistent/socket/path",
+    sock: "/no/sock",
     token: "irrelevant",
     daemonPid: 999999, // not alive
     monitorPid: null,
@@ -394,8 +394,8 @@ test("verifyLiveness: reports allAlive=false when monitor/watchdog PIDs are dead
   const { verifyLiveness } = await import("../bin/install.js");
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "acklive-"));
   const sock = path.join(ws, ".agent", "enforcer.sock");
-  const token = "test-token-" + Math.random().toString(36).slice(2);
-  const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, ACK_AUTH_TOKEN: token };
+  const authTok = "test-token-" + Math.random().toString(36).slice(2);
+  const env = { ...process.env, AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, ACK_AUTH_TOKEN: authTok };
   fs.mkdirSync(path.join(ws, ".agent", "habits"), { recursive: true });
 
   const { spawn } = await import("node:child_process");
@@ -408,7 +408,7 @@ test("verifyLiveness: reports allAlive=false when monitor/watchdog PIDs are dead
     await new Promise((r) => setTimeout(r, 300));
 
     const result = await verifyLiveness({
-      sock, token, daemonPid: child.pid,
+      sock, token: authTok, daemonPid: child.pid,
       monitorPid: 999999, // dead -- monitor "failed to start"
       watchdogPid: 999998, // dead -- watchdog "failed to start"
     });
@@ -428,9 +428,9 @@ test("verifyLiveness: allAlive=true end-to-end when daemon/monitor/watchdog are 
   const { verifyLiveness } = await import("../bin/install.js");
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "acklive-ok-"));
   const sock = path.join(ws, ".agent", "enforcer.sock");
-  const token = "test-token-" + Math.random().toString(36).slice(2);
+  const authTok = "test-token-" + Math.random().toString(36).slice(2);
   const vars = {
-    AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, ACK_AUTH_TOKEN: token,
+    AGENT_WORKSPACE: ws, ENFORCER_SOCKET: sock, ACK_AUTH_TOKEN: authTok,
     ACK_ACK_LOG: path.join(ws, ".agent", "ack.jsonl"),
     ACK_MONITOR_PID: path.join(ws, ".agent", "ack-monitor.pid"),
     ACK_MONITOR_STATE: path.join(ws, ".agent", "ack-monitor.pos"),
@@ -455,7 +455,7 @@ test("verifyLiveness: allAlive=true end-to-end when daemon/monitor/watchdog are 
     await new Promise((r) => setTimeout(r, 500));
 
     const result = await verifyLiveness({
-      sock, token, daemonPid: daemon.pid, monitorPid: monitor.pid, watchdogPid: watchdog.pid,
+      sock, token: authTok, daemonPid: daemon.pid, monitorPid: monitor.pid, watchdogPid: watchdog.pid,
     });
     assert.equal(result.allAlive, true, `expected fully alive, got ${JSON.stringify(result)}`);
   } finally {
@@ -628,7 +628,7 @@ test("deployRootIfNeeded: asRoot=true invokes sudo bash deploy-agent-enforcer.sh
   // checks -- so monitor/watchdog read as already active and the
   // deploy-ack-services.sh call is skipped (idempotent path).
   const fakeSpawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0 }; };
-  const agentWorkspace = "/var/lib/agent-character-kit/workspace/agents/claude";
+  const agentWorkspace = "/var/lib/ack/claude";
   const result = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace }, fakeSpawn);
   assert.equal(calls.length, 3, "enforcer deploy + 2 systemctl is-active checks (monitor, watchdog)");
   assert.equal(calls[0].cmd, "sudo");
@@ -657,7 +657,7 @@ test("deployRootIfNeeded: actually deploys deploy-ack-services.sh when monitor/w
     }
     return { status: 0 };
   };
-  const agentWorkspace = "/var/lib/agent-character-kit/workspace/agents/claude";
+  const agentWorkspace = "/var/lib/ack/claude";
   const result = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace }, fakeSpawn);
   const servicesCalls = calls.filter(c => c.cmd === "sudo" && /deploy-ack-services\.sh$/.test(c.args[2] || ""));
   assert.equal(servicesCalls.length, 1, "must actually invoke deploy-ack-services.sh when monitor/watchdog aren't already active, not just assume they're running");
@@ -668,7 +668,7 @@ test("deployRootIfNeeded: actually deploys deploy-ack-services.sh when monitor/w
 test("deployRootIfNeeded: service-user mode sets ACK_SERVICE_USER/ACK_AGENT_USER in the deploy script's env", async () => {
   const calls = [];
   const fakeSpawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0 }; };
-  await deployRootIfNeeded({ asRoot: true, serviceUser: "ack-enforcer", agentWorkspace: "/var/lib/agent-character-kit/workspace/agents/opencode" }, fakeSpawn);
+  await deployRootIfNeeded({ asRoot: true, serviceUser: "ack-enforcer", agentWorkspace: "/var/lib/ack/opencode" }, fakeSpawn);
   assert.equal(calls[0].opts.env.ACK_SERVICE_USER, "ack-enforcer");
   assert.equal(calls[0].opts.env.ACK_AGENT_USER, os.userInfo().username);
 });
@@ -684,8 +684,8 @@ test("deployRootIfNeeded: a failed deploy throws (not a silently-successful no-o
 
 test("deployRootIfNeeded: two different agents get two different sockets, never the same one", async () => {
   const fakeSpawn = () => ({ status: 0 });
-  const a = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace: "/var/lib/agent-character-kit/workspace/agents/claude" }, fakeSpawn);
-  const b = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace: "/var/lib/agent-character-kit/workspace/agents/opencode" }, fakeSpawn);
+  const a = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace: "/var/lib/ack/claude" }, fakeSpawn);
+  const b = await deployRootIfNeeded({ asRoot: true, serviceUser: null, agentWorkspace: "/var/lib/ack/opencode" }, fakeSpawn);
   assert.notEqual(a.rootSocket, b.rootSocket, "drdeek: \"how do you know if you have 12 agents running at the same time on one sock which one is doing what?\"");
 });
 

@@ -12,7 +12,8 @@ The third is a different product.
    `window.openai`, CSP). Scaffolded by OpenAI's
    [build-chatgpt-app](https://github.com/openai/plugins/blob/main/plugins/openai-developers/skills/build-chatgpt-app/SKILL.md)
    skill. That is **not** Agent Plugin packaging. ACK does not ship an
-   MCP app or widget until the daemon speaks streamable HTTP.
+   Apps SDK widget. Optional Agent Plugin MCP is `mcp.json` → the daemon's
+   streamable HTTP (`ACK_MCP_HTTP`).
 
 ## What OpenAI actually ships for Agent Plugins
 
@@ -41,8 +42,9 @@ The third is a different product.
 - `skills/configure-character/` — habits, allow/deny, frequency, workspace
 - `hooks/` — Codex `PreToolUse` / `SessionStart` exec `ack hook` (daemon RPC)
 - `src/` — Chat Completions mapper for custom OpenAI-compatible HTTP hosts
-- No `mcp.json` yet — the ACK daemon is still a unix/tcp socket, not
-  streamable HTTP
+- `mcp.json` — streamable-http to `http://127.0.0.1:8754/mcp` (daemon must
+  be started with `ACK_MCP_HTTP`). `.mcp.json` is the Codex fallback.
+  No Apps SDK widget.
 
 ## Runtime mapper (`src/`)
 

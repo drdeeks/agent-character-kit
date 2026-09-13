@@ -616,12 +616,16 @@ what happened next.
 
 ### Phase 4 — CLI split
 
+Command bodies live in `packages/cli/src/`. Commander stays in
+`node/bin/ack.js`. `configure` still delegates to `install.js`.
+
 Commander modules: hook, configure, manage, status, doctor, repair,
 config, habit, **reload**, and a new `ack audit` (read JSONL; closes
 AGENTS.md “no CLI for audit trail” gap as a byproduct, not a scope creep
 of policy).
 
 **Exit:** existing CLI commands behave; `ack reload` works.
+Shipped in this tree: `ack reload` + read-only `ack audit` (last-N JSONL).
 
 ### Phase 5 — Companion + host plugins
 

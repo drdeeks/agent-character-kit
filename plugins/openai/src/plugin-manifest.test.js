@@ -6,6 +6,18 @@ import { fileURLToPath } from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+test("mcp.json is streamable-http to the local ACK daemon", () => {
+  const mcp = JSON.parse(readFileSync(path.join(root, "mcp.json"), "utf8"));
+  assert.equal(
+    mcp.$schema,
+    "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+  );
+  assert.equal(mcp.mcpServers.ack.type, "streamable-http");
+  assert.equal(mcp.mcpServers.ack.url, "http://127.0.0.1:8754/mcp");
+  const fallback = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8"));
+  assert.equal(fallback.mcpServers.ack.url, mcp.mcpServers.ack.url);
+});
+
 test("portable plugin.json matches Agent Plugins 1.0.0", () => {
   const manifest = JSON.parse(readFileSync(path.join(root, "plugin.json"), "utf8"));
   assert.equal(

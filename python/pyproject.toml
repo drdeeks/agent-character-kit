@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-character-kit"
-version = "1.6.0"
+version = "1.7.0"
 description = "Character enforcement + knowledge + memory for AI agents (Python companion to the Node.js agent-character-kit / @drdeeks/character-kit package)"
 requires-python = ">=3.9"
 dependencies = ["PyYAML"]

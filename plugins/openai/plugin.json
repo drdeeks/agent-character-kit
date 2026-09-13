@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agent-character-kit",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Character-enforcement companion for ChatGPT and Codex. Thin client to the ACK daemon: habit skills plus fail-closed tool hooks. Deterrent, not a security boundary.",
   "author": {
     "name": "drdeeks",
@@ -23,7 +23,7 @@
       "interface": {
         "displayName": "Agent Character Kit",
         "shortDescription": "Fail-closed character enforcement for agent tool calls",
-        "longDescription": "Packages ACK habits as skills and Codex lifecycle hooks. Policy stays in the ACK daemon. This plugin does not evaluate constitution or allow/deny lists locally. It is a deterrent and reminder, not a cage. No MCP server is bundled until the daemon exposes streamable HTTP.",
+        "longDescription": "Packages ACK habits as skills and Codex lifecycle hooks. Policy stays in the ACK daemon. Optional MCP is mcp.json \u2192 http://127.0.0.1:8754/mcp (ACK_MCP_HTTP). No Apps SDK widgets. This plugin does not evaluate constitution or allow/deny lists locally. Deterrent, not a cage.",
         "developerName": "drdeeks",
         "category": "Productivity",
         "capabilities": [

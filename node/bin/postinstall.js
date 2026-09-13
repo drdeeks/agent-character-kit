@@ -37,7 +37,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { fileURLToPath } from "url";
-import { detectHarnesses } from "./install.js";
+import { detectHarnesses } from "../src/detect-harnesses.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

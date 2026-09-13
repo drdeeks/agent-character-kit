@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ack": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8754/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ACK_AUTH_TOKEN}"
+      }
+    }
+  }
+}

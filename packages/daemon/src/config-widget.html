@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ACK character config</title>
+  <style>
+    :root { color-scheme: dark light; }
+    body { font: 15px/1.4 system-ui, sans-serif; max-width: 42rem; margin: 1.5rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.2rem; }
+    h2 { font-size: 1rem; margin-top: 1.4rem; }
+    label { display: block; margin: 0.4rem 0 0.15rem; font-weight: 600; }
+    input, textarea, select { width: 100%; box-sizing: border-box; padding: 0.4rem; }
+    textarea { min-height: 4.5rem; font-family: ui-monospace, monospace; }
+    button { margin: 0.4rem 0.4rem 0 0; padding: 0.4rem 0.7rem; }
+    .row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+    .row > * { flex: 1; min-width: 8rem; }
+    .note { color: #888; font-size: 0.9rem; }
+    .err { color: #c0392b; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <h1>ACK character config</h1>
+  <p class="note">Writes <code>.agent/constitution.yaml</code>, <code>enforcer.yaml</code>, and habit files, then reloads the daemon. Policy is not evaluated here. Deterrent, not a cage. Daemon must be started with <code>ACK_MCP_HTTP</code>.</p>
+
+  <label>Auth token (if ACK_AUTH_TOKEN is set)</label>
+  <input id="token" type="password" autocomplete="off" placeholder="optional">
+  <button type="button" id="load">Load</button>
+  <p id="status" class="note">Not loaded.</p>
+  <p id="error" class="err"></p>
+
+  <h2>Habits</h2>
+  <ul id="habits"></ul>
+  <div class="row">
+    <div>
+      <label>Name</label>
+      <input id="h-name" placeholder="no_force_push">
+    </div>
+    <div>
+      <label>Level</label>
+      <select id="h-level">
+        <option>reminder</option>
+        <option>should</option>
+        <option>must</option>
+        <option>hard</option>
+      </select>
+    </div>
+  </div>
+  <label>Prompt</label>
+  <input id="h-prompt" placeholder="Did I force-push?">
+  <label>Logic</label>
+  <input id="h-logic" placeholder="Force-push rewrites shared history.">
+  <label>Evidence</label>
+  <input id="h-evidence" placeholder="Command was git push without --force.">
+  <button type="button" id="add-habit">Add / replace habit</button>
+
+  <h2>Hard constraints</h2>
+  <p class="note">One pattern per line. On-disk list replaces the embedded floor — keep <code>rm -rf /</code> unless you mean to drop it.</p>
+  <textarea id="hard"></textarea>
+
+  <h2>Deny / allow</h2>
+  <p class="note">Deny extra patterns. Non-empty allow-list means anything else is denied (<code>git commit</code> still allowed).</p>
+  <label>Deny</label>
+  <textarea id="deny"></textarea>
+  <label>Allow</label>
+  <textarea id="allow"></textarea>
+
+  <h2>Hold frequency</h2>
+  <div class="row">
+    <div>
+      <label>Hold every N calls</label>
+      <input id="hold-n" type="number" min="1" step="1">
+    </div>
+    <div>
+      <label>Required acks</label>
+      <input id="acks" type="number" min="1" step="1">
+    </div>
+  </div>
+  <button type="button" id="save">Save character + reload</button>
+  <pre id="out" class="note"></pre>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    function lines(el) {
+      return el.value.split("\n").map((s) => s.trim()).filter(Boolean);
+    }
+    function setLines(el, arr) {
+      el.value = (arr || []).join("\n");
+    }
+    async function call(name, args) {
+      $("error").textContent = "";
+      const headers = { "content-type": "application/json" };
+      const tok = $("token").value.trim();
+      if (tok) headers.Authorization = "Bearer " + tok;
+      const res = await fetch("/mcp", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: Date.now(),
+          method: "tools/call",
+          params: { name, arguments: args || {} },
+        }),
+      });
+      const body = await res.json();
+      if (body.error) throw new Error(body.error.message || "rpc error");
+      const parsed = JSON.parse(body.result.content[0].text);
+      if (body.result.isError || parsed.error) throw new Error(parsed.error || "tool error");
+      return parsed;
+    }
+    function renderHabits(habits) {
+      $("habits").innerHTML = "";
+      (habits || []).forEach((h) => {
+        const li = document.createElement("li");
+        li.textContent = h.name + (h.prompt ? " — " + h.prompt : "");
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = "Delete";
+        b.addEventListener("click", async () => {
+          if (!confirm("Delete habit " + h.name + "?")) return;
+          try {
+            await call("delete_habit", { name: h.name });
+            await load();
+          } catch (e) { $("error").textContent = e.message; }
+        });
+        li.appendChild(document.createTextNode(" "));
+        li.appendChild(b);
+        $("habits").appendChild(li);
+      });
+      if (!(habits || []).length) {
+        const li = document.createElement("li");
+        li.textContent = "(no on-disk habits — embedded defaults still apply)";
+        $("habits").appendChild(li);
+      }
+    }
+    async function load() {
+      try {
+        const cfg = await call("get_character_config", {});
+        $("status").textContent = "Workspace " + cfg.workspace + "  hash " + (cfg.character_hash || "");
+        renderHabits(cfg.habits);
+        const hard = (cfg.constitution_file && cfg.constitution_file.hard_constraints)
+          || cfg.live_hard_constraints || [];
+        setLines($("hard"), hard);
+        setLines($("deny"), (cfg.policy_file && cfg.policy_file.deny) || []);
+        setLines($("allow"), (cfg.policy_file && cfg.policy_file.allow) || []);
+        $("hold-n").value = cfg.policy_file?.hold_every_n_calls || cfg.live_hold_every_n_calls || 5;
+        $("acks").value = cfg.policy_file?.required_acks || cfg.live_required_acks || 2;
+        $("out").textContent = JSON.stringify({ character_hash: cfg.character_hash, habits: cfg.habits.length }, null, 2);
+      } catch (e) {
+        $("error").textContent = e.message;
+      }
+    }
+    $("load").addEventListener("click", load);
+    $("add-habit").addEventListener("click", async () => {
+      try {
+        await call("write_habit", {
+          name: $("h-name").value,
+          prompt: $("h-prompt").value,
+          logic: $("h-logic").value,
+          evidence: $("h-evidence").value,
+          level: $("h-level").value,
+        });
+        $("h-name").value = $("h-prompt").value = $("h-logic").value = $("h-evidence").value = "";
+        await load();
+      } catch (e) { $("error").textContent = e.message; }
+    });
+    $("save").addEventListener("click", async () => {
+      try {
+        const out = await call("set_character_config", {
+          hard_constraints: lines($("hard")),
+          deny: lines($("deny")),
+          allow: lines($("allow")),
+          hold_every_n_calls: Number($("hold-n").value),
+          required_acks: Number($("acks").value),
+        });
+        $("out").textContent = JSON.stringify(out, null, 2);
+        await load();
+      } catch (e) { $("error").textContent = e.message; }
+    });
+  </script>
+</body>
+</html>
