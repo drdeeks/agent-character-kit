@@ -1,6 +1,6 @@
 ---
 name: configure-character
-description: Add, update, delete, or retune Agent Character Kit habits, hold frequency, required acknowledgments, allow/deny lists, hard constraints, and workspace files. Use when the user wants to customize ACK, not when a tool is merely held.
+description: Use when the user wants to add, update, delete, or retune ACK habits, hold frequency, required acknowledgments, allow/deny lists, hard constraints, or workspace files. Not when a tool is merely held.
 ---
 
 # Configure character

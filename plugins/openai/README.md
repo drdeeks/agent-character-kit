@@ -25,7 +25,10 @@ OpenAI's current plugin guide is MCP-first (`skills/` + MCP server +
 - `mcp.json` — streamable HTTP to the ACK daemon (`ACK_MCP_HTTP`)
 - `mcp-server/README.md` — pointer only; live server is `packages/daemon`
 - `.mcp.json` — Codex fallback copy of that MCP pointer
-- `.codex-plugin/plugin.json` — Codex fallback
+- `.codex-plugin/plugin.json` — Codex fallback (author + interface metadata).
+  Manifest **name** is `agent-character-kit` (kit identity). Directory
+  `plugins/openai` is the OpenAI host package, not a rename target.
+- `PRIVACY.md` / `TERMS.md` — local-only privacy and MIT terms pages
 - `skills/character-enforcement/` — hold, ack, fail-closed
 - `skills/configure-character/` — add/update/delete habits, allow/deny, frequency, workspace
 - `hooks/` — Codex `PreToolUse` / `SessionStart` exec `ack hook` (daemon RPC, no local policy)

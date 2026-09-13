@@ -1,6 +1,6 @@
 ---
 name: character-enforcement
-description: Apply ACK habits when a tool is about to run, when a hold or deny is returned, or when the agent must re-ground in character. Not for adding or editing habits, allow-lists, or hold frequency — use configure-character for those.
+description: Use when a shell, write, edit, or network tool is about to run, when ACK returned hold or deny, or when the user asks the agent to follow character. Not for adding or editing habits — use configure-character.
 ---
 
 # Character enforcement

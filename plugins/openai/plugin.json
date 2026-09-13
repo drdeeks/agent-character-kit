@@ -29,6 +29,14 @@
         "capabilities": [
           "Read",
           "Write"
+        ],
+        "websiteURL": "https://github.com/drdeeks/agent-character-kit",
+        "privacyPolicyURL": "https://github.com/drdeeks/agent-character-kit/blob/main/plugins/openai/PRIVACY.md",
+        "termsOfServiceURL": "https://github.com/drdeeks/agent-character-kit/blob/main/plugins/openai/TERMS.md",
+        "defaultPrompt": [
+          "Use ACK when a tool is about to run or a hold is returned.",
+          "Acknowledge the hold in ACK habit format, then continue.",
+          "Use configure-character to add or retune a habit."
         ]
       }
     }

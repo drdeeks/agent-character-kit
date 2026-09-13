@@ -37,7 +37,11 @@ The third is a different product.
 ## What this package contains
 
 - `plugin.json` — portable Agent Plugins manifest
-- `.codex-plugin/plugin.json` — Codex compatibility fallback
+- `.codex-plugin/plugin.json` — Codex compatibility fallback with author
+  and `interface` (displayName, descriptions, category, capabilities,
+  website/privacy/terms URLs, defaultPrompt). Name stays
+  `agent-character-kit`; the folder is `plugins/openai` on purpose.
+- `PRIVACY.md` / `TERMS.md` — pages those interface URLs point at
 - `skills/character-enforcement/` — hold, ack, fail-closed
 - `skills/configure-character/` — habits, allow/deny, frequency, workspace
 - `hooks/` — Codex `PreToolUse` / `SessionStart` exec `ack hook` (daemon RPC)

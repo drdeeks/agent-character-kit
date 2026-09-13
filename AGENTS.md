@@ -684,7 +684,7 @@ by a green JS test suite, only by an actual run against real system state.
 | `packages/cli/` | `ack` command bodies (`hook`, `status`, `doctor`, `repair`, `manage`, `habit`, `reload`, `audit`, `constitution`, `policy`) |
 | `packages/companion/` | Thin client factory (no policy) |
 | `packages/daemon/` | Enforcer class, v0 dispatch, JSONL listen, registry, opt-in MCP HTTP + `/config` menu |
-| `plugins/openai/` | Agent Plugins 1.0.0 (`plugin.json`, `mcp.json`, skills, Codex hooks). MCP server is the ACK daemon, not nested `mcp-server/src`. Mapper in `src/` |
+| `plugins/openai/` | Agent Plugins 1.0.0 (`plugin.json`, `mcp.json`, skills, Codex hooks). `.codex-plugin/plugin.json` has author + interface. Name is `agent-character-kit`; folder is `openai`. MCP server is the ACK daemon, not nested `mcp-server/src`. Mapper in `src/` |
 | `.agents/plugins/marketplace.json` | Local ChatGPT/Codex marketplace entry for `plugins/openai` |
 | `plugins/claude/` | Claude Code plugin (hooks, skills, `.mcp.json`) |
 | `plugins/hermes/` | Hermes-shaped Node adapter |

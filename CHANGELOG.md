@@ -9,6 +9,16 @@ Append-only, newest entry on top. Never rewrite a past entry.
 npm: `@drdeeks/character-kit@1.7.0`. Same kit, not a 2.0.0 socket cutover.
 Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
 
+**Changed — Codex `.codex-plugin/plugin.json` interface metadata
+(2026-09-13):**
+
+Author, homepage, repository, and `interface` (displayName, descriptions,
+developerName, category, capabilities, website/privacy/terms URLs,
+defaultPrompt). `PRIVACY.md` and `TERMS.md` live in `plugins/openai/`.
+Skill descriptions start with `Use when`. Directory stays `openai`;
+manifest name stays `agent-character-kit`. No coverage artifacts, no
+Apps SDK widgets.
+
 **Fixed — `js-yaml` DoS CVEs from the Socket scan
 (2026-09-13):**
 

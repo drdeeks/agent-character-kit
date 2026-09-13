@@ -38,12 +38,49 @@ test("portable plugin.json matches Agent Plugins 1.0.0", () => {
   assert.equal(manifest.skills, undefined);
 });
 
-test("Codex fallback points at skills and hooks", () => {
+test("Codex fallback has author, interface, skills, and hooks", () => {
   const compat = JSON.parse(
     readFileSync(path.join(root, ".codex-plugin", "plugin.json"), "utf8")
   );
+  assert.equal(compat.name, "agent-character-kit");
+  assert.equal(compat.author.name, "drdeeks");
   assert.equal(compat.skills, "./skills/");
   assert.equal(compat.hooks, "./hooks/hooks.json");
+  assert.equal(compat.mcpServers, "./.mcp.json");
+  const ui = compat.interface;
+  for (const key of [
+    "displayName",
+    "shortDescription",
+    "longDescription",
+    "developerName",
+    "category",
+    "websiteURL",
+    "privacyPolicyURL",
+    "termsOfServiceURL",
+  ]) {
+    assert.equal(typeof ui[key], "string", key);
+    assert.ok(ui[key].length > 0, key);
+  }
+  assert.ok(ui.websiteURL.startsWith("https://"));
+  assert.ok(ui.privacyPolicyURL.startsWith("https://"));
+  assert.ok(ui.termsOfServiceURL.startsWith("https://"));
+  assert.ok(Array.isArray(ui.capabilities));
+  assert.ok(ui.capabilities.includes("Read"));
+  assert.ok(Array.isArray(ui.defaultPrompt));
+  assert.equal(ui.defaultPrompt.length, 3);
+  for (const p of ui.defaultPrompt) {
+    assert.ok(p.length <= 128, p);
+  }
+  assert.equal(
+    existsSync(path.join(root, "PRIVACY.md")) && existsSync(path.join(root, "TERMS.md")),
+    true
+  );
+});
+
+test("portable plugin name is the kit, not the openai directory", () => {
+  const manifest = JSON.parse(readFileSync(path.join(root, "plugin.json"), "utf8"));
+  assert.equal(manifest.name, "agent-character-kit");
+  assert.equal(path.basename(root), "openai");
 });
 
 test("character-enforcement skill has required frontmatter", () => {
@@ -52,7 +89,7 @@ test("character-enforcement skill has required frontmatter", () => {
     "utf8"
   );
   assert.match(skill, /^---\nname: character-enforcement\n/);
-  assert.match(skill, /\ndescription: /);
+  assert.match(skill, /\ndescription: Use when /);
 });
 
 test("configure-character skill covers habit and policy customization", () => {
@@ -61,6 +98,7 @@ test("configure-character skill covers habit and policy customization", () => {
     "utf8"
   );
   assert.match(skill, /^---\nname: configure-character\n/);
+  assert.match(skill, /\ndescription: Use when /);
   assert.match(skill, /habits/);
   assert.match(skill, /frequency/);
   const refs = [
