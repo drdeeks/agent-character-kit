@@ -34,7 +34,7 @@
   "license": "MIT",
   "dependencies": {
     "gray-matter": "^4.0.3",
-    "js-yaml": "^4.1.0",
+    "js-yaml": "^4.3.2",
     "commander": "^11.1.0"
   },
   "engines": {

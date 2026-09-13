@@ -664,12 +664,12 @@ CHANGELOG 1.5.0's final "Update, next day" entry for the full trace; this
 is the concrete case study behind `rigor_no_half_assing` memory's rule
 that shell/deploy-script correctness can't be verified by reading code or
 by a green JS test suite, only by an actual run against real system state.
-- **Socket.dev scan ran 2026-09-13** (`socket scan create --report --tmp`,
-  scan `40e7ae29-b54b-4c12-b641-c190eb3f30b1`, org policy **healthy**).
-  No malware. High: `js-yaml@4.3.0` (direct) and nested `js-yaml@3.15.0`
-  (via `gray-matter`) — `CVE-2026-84375` / `GHSA-2883-xcg3-v3hh` and
-  `GHSA-5p4m-2wfm-xmqj` (DoS, CVSS 7.5, policy action **monitor**).
-  `python/pyproject.toml` has no lockfile (policy **ignore**). Re-scan:
+- **Socket.dev scan (2026-09-13):** first scan `40e7ae29-b54b-4c12-b641-c190eb3f30b1`
+  found DoS CVEs on `js-yaml@4.3.0` and nested `3.15.0`. Patched to
+  `js-yaml@4.3.2` (direct `^4.3.2`) and `3.15.2` (via `gray-matter`).
+  Re-scan `4182b7f9-dcdb-4585-acaa-f0ef6e8997b1` is **healthy**; those CVEs
+  are gone. Remaining high is `python/pyproject.toml` missing lockfile
+  (org policy **ignore**). `gray-matter` stays unmaintained. Re-scan:
   `socket scan create --no-interactive --json --report --tmp --repo=agent-character-kit --branch=main .`
 
 ---

@@ -9,6 +9,16 @@ Append-only, newest entry on top. Never rewrite a past entry.
 npm: `@drdeeks/character-kit@1.7.0`. Same kit, not a 2.0.0 socket cutover.
 Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
 
+**Fixed — `js-yaml` DoS CVEs from the Socket scan
+(2026-09-13):**
+
+Direct `js-yaml` `^4.1.0` / lock `4.3.0` → `^4.3.2` / `4.3.2`.
+Nested `gray-matter` `js-yaml` `3.15.0` → `3.15.2`.
+Closes `GHSA-2883-xcg3-v3hh` (`CVE-2026-84375`) and `GHSA-5p4m-2wfm-xmqj`.
+Re-scan `4182b7f9-dcdb-4585-acaa-f0ef6e8997b1` is healthy; those highs are
+gone. Not patched: PyPI lockfile (policy ignore), `gray-matter` unmaintained.
+`npm test` 145/145; `npm run test:python` ALL PASS.
+
 **Changed — Socket.dev full scan of this tree
 (2026-09-13):**
 
