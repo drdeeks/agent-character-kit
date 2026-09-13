@@ -1,9 +1,9 @@
 # Agent Character Kit — Unified Refactor Plan
 
-> **Status:** Draft — source of truth for the v2 refactor  
+> **Status:** In progress — v2 host-neutral layout landing on 1.x, not a 2.0.0 socket cut  
 > **Created:** 2026-09-13  
 > **Replaces:** `.trash/docs-superseded-2026-09-13/REFACTOR_PLAN.md` (2026-09-12 monolith-split draft)  
-> **Kit version in scope:** 1.6.0  
+> **Kit version in scope:** 1.7.0 (plan started against 1.6.0)  
 > **Single source of runtime truth remains:** `AGENTS.md`
 
 This plan is the contract for splitting ACK into a host-neutral core plus

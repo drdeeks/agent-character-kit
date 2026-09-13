@@ -9,6 +9,14 @@ Append-only, newest entry on top. Never rewrite a past entry.
 npm: `@drdeeks/character-kit@1.7.0`. Same kit, not a 2.0.0 socket cutover.
 Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
 
+**Changed — live docs match 1.7.0; historical reviews stay dated
+(2026-09-13):**
+
+`docs/refactor-plan.md` kit-in-scope is 1.7.0. Dated `docs/reviews/` and
+the telemetry plan keep their 1.6.0 findings and say so at the top.
+`npm pack` SoT is root `files[]` (188 files in dry-run, tests excluded).
+`npm run test:python` runs parity + Hermes plugin tests.
+
 **Changed — OpenAI plugin MCP tools match the current plugin guide
 (2026-09-13):**
 

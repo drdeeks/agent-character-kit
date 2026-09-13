@@ -1,5 +1,7 @@
 # ACK plugin-structure review (2026-09-13)
 
+> Historical snapshot of kit **1.6.0**. Live kit is **1.7.0** (`CHANGELOG.md`, `AGENTS.md`). Version stamps in this file are not current.
+
 Scope: harness plugin packaging only (OpenAI Agent Plugins 1.0.0, Claude Code,
 Hermes). Live tree compared to `AGENTS.md`, `docs/refactor-plan.md`,
 `docs/adapters/*.md`, `docs/protocol/*.md`, `node/enforcer/agent_enforcer_daemon.js`,

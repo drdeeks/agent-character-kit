@@ -514,6 +514,14 @@ append-only, newest entry on top, never rewrite a past entry. History before
 Update `CHANGELOG.md` and this file in the same pass as code changes.
 Do not ship a package/plugin tree that this file map does not name.
 
+**npm pack:** root `package.json` `files[]` is the tarball SoT (`install.sh`,
+`packages/`, `plugins/`, `docs/adapters/`, `docs/protocol/`, `docs/refactor-plan.md`,
+`CHANGELOG.md`, `AGENTS.md`). Tests are git-tracked (`node/tests/`,
+`packages/daemon/src/*.test.js`, `plugins/*/plugin-manifest.test.js`,
+`python/tests/`, `python/hermes_plugin/test_plugin.py`) and excluded from the
+tarball (`!**/*.test.js`, `!**/tests/**`). `npm test` is the Node suite;
+`npm run test:python` is parity + Hermes plugin.
+
 Workspace packages (`packages/*/package.json`, `plugins/openai`,
 `plugins/claude`, `plugins/hermes`) stamp **1.7.0** with the live kit.
 Bump them with the six files above on each release. Do not bump to 2.0.0

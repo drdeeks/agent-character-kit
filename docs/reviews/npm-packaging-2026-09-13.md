@@ -1,5 +1,7 @@
 # npm packaging audit — Agent Character Kit 1.6.0
 
+> Historical snapshot of kit **1.6.0**. Live kit is **1.7.0**; `files[]` now includes `install.sh` and `packages/`. Tests stay git-tracked and are excluded from the tarball.
+
 Date: 2026-09-13. Command run from the kit repo root: `npm pack --dry-run --json --ignore-scripts`. No publish. No gateway restart. No `files[]` / ignore patches applied in this pass.
 
 Published identity in root `package.json`: name `@drdeeks/character-kit`, version `1.6.0`, `bin.ack` / `bin.character-kit` → `node/bin/ack.js`, `main` → `node/src/index.js`, `workspaces` → `packages/*`, `plugins/openai`, `plugins/hermes`. Root runtime dependencies: `commander`, `gray-matter`, `js-yaml`. Nested `node/package.json` repeats the same name and version with a different description.
