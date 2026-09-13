@@ -664,13 +664,13 @@ CHANGELOG 1.5.0's final "Update, next day" entry for the full trace; this
 is the concrete case study behind `rigor_no_half_assing` memory's rule
 that shell/deploy-script correctness can't be verified by reading code or
 by a green JS test suite, only by an actual run against real system state.
-- **Socket.dev supply-chain scan not yet run against this repo.** `socket`
-  CLI is installed but has never been authenticated in any environment this
-  work happened in (`socket whoami` → 401 / `token: (not set)`) — every
-  Socket command that matters (`scan create`, `package score`, etc.)
-  requires `socket login` first, which needs an interactive
-  browser/token flow no agent session can complete unattended. Run it once
-  a human has logged in: `socket scan create --json`.
+- **Socket.dev scan ran 2026-09-13** (`socket scan create --report --tmp`,
+  scan `40e7ae29-b54b-4c12-b641-c190eb3f30b1`, org policy **healthy**).
+  No malware. High: `js-yaml@4.3.0` (direct) and nested `js-yaml@3.15.0`
+  (via `gray-matter`) — `CVE-2026-84375` / `GHSA-2883-xcg3-v3hh` and
+  `GHSA-5p4m-2wfm-xmqj` (DoS, CVSS 7.5, policy action **monitor**).
+  `python/pyproject.toml` has no lockfile (policy **ignore**). Re-scan:
+  `socket scan create --no-interactive --json --report --tmp --repo=agent-character-kit --branch=main .`
 
 ---
 

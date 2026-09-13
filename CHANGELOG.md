@@ -9,6 +9,14 @@ Append-only, newest entry on top. Never rewrite a past entry.
 npm: `@drdeeks/character-kit@1.7.0`. Same kit, not a 2.0.0 socket cutover.
 Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
 
+**Changed — Socket.dev full scan of this tree
+(2026-09-13):**
+
+`socket scan create --report --tmp` scan
+`40e7ae29-b54b-4c12-b641-c190eb3f30b1`. Org policy healthy. No malware.
+High CVEs on `js-yaml` 4.3.0 and 3.15.0 (`GHSA-2883-xcg3-v3hh`,
+`GHSA-5p4m-2wfm-xmqj`); policy action monitor. Not patched in this commit.
+
 **Changed — live docs match 1.7.0; historical reviews stay dated
 (2026-09-13):**
 
