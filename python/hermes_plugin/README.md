@@ -38,11 +38,12 @@ cd agent-character-kit/python
 pip install -e .
 
 # 2. Drop this plugin into Hermes's plugin dir
-mkdir -p ~/.hermes/plugins/agent-character-kit
-cp -r hermes_plugin/* ~/.hermes/plugins/agent-character-kit/
+mkdir -p "$HOME/.hermes/plugins/agent-character-kit"
+cp -r hermes_plugin/* "$HOME/.hermes/plugins/agent-character-kit/"
 
 # 3. Define the agent's character (singular source of truth)
-#    ~/.openclaw/workspace/.agent/constitution.yaml  (or $AGENT_WORKSPACE/.agent/)
+#    $AGENT_WORKSPACE/.agent/constitution.yaml
+#    (default workspace: $HOME/.agent-character-kit/workspace)
 ```
 
 Hermes loads `plugin.yaml` + `__init__.py` at startup and registers the hook.
@@ -52,8 +53,8 @@ No core files touched — this is a layer, not a fork.
 
 ```bash
 python3 hermes_plugin/test_plugin.py
-# => blocks rm -rf / api_key, allows ls
-# => fails CLOSED when constitution unloadable
+# => blocks rm -rf / and secret-shaped assignments, allows ls
+# => no constitution file still enforces embedded defaults
 # ALL PASS
 ```
 
@@ -64,5 +65,5 @@ the USB free-state, the host, or inside the container reading persistent data �
 same code, no changes. That's the forever-system property: layerable,
 adaptable, singular-source.
 
-See `FOREVER-SYSTEM.md` §1 (singular source), §4 (fail-closed), §5 (modular),
-§6 (continuously-reminded character) for the governing protocol.
+See `AGENTS.md` for the governing protocol (singular source, fail-closed,
+modular, continuously-reminded character).

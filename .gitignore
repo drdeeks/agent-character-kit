@@ -23,6 +23,8 @@ memory/daily/*.yaml
 # Example workspaces ARE fixtures meant to ship (override the .agent/ ignore above):
 !node/examples/.agent/
 !python/example_workspace/.agent/
+node/examples/.agent/logs/
+python/example_workspace/.agent/logs/
 memory/weekly/*.yaml
 node/memory/daily/*.yaml
 node/memory/weekly/*.yaml
@@ -70,3 +72,14 @@ Thumbs.db
 .tmp/
 tmp/
 .trash/
+
+# ===== Coverage =====
+coverage/
+.nyc_output/
+htmlcov/
+.coverage
+*.lcov
+
+# ===== Runtime sockets / logs =====
+*.sock
+*.log

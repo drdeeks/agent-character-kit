@@ -1,0 +1,26 @@
+{
+  "description": "ACK Claude Code hooks. PreToolUse is the gate. UserPromptSubmit is the pre-LLM injection channel.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.js"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.js"
+          }
+        ]
+      }
+    ]
+  }
+}

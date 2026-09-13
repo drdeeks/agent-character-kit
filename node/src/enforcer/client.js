@@ -169,7 +169,7 @@ export class EnforcerClient {
    * even when the caller is a fresh CLI process per call (Claude/Cursor/
    * Gemini via `ack hook`), not just long-lived in-process companions.
    * @param {string} sessionId
-   * @returns {Promise<{prompts: Array<{prompt:string, logic:string, evidence:string}>}>}
+   * @returns {Promise<{prompts: Array<{prompt:string}>}>}
    */
   async pickPrompt(sessionId = "default") {
     const response = await this.call("pick_prompt", { session_id: sessionId });

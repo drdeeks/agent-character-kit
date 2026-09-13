@@ -4,6 +4,182 @@ Append-only, newest entry on top. Never rewrite a past entry.
 
 ## Unreleased
 
+**Docs — "packages/" means folders inside this kit
+(2026-09-13):**
+
+Monitor and watchdog stay ACK components (`deploy/ack_monitor.js`,
+`deploy/ack_watchdog.js`). A later split into `packages/monitor` and
+`packages/watchdog` is only a repo-folder / npm-workspace move under
+`@drdeeks/character-kit`. Not a new product, not Federation Watchtower.
+`packages/core` / `events` / `protocol` already work the same way.
+
+**Added — daemon emits packages/events JSONL (Phase 2)
+(2026-09-13):**
+
+`pick_prompt` now logs `habit.injected` (count only, no prompt text).
+`execute_tool` / hold / ack also write `tool.*` and `acknowledgment.*` to
+`.agent/logs/events/YYYY-MM-DD.jsonl`. Sink failure never changes the v0
+response. Watchtower wire is unchanged.
+
+**Changed — unix and multi-workspace daemons share dispatchV0
+(2026-09-13):**
+
+One v0 method table for both socket servers. Method names unchanged.
+Watchtower still uses `execute_tool`, `get_habit`, `submit_ack`,
+`heartbeat`. `register_workspace` stays multi-workspace only. `status`
+still skips auth.
+
+**Docs — Watchtower adapter is a frozen v0 consumer
+(2026-09-13):**
+
+Sibling `../watchtower-adapter` speaks NDJSON `execute_tool`, `get_habit`,
+`submit_ack`, `heartbeat`. It does not use `pick_prompt` or `tool_tick`.
+Those four method names stay. See `docs/adapters/watchtower.md`.
+
+**Changed — Codex/Claude hooks exec `ack hook` instead of importing node/
+(2026-09-13):**
+
+Plugin hook scripts spawn `node/bin/ack.js` in the monorepo, or `ack` on
+PATH after install. They no longer import `../../../node/src/hooks/character.js`.
+`ack hook` treats `SessionStart` as injection (same as UserPromptSubmit).
+Root `exports["./hooks"]` still exposes the JS API for mappers.
+
+**Docs — OpenAI Apps SDK is not the ACK plugin
+(2026-09-13):**
+
+OpenAI's `build-chatgpt-app` skill is MCP + widget UI. ACK's
+`plugins/openai` remains Agent Plugins 1.0.0 + Codex hooks. Adapter and
+plugin README now name all three surfaces so we do not scaffold a ChatGPT
+App by mistake.
+
+**Changed — daemon deny/allow goes through evaluatePolicy
+(2026-09-13):**
+
+`executeTool` hard-constraint / deny-list / allow-list now call
+`packages/core` `evaluatePolicy` (same `matchConstraint` rules). `git
+commit` still bypasses the allow-list after denies. Habit guards, workspace
+integrity, hold, and acks stay in the daemon.
+
+**Changed — habit injection is prompt text only
+(2026-09-13):**
+
+`pick_prompt` no longer returns logic/evidence. Pre-LLM formatters
+(`pickHabitPrompts`, Hermes `_on_pre_llm_call`) inject a short header plus
+2–3 prompt bullets. Reasoning stays in `.agent/habits/*.yaml`. Hold text
+stays terse (`acknowledge 2 habits.`). Restart the daemon to pick this up.
+
+**Fixed — Hermes injection and companion advertising (P1)
+(2026-09-13):**
+
+`python/hermes_plugin/_on_pre_llm_call` now calls daemon `pick_prompt`
+(same rotation as `pickHabitPrompts`). Reminder channel stays fail-open.
+Python `EnforcerClient.pick_prompt` matches the Node client. Companion
+package no longer claims it never evaluates policy: default core is
+in-process `CharacterKitCore` for tests; production hosts pass a
+daemon-backed `options.core` or use `processToolCall`.
+
+**Fixed — plugin skill docs vs live CLI/daemon (structure review)
+(2026-09-13):**
+
+Habit create does not overwrite; configure --create-habit needs evidence
+and level; on-disk hard_constraints replaces the embedded array; installer
+`.env` is `$AGENT_WORKSPACE/.env`; service-user-mode is a real boundary;
+search-tool exemption includes `web_extract`.
+
+**Fixed — npm pack allowlist, ignore files, and published name
+(2026-09-13):**
+
+Root `files[]` now ships `VERSION`, drops `node/tests/` and nested
+`node/package.json`, and keeps plugins/packages/Hermes/deploy. Root
+`.npmignore` exists (tests, env, sockets, audit logs, reviews). Inert
+`node/.npmignore` moved to `.trash/npmignore-superseded-2026-09-13/`.
+`AGENTS.md` install line is `npm i -g @drdeeks/character-kit`. Root
+`exports` expose `./protocol`, `./core`, `./companion`, `./events`.
+
+**Changed — daemon deny/allow matching lives in packages/core
+(2026-09-13):**
+
+`agent_enforcer_daemon.js` `_matches` now calls `matchConstraint` from
+`@drdeeks/character-kit-core`. Behavior is unchanged: deny/hard-constraint
+is case-insensitive substring; allow-list is glob on tool, command, or
+first token. Hold, acks, and habit guards stay in the daemon until the
+rest of Phase 3.
+
+**Fixed — OpenAI/Claude plugin hooks no longer evaluate policy locally
+(2026-09-13):**
+
+`plugins/openai/hooks` and `plugins/claude/hooks` were calling
+`CharacterKitCore` with a hardcoded `rm -rf /` list. That was a second
+engine (protocol P1). They now import `processToolCall` /
+`processPromptSubmit` from `node/src/hooks/character.js` and ask the live
+daemon, same path as `ack hook`.
+
+**Added — full configure context in plugin skills
+(2026-09-13):**
+
+OpenAI and Claude skills were hold-ack only. They now split:
+- `character-enforcement` — hold, acknowledgment grammar, fail-closed
+- `configure-character` — add/update/delete habits, allow/deny and hard
+  constraints, hold frequency / required acks / commit thresholds,
+  workspace files, reload, privilege modes
+
+Details live in each skill's `references/` (OpenAI skill packaging).
+Numbers match the live daemon (`hold_every_n_calls=5`, `required_acks=2`,
+and the rest of the env/YAML table).
+
+**Added — OpenAI Agent Plugins 1.0.0 package layout
+(2026-09-13):**
+
+Reviewed OpenAI's current plugin docs (package + skills) and the Apps SDK
+examples repo. ChatGPT/Codex plugins are Agent Plugins packages, not Chat
+Completions interceptors. Apps SDK examples are MCP widget servers
+(`_meta.ui.resourceUri`); ACK does not ship that.
+
+`plugins/openai/` now has:
+- portable root `plugin.json` (`agent-plugins.org` schema 1.0.0,
+  `extensions.com.openai` for hooks and interface)
+- `.codex-plugin/plugin.json` compatibility fallback
+- `skills/character-enforcement/SKILL.md`
+- Codex `hooks/hooks.json` (`PreToolUse`, `SessionStart`)
+- repo marketplace `.agents/plugins/marketplace.json`
+
+The Chat Completions mapper stays in `plugins/openai/src/` for custom
+OpenAI-compatible HTTP hosts. No `mcp.json` until the daemon exposes
+streamable HTTP.
+
+**Added — v2 Phase 0 host-neutral packages and provider plugins
+(2026-09-13):**
+
+Live runtime is still 1.6.0 (`node/enforcer/agent_enforcer_daemon.js` and
+v0 NDJSON RPC). This is additive, not a 2.0.0 cut. Plan:
+`docs/refactor-plan.md`. Tracking: `AGENTS.md` (file map + v2 status).
+
+New npm workspaces:
+- `@drdeeks/character-kit-protocol` — v0/v1 envelope, `ToolDecision`,
+  `Requirement`, error codes, capability negotiation
+- `@drdeeks/character-kit-core` — `PolicyEngine` (DENY > HOLD > ALLOW),
+  in-memory `StateStore`, `CharacterKitCore` plugin surface
+- `@drdeeks/character-kit-events` — canonical enforcement events, JSONL
+  sink, redaction (no RL reward)
+- `@drdeeks/character-kit-companion` — thin factory, no policy
+- `@drdeeks/character-kit-openai` — Chat Completions adapter
+- `@drdeeks/character-kit-hermes` — Hermes-shaped Node adapter
+- `plugins/claude/` — real Claude Code plugin (PreToolUse +
+  UserPromptSubmit + skill)
+
+Docs: `docs/protocol/` and `docs/adapters/` are the living contracts.
+Superseded design files (`REFACTOR_PLAN.md`, `openai-character-kit.md`,
+Anthropic `example-plugin-claude/`) moved to
+`.trash/docs-superseded-2026-09-13/`.
+
+Tests added: hard-constraint deny of `rm -rf /`, v0/v1 `parseIncoming`,
+idempotent `beforeTool`. `forever-validation.py` PASS on the new/updated
+files. Full `npm test` still has three `postinstall.test.js` failures
+(`gray-matter` missing in the fake global copy).
+
+Not in this change: daemon cutover (Phase 3), CLI split, monitor/watchdog
+packages, version bump to 2.0.0.
+
 **Added — `ack manage`: interactive menu for viewing/editing every agent
 (2026-08-12, 0ee7233):**
 
@@ -163,7 +339,7 @@ don't, only hook generation). 103/103 Node + 4/4 Python passing.
 **Update, later the same day (8be35f6): root cause of a live root-mode
 install self-lockout, found and fixed.** drdeek ran a real root-mode
 install (claude harness) to test the audit above; it wired the
-PreToolUse/UserPromptSubmit hooks into his own live `~/.claude/settings.json`
+PreToolUse/UserPromptSubmit hooks into his own live `$HOME/.claude/settings.json`
 as designed, then every subsequent tool call in that same session started
 failing — `"Enforcer unavailable: enforcer socket not found"` — fail-closed
 by design, so killing the daemon or deleting the socket didn't help either;
@@ -400,7 +576,7 @@ inside a real `node_modules` install tree. Verified both directions live —
 local dev install is a silent no-op, a real `npm install -g` auto-detects
 every harness present on the test machine, stands up a genuinely running
 daemon (not just configured-but-dormant), and correctly merges Claude's real
-`~/.claude/settings.json` PreToolUse hook.
+`$HOME/.claude/settings.json` PreToolUse hook.
 
 ## 1.2.0 — 2026-08-05
 

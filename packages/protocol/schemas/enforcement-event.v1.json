@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "character-kit://protocol/enforcement-event/v1",
+  "title": "Character Kit enforcement event v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "eventId",
+    "eventType",
+    "timestamp",
+    "sessionId",
+    "runId",
+    "sequence",
+    "schemaVersion"
+  ],
+  "properties": {
+    "eventId": { "type": "string" },
+    "eventType": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "sessionId": { "type": "string" },
+    "runId": { "type": "string" },
+    "episodeId": { "type": "string" },
+    "taskId": { "type": "string" },
+    "agentId": { "type": "string" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "schemaVersion": { "type": "string" },
+    "source": { "type": "string" },
+    "component": { "type": "string" },
+    "parentEventId": { "type": "string" }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@drdeeks/character-kit-hermes",
+  "version": "1.6.0",
+  "description": "Hermes-shaped companion adapter for Agent Character Kit",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "@drdeeks/character-kit-companion": "1.6.0",
+    "@drdeeks/character-kit-protocol": "1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

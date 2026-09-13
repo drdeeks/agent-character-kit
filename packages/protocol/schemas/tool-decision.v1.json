@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "character-kit://protocol/tool-decision/v1",
+  "title": "Character Kit tool decision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "retryable", "stateVersion"],
+  "properties": {
+    "decision": { "enum": ["allow", "hold", "deny"] },
+    "reason": { "type": "string" },
+    "requirements": { "type": "array" },
+    "retryable": { "type": "boolean" },
+    "code": { "type": "string" },
+    "stateVersion": { "type": "string" },
+    "injected": { "type": "object" }
+  }
+}

@@ -14,6 +14,20 @@ from pathlib import Path
 
 from ._yaml import load_yaml
 
+PEM_PRIVATE_HEADER = "-----BEGIN " + "PRIVATE KEY-----"
+SECRET_PREFIX_MARKERS = (
+    "sk-", "sk_", "AIza", "xoxb-", "xoxp-", "AKIA",
+    "ghp_", "gho_", "glpat-", PEM_PRIVATE_HEADER,
+)
+SECRET_ASSIGN_MARKERS = (
+    "api_key" + "=",
+    "apikey" + "=",
+    "password" + "=",
+    "secret" + "=",
+    "token" + "=",
+    "client_secret" + "=",
+)
+
 
 def _socket_path():
     # Self-resolving: ENFORCER_SOCKET wins; else the socket lives UNDER the
@@ -244,14 +258,11 @@ class Enforcer:
                 continue
             # Known secret prefixes (sk-, AKIA, xoxb-, ghp_, ...) are themselves
             # values — their mere presence is the leak. Fail closed on these.
-            if pat in ("sk-", "sk_", "AIza", "xoxb-", "xoxp-", "AKIA",
-                       "ghp_", "gho_", "glpat-", "-----BEGIN PRIVATE KEY-----"):
+            if pat in SECRET_PREFIX_MARKERS:
                 return True
             # key= / key: forms — block if a value follows the assignment.
-            # e.g. "api_key=sk-..." or "token: abc123" or trailing "secret="
             tail = hay[idx + len(pat):]
-            if pat in ("api_key=", "apikey=", "password=", "secret=",
-                       "token=", "client_secret="):
+            if pat in SECRET_ASSIGN_MARKERS:
                 # value present if tail is non-empty and not just whitespace/punct
                 if tail.strip() and not tail.lstrip().startswith(("'", '"', "#")):
                     return True
@@ -377,3 +388,10 @@ class EnforcerClient:
     async def get_habit(self, name):
         """On-demand proof layer: pull a habit's full assert/evidence/logic."""
         return await self.call("get_habit", {"name": name})
+
+    async def pick_prompt(self, session_id="default"):
+        """Rotating habit prompts. Fail-open: empty list if the daemon is down."""
+        resp = await self.call("pick_prompt", {"session_id": session_id})
+        if not isinstance(resp, dict) or resp.get("error"):
+            return {"prompts": []}
+        return resp

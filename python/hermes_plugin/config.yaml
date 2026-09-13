@@ -4,8 +4,8 @@
 # ALL PATHS ARE SELF-RESOLVING VIA ENV VARS — no hardcoded repo/user paths.
 # Resolution order (env always wins over this file):
 #   habits_dir  : $ACK_HABITS_DIR  ->  $AGENT_WORKSPACE/.agent/habits  ->  repo-relative
-#   inject_log  : $ACK_INJECT_LOG  ->  /tmp/ack-inject-log.jsonl
-#   ack_log     : $ACK_ACK_LOG     ->  /tmp/agent-character-kit-ack.jsonl
+#   inject_log  : $ACK_INJECT_LOG  ->  $AGENT_WORKSPACE/.agent/ack-inject-log.jsonl
+#   ack_log     : $ACK_ACK_LOG     ->  $AGENT_WORKSPACE/.agent/ack.jsonl
 # Leave a key unset (or omit it) to use the env / built-in default. Do NOT
 # hardcode an absolute path here — it breaks portability across hosts.
 
@@ -14,7 +14,7 @@
 
 # External proof: every pre_llm_call injection is appended here (JSONL).
 # This is what the monitor reads — not the agent's self-report.
-# inject_log: /tmp/ack-inject-log.jsonl
+# inject_log: $AGENT_WORKSPACE/.agent/ack-inject-log.jsonl
 
 # pre_llm_call habit injection on/off (emits only; ingestion not guaranteed).
 inject_enabled: true

@@ -1,9 +1,16 @@
-# AGENTS.md — Agent Character Kit (ACK) v1.5.0
+# AGENTS.md — Agent Character Kit (ACK) v1.6.0
 
 > **This is the single source of truth for ACK.** README.md is a short overview
 > that points here. There is no other install/customize doc — if you're reading
 > one, it's stale. Everything (purpose, architecture, install, customize,
 > validate, version) lives in this file.
+>
+> Superseded files go to `.trash/` at this repo root (dated context dir, original
+> names). Never `rm`. Never leave a stub beside the new SoT.
+>
+> v2 refactor: `docs/refactor-plan.md`. Change log: `CHANGELOG.md` (Unreleased).
+> Live socket is still the 1.6.0 daemon. New `packages/` and `plugins/` are
+> additive until Phase 3 cutover.
 
 ---
 
@@ -47,6 +54,9 @@ Cursor, Codex, a shell wrapper) can use it.
    COMPANION (thin client)  ──RPC──►  CORE: ENFORCER DAEMON  ──►  ALLOW / BLOCK
    - Hermes Python plugin              (Node, single source      + reason
    - generic `ack hook`                of truth)
+   - Watchtower adapter                (sibling ../watchtower-adapter;
+     v0 execute_tool / get_habit /
+     submit_ack / heartbeat only)
                                         │ owns:
                                         │  constitution.yaml  (hard_constraints)
                                         │  enforcer.yaml      (allow/deny)
@@ -232,8 +242,8 @@ agent. Do not treat any single harness as "the" install path.
 **Example A — Hermes (Python-plugin companion):**
 ```bash
 cd python && pip install -e . && cd ..
-mkdir -p ~/.hermes/plugins/agent-character-kit
-cp -r python/hermes_plugin/* ~/.hermes/plugins/agent-character-kit/
+mkdir -p "$HOME/.hermes/plugins/agent-character-kit"
+cp -r python/hermes_plugin/* "$HOME/.hermes/plugins/agent-character-kit/"
 # restart Hermes; pre_tool_call + pre_llm_call are now gated/injected by the CORE daemon
 ```
 
@@ -328,7 +338,7 @@ kept for parity) are only needed if you're binding a Hermes-style Python
 harness as the companion; every other harness only ever touches Node.
 
 **Wiring:** the interactive installer (`node node/bin/install.js`, or
-`npm i -g @character-kit && ack configure`) sets up ALL FOUR components — daemon,
+`npm i -g @drdeeks/character-kit && ack configure`) sets up ALL FOUR components — daemon,
 companion, monitor, watchdog — in one flow and writes a single `.env`
 (`AGENT_WORKSPACE` / `ENFORCER_SOCKET` / `ACK_ACK_LOG`) every component reads.
 `ack configure --yes` is idempotent (fixed 2026-08-07, CL-0008): re-running
@@ -425,7 +435,9 @@ behavior:
   kind: guard
   steps:
     - check: block_secret_leak
-      patterns: ["sk-", "AKIA", "api_key="]
+      patterns:
+        - sk-
+        - AKIA
       require_assignment: true
 ```
 The embedded secret-leak guard is **always on** even with no habit file. Your
@@ -471,6 +483,38 @@ member of the set, not an independently-versioned package.)
 **Changelog:** `CHANGELOG.md` at repo root, started with the 1.2.0 release —
 append-only, newest entry on top, never rewrite a past entry. History before
 1.2.0 was not backfilled, per this section's own original guidance.
+Update `CHANGELOG.md` and this file in the same pass as code changes.
+Do not ship a package/plugin tree that this file map does not name.
+
+Workspace packages (`packages/*/package.json`, `plugins/openai`,
+`plugins/hermes`) currently stamp 1.6.0 to match the live kit. Bump them
+with the six files above when cutting **2.0.0** (refactor-plan Phase 8).
+Do not bump to 2.0.0 until the daemon speaks `packages/core` on the socket.
+
+### v2 status (2026-09-13)
+
+Done: protocol envelope, PolicyEngine, events sink, companion factory,
+OpenAI Agent Plugins 1.0.0 package (manifest, skills, Codex hooks,
+marketplace), Chat Completions mapper, Claude Code plugin, Hermes Node
+adapter, protocol/adapter docs, trash of superseded design files.
+Plugin skills now include `configure-character` (habits, allow/deny,
+frequency, workspace) plus `character-enforcement` (hold/ack).
+OpenAI/Claude installable hooks exec `ack hook` (stdin JSON, daemon RPC).
+OpenAI/Hermes Node mappers still import `processToolCall` /
+`processPromptSubmit`. Hermes Python
+injection uses `pick_prompt` (fail-open, prompt text only — no why/logic).
+Daemon deny/allow matching goes through `packages/core` `evaluatePolicy`
+(`matchConstraint`).
+Hold/ack/habit guards still live in the daemon. Unix and multi-workspace
+sockets share `dispatchV0` (same method names). Daemon also appends
+`packages/events` JSONL under `.agent/logs/events/` (`habit.injected` on
+`pick_prompt`; tool/ack facts from `_audit`). `createCompanion` default
+core is in-process for tests, not the live enforcer.
+
+Not done: Phase 3 daemon still lives in `agent_enforcer_daemon.js`; ACK
+MCP/streamable HTTP; CLI split into `packages/cli` (same kit); optional
+folder-split of the existing monitor/watchdog *components* (still this
+kit, still `ack configure`); deploy path updates; 2.0.0 release.
 
 ---
 
@@ -592,15 +636,27 @@ by a green JS test suite, only by an actual run against real system state.
 
 | Path | Role |
 |------|------|
-| `node/enforcer/agent_enforcer_daemon.js` | **CORE** — the enforcer (single source of truth) |
+| `packages/protocol/` | v0/v1 envelope, ToolDecision, errors, capabilities |
+| `packages/core/` | Host-neutral PolicyEngine + CharacterKitCore |
+| `packages/events/` | Canonical enforcement events + JSONL sink |
+| `packages/companion/` | Thin client factory (no policy) |
+| `plugins/openai/` | Agent Plugins 1.0.0 package (plugin.json, skills, Codex hooks) plus Chat Completions mapper in `src/` |
+| `.agents/plugins/marketplace.json` | Local ChatGPT/Codex marketplace entry for `plugins/openai` |
+| `plugins/claude/` | Claude Code plugin (hooks + skill) |
+| `plugins/hermes/` | Hermes-shaped Node adapter |
+| `node/enforcer/agent_enforcer_daemon.js` | **CORE daemon (1.6.0)** — live enforcer until Phase 3 cutover |
 | `node/src/enforcer/client.js` | Node thin client |
 | `node/bin/ack.js` | CLI (`hook/configure/manage/status/doctor/repair/config/habit`) |
 | `node/src/manage-menu.js` | Pure, unit-tested menu logic for `ack manage` (agent-list building, choice parsing) |
 | `python/hermes_plugin/` | **COMPANION** — example Python-plugin client (one of several) |
 | `python/agent_character_kit/enforcer.py` | Python client (`EnforcerClient`) to the CORE |
 | `supervise.py` | stdlib-only cross-platform supervisor |
+| `docs/refactor-plan.md` | v2 refactor contract (phases, protocol statements) |
+| `docs/protocol/` | Plugin / envelope / errors / events contracts |
+| `docs/adapters/` | OpenAI, Claude, Hermes adapter notes |
+| `CHANGELOG.md` | Append-only change tracking |
 | `deploy/` | Linux systemd unit + installer |
-| `VERSION` | version stamp |
+| `VERSION` | version stamp (1.6.0 until 2.0.0 cut) |
 
 ---
 

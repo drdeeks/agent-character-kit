@@ -31,7 +31,6 @@ import json
 import logging
 import os
 import re
-import random
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -323,33 +322,6 @@ def _load_config() -> Dict[str, Any]:
     return defaults
 
 
-def _collect_habits(cfg: Dict[str, Any]) -> List[Dict[str, str]]:
-    """Read each habit's name, prompt, and reasoning (logic/evidence)."""
-    out: List[Dict[str, str]] = []
-    try:
-        d = Path(cfg.get("habits_dir", ""))
-        if d.is_dir():
-            for f in sorted(d.glob("*.yaml")):
-                try:
-                    txt = f.read_text(encoding="utf-8")
-                except Exception:
-                    continue
-                name_m = re.search(r"^name:\s*\"?([^\"\n]*)", txt, re.M)
-                prompt_m = re.search(r"^prompt:\s*\"?([^\"\n]*)", txt, re.M)
-                logic_m = re.search(r"logic:\s*\"?([^\"\n]*)", txt, re.M)
-                evidence_m = re.search(r"evidence:\s*\"?([^\"\n]*)", txt, re.M)
-                if prompt_m:
-                    out.append({
-                        "name": name_m.group(1).strip() if name_m else f.stem,
-                        "prompt": prompt_m.group(1).strip(),
-                        "logic": logic_m.group(1).strip() if logic_m else "",
-                        "evidence": evidence_m.group(1).strip() if evidence_m else "",
-                    })
-    except Exception:
-        pass
-    return out
-
-
 def _log_injection(cfg: Dict[str, Any], prompts: List[str]) -> None:
     """External proof: write exactly what was injected to a log file.
 
@@ -369,10 +341,6 @@ def _log_injection(cfg: Dict[str, Any], prompts: List[str]) -> None:
         pass  # logging must never break injection
 
 
-# Per-session rotation state for the looped habit cycle.
-_HABIT_CYCLE: Dict[str, Dict[str, Any]] = {}
-
-
 def _on_pre_llm_call(
     session_id: str = "",
     user_message: str = "",
@@ -382,15 +350,12 @@ def _on_pre_llm_call(
     platform: str = "",
     **_: Any,
 ) -> Optional[Dict[str, Any]]:
-    """pre_llm_call -> inject 2-3 randomized habits (with reasoning) on a loop.
+    """pre_llm_call -> inject daemon-rotated habit prompts (reminder channel).
 
-    Each turn surfaces a rotating subset (name + prompt + real reasoning from
-    behavior.logic/evidence) so the agent is reminded of different habits over
-    time rather than the same 17 every turn. Order is shuffled once per session
-    and advanced 2-3 steps each turn (looped cycle). Also feeds the tool-call
-    acknowledgment detector from the user's message.
+    Rotation lives in the daemon ``pick_prompt`` RPC, same as
+    ``node/src/hooks/character.js`` ``pickHabitPrompts``. This channel never
+    blocks: unreachable daemon or empty prompts -> None.
     """
-    # Detect acknowledgments the agent states in its own message.
     _detect_ack(session_id, user_message)
 
     if _DISABLE:
@@ -399,35 +364,28 @@ def _on_pre_llm_call(
     if not cfg.get("inject_enabled", True):
         return None
 
-    habits = _collect_habits(cfg)
-    if not habits:
+    try:
+        resp = _daemon_rpc("pick_prompt", {"session_id": session_id or "default"})
+    except Exception:
+        return None
+    if not resp or resp.get("error"):
+        return None
+    prompts = resp.get("prompts") or []
+    if not prompts:
         return None
 
-    state = _HABIT_CYCLE.get(session_id)
-    if state is None or len(state.get("order", [])) != len(habits):
-        order = list(range(len(habits)))
-        random.Random(hash((session_id, len(habits)))).shuffle(order)
-        state = {"order": order, "pos": 0}
-        _HABIT_CYCLE[session_id] = state
-
-    count = random.Random(session_id + str(state["pos"])).randint(2, 3)
-    picked = []
-    for _ in range(count):
-        idx = state["order"][state["pos"] % len(habits)]
-        picked.append(habits[idx])
-        state["pos"] = (state["pos"] + 1) % len(habits)
-    _HABIT_CYCLE[session_id] = state
-
     lines = []
-    for h in picked:
-        reason = h["logic"] or h["evidence"]
-        lines.append("- " + h["prompt"])
-        if reason:
-            lines.append("    why: " + reason)
-    ctx = "AGENT CHARACTER HABITS (read before reasoning):\n" + "\n".join(lines)
-
-    _log_injection(cfg, [h["prompt"] for h in picked])
-    return {"context": ctx}
+    texts = []
+    for h in prompts:
+        prompt = h if isinstance(h, str) else (h or {}).get("prompt") or ""
+        if not prompt:
+            continue
+        texts.append(prompt)
+        lines.append("- " + prompt)
+    if not lines:
+        return None
+    _log_injection(cfg, texts)
+    return {"context": "AGENT CHARACTER HABITS:\n" + "\n".join(lines)}
 
 
 def register(ctx) -> None:

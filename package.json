@@ -1,15 +1,29 @@
 {
   "name": "@drdeeks/character-kit",
   "version": "1.6.0",
-  "description": "Universal agent character enforcement, knowledge indexing, and memory with YAML frontmatter. True plugin: install once, reference as @character-kit in any harness config.",
+  "description": "Agent character enforcement. Host-neutral core plus OpenAI, Claude, and Hermes companions. Fail-closed. Not a security boundary.",
   "main": "node/src/index.js",
+  "exports": {
+    ".": "./node/src/index.js",
+    "./protocol": "./packages/protocol/src/index.js",
+    "./core": "./packages/core/src/index.js",
+    "./companion": "./packages/companion/src/index.js",
+    "./events": "./packages/events/src/index.js",
+    "./hooks": "./node/src/hooks/character.js"
+  },
   "bin": {
     "ack": "node/bin/ack.js",
     "character-kit": "node/bin/ack.js"
   },
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "plugins/openai",
+    "plugins/claude",
+    "plugins/hermes"
+  ],
   "scripts": {
-    "test": "node --test node/tests/*.test.js",
+    "test": "node --test node/tests/*.test.js packages/core/src/policy/engine.test.js packages/protocol/src/envelope.test.js plugins/openai/src/plugin-manifest.test.js",
     "start": "node node/bin/ack.js",
     "ack-install": "node node/bin/install.js",
     "postinstall": "node node/bin/postinstall.js",
@@ -20,15 +34,10 @@
     "character",
     "agent-character",
     "enforcement",
-    "knowledge",
-    "memory",
-    "semantic-search",
     "hooks",
     "yaml",
-    "frontmatter",
     "claude",
-    "cursor",
-    "gemini",
+    "openai",
     "hermes",
     "opencode"
   ],
@@ -43,21 +52,32 @@
     "node": ">=18.0.0"
   },
   "files": [
+    "VERSION",
     "node/bin/",
     "node/src/",
     "node/enforcer/",
     "node/examples/",
-    "node/tests/",
-    "node/package.json",
-    "python/",
+    "packages/",
+    "plugins/",
+    "python/agent_character_kit/",
+    "python/hermes_plugin/",
+    "python/pyproject.toml",
     "deploy/",
+    "docs/protocol/",
+    "docs/adapters/",
+    "docs/refactor-plan.md",
     "README.md",
     "AGENTS.md",
     "CHANGELOG.md",
     "LICENSE",
+    "!**/*.test.js",
+    "!**/test_*.py",
+    "!**/tests/**",
     "!**/__pycache__/**",
     "!**/*.pyc",
-    "!**/*.pyo"
+    "!**/*.pyo",
+    "!**/*.audit.jsonl",
+    "!node/examples/.agent/logs/**"
   ],
   "repository": {
     "type": "git",

@@ -277,8 +277,8 @@ export async function processToolCall(payload, options = {}) {
 
 // ─── Pre-LLM habit injection ────────────────────────────────────────────────
 // Same behavior as python/hermes_plugin/__init__.py's _on_pre_llm_call:
-// rotate 2-3 random habit prompts (+ logic/evidence reasoning) into context
-// each turn, NEVER the habit name — the agent must search/read
+// rotate 2-3 habit prompts into context each turn. Prompt text only —
+// never the habit name, never logic/evidence. The agent must search/read
 // .agent/habits/*.yaml to find which habit a given prompt belongs to, then
 // acknowledge it by the name it discovers there (see HABIT_POLICY.md §4,
 // agent_enforcer_daemon.js toolTick). This is the "belts and suspenders"
@@ -315,19 +315,16 @@ export async function pickHabitPrompts(sessionId, enforcer) {
   if (!prompts || !prompts.length) return null;
 
   const lines = [];
+  const texts = [];
   for (const h of prompts) {
-    const reason = h.logic || h.evidence;
-    lines.push("- " + h.prompt);
-    if (reason) lines.push("    why: " + reason);
+    const prompt = typeof h === "string" ? h : (h && h.prompt);
+    if (!prompt) continue;
+    texts.push(prompt);
+    lines.push("- " + prompt);
   }
-  _logInjection(prompts.map((h) => h.prompt));
-  // MOD-002: a vague, non-specific locational nudge -- enough to shorten a
-  // search, never enough to skip it. Deliberately does NOT name a habit,
-  // a filename, or the exact `.agent/habits/` path (Guiding Principle 2,
-  // blueprint.md Part I/1.4) -- an agent that wants to acknowledge one of
-  // these by name still has to go look in its own workspace for it.
-  const nudge = "\n\n(these live somewhere in your own workspace's hidden agent configuration -- go find the real file before you cite one)";
-  return "AGENT CHARACTER HABITS (read before reasoning):\n" + lines.join("\n") + nudge;
+  if (!lines.length) return null;
+  _logInjection(texts);
+  return "AGENT CHARACTER HABITS:\n" + lines.join("\n");
 }
 
 // MOD-008: Claude transcript acknowledgment detector -- port of
@@ -424,7 +421,7 @@ export async function processPromptSubmit(payload, options = {}) {
       return {
         output: {
           hookSpecificOutput: {
-            hookEventName: "UserPromptSubmit",
+            hookEventName: payload.hook_event_name || "UserPromptSubmit",
             additionalContext: ctx,
           },
         },

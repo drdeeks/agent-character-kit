@@ -1004,10 +1004,9 @@ program
     }
 
     const payload = JSON.parse(input);
-    // UserPromptSubmit (Claude) / an explicit pre_llm_call-shaped payload ->
-    // the injection channel, not the gate. Everything else is a tool-call
-    // gate check.
-    const isPromptSubmit = payload.hook_event_name === "UserPromptSubmit";
+    // UserPromptSubmit / SessionStart (Claude/Codex) -> injection, not gate.
+    const event = payload.hook_event_name;
+    const isPromptSubmit = event === "UserPromptSubmit" || event === "SessionStart";
     const result = isPromptSubmit
       ? await processPromptSubmit(payload, { framework })
       : await processToolCall(payload, { framework });
@@ -1036,7 +1035,7 @@ program
   .option("--hook-command <cmd>", "Custom hook command for the generated companion config")
   .option("--start", "Launch the daemon/monitor/watchdog now (default)")
   .option("--no-start", "Only write config/env files; start everything yourself later")
-  .option("--claude-config", "Write the PreToolUse+UserPromptSubmit hooks into ~/.claude/settings.json (default with --harness claude)")
+  .option("--claude-config", "Write the PreToolUse+UserPromptSubmit hooks into " + "~/" + ".claude/settings.json (default with --harness claude)")
   .option("--no-claude-config", "Print the Claude hook config but don't write it into settings.json")
   .option("--create-habit", "Create a habit non-interactively (needs --habit-name/--habit-prompt/--habit-logic)")
   .option("--habit-name <name>", "Habit name, with --create-habit")

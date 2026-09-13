@@ -1,0 +1,7 @@
+{
+  "name": "agent-character-kit",
+  "description": "Character-enforcement companion for Claude Code. Thin client to the ACK daemon: PreToolUse gate plus UserPromptSubmit habit injection. Deterrent, not a security boundary. Fail-closed when the daemon is unreachable.",
+  "author": {
+    "name": "drdeeks"
+  }
+}

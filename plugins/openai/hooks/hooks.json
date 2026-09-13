@@ -1,0 +1,28 @@
+{
+  "description": "ACK Codex hooks. PreToolUse is the gate. SessionStart is the reminder channel.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${PLUGIN_ROOT}/hooks/pre-tool-use.js",
+            "statusMessage": "ACK tool gate"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${PLUGIN_ROOT}/hooks/session-start.js",
+            "statusMessage": "ACK habit reminder"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+export const EVENT_TYPE = Object.freeze({
+  SESSION_STARTED: "session.started",
+  SESSION_ENDED: "session.ended",
+  MODEL_REQUESTED: "model.requested",
+  HABIT_INJECTED: "habit.injected",
+  TOOL_REQUESTED: "tool.requested",
+  TOOL_ALLOWED: "tool.allowed",
+  TOOL_HELD: "tool.held",
+  TOOL_DENIED: "tool.denied",
+  TOOL_COMPLETED: "tool.completed",
+  ACK_REQUESTED: "acknowledgment.requested",
+  ACK_SUBMITTED: "acknowledgment.submitted",
+  ACK_ACCEPTED: "acknowledgment.accepted",
+  ACK_REJECTED: "acknowledgment.rejected",
+  POLICY_EVALUATED: "policy.evaluated",
+  POLICY_HELD: "policy.held",
+  POLICY_RELEASED: "policy.released",
+  POLICY_DENIED: "policy.denied",
+  ENFORCER_CONNECTED: "enforcer.connected",
+  ENFORCER_DISCONNECTED: "enforcer.disconnected",
+  ENFORCER_RECOVERED: "enforcer.recovered",
+  PROTOCOL_ERROR: "protocol.error",
+});
+
+export const EVENT_SCHEMA_VERSION = "1";

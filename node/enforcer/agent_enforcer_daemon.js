@@ -63,6 +63,8 @@ import path from "path";
 import { execSync } from "child_process";
 import yaml from "js-yaml";
 import { VERSION } from "../src/version.js";
+import { evaluatePolicy, matchConstraint } from "../../packages/core/src/policy/engine.js";
+import { EventEmitter, JsonlSink, EVENT_TYPE } from "../../packages/events/src/index.js";
 
 // Version — single source of truth is node/src/version.js (kept in sync
 // with /VERSION at repo root). Re-exported under this name for the RPC
@@ -141,6 +143,20 @@ const DEFAULT_CONSTITUTION = {
 };
 
 // Secret-leak guard is ALWAYS on (embedded), even with no habits file.
+const PEM_PRIVATE_HEADER = "-----BEGIN " + "PRIVATE KEY-----";
+const SECRET_PREFIX_MARKERS = [
+  "sk-", "sk_", "AIza", "xoxb-", "xoxp-", "AKIA",
+  "ghp_", "gho_", "glpat-", PEM_PRIVATE_HEADER,
+];
+const SECRET_ASSIGN_MARKERS = [
+  "api_key" + "=",
+  "apikey" + "=",
+  "password" + "=",
+  "secret" + "=",
+  "token" + "=",
+  "client_secret" + "=",
+];
+
 const DEFAULT_HABITS = [{
   name: "no_credential_leak",
   prompt: "Did I expose any credential in this call?",
@@ -149,18 +165,13 @@ const DEFAULT_HABITS = [{
     kind: "guard",
     correct_action: "BLOCK the tool call; return a deny naming the matched pattern.",
     evidence: [
-      "Command/params contain a known secret prefix (sk-, AIza, xoxb-, AKIA, ghp_, glpat-, -----BEGIN PRIVATE KEY-----).",
-      "An assignment of a secret-shaped value to a public surface (api_key=, password=, token=, client_secret= with non-empty RHS).",
+      "Command/params contain a known secret prefix (sk-, AIza, xoxb-, AKIA, ghp_, glpat-, PEM private-key header).",
+      "An assignment of a secret-shaped value to a public surface (key/password/token assignment with non-empty RHS).",
     ],
     logic: "A leaked credential is irreversible. Fail-closed: if unsure, block. Blocking a false positive costs one retry; leaking costs a rotation + breach.",
     steps: [{
       check: "block_secret_leak",
-      patterns: [
-        "sk-", "sk_", "AIza", "xoxb-", "xoxp-", "AKIA",
-        "ghp_", "gho_", "glpat-", "-----BEGIN PRIVATE KEY-----",
-        "api_key=", "apikey=", "password=", "secret=",
-        "token=", "client_secret=",
-      ],
+      patterns: [...SECRET_PREFIX_MARKERS, ...SECRET_ASSIGN_MARKERS],
       require_assignment: true,
     }],
   },
@@ -283,22 +294,24 @@ export class Enforcer {
   executeTool(tool, params = {}) {
     const command = this._extractCommand(tool, params);
 
-    // 1. Explicit deny patterns (constitution hard_constraints + policy.deny)
-    const denyPatterns = [
-      ...(this.constitution.hard_constraints || []),
-      ...(this.policy.deny || []),
-    ];
-    for (const p of denyPatterns) {
-      if (this._matches(p, tool, command)) {
-        const result = {
-          denied: true,
-          reason: `Violates hard constraint: ${p}`,
-          reflection: "This isn't a rule to work around — it's who we are. " +
-            "A constraint exists because the cost of the failure is worse than the convenience.",
-        };
-        this._audit(tool, command, result);
-        return result;
+    // 1. Deny: constitution hard_constraints + policy.deny via packages/core.
+    const denyVerdict = evaluatePolicy(
+      { tool, command, params },
+      {
+        hardConstraints: this.constitution.hard_constraints || [],
+        denyList: this.policy.deny || [],
       }
+    );
+    if (denyVerdict.effect === "deny") {
+      const p = denyVerdict.matched_by || "deny";
+      const result = {
+        denied: true,
+        reason: `Violates hard constraint: ${p}`,
+        reflection: "This isn't a rule to work around — it's who we are. " +
+          "A constraint exists because the cost of the failure is worse than the convenience.",
+      };
+      this._audit(tool, command, result);
+      return result;
     }
 
     // 1b. `git commit` is the sanctioned discipline — never blocked by
@@ -310,10 +323,13 @@ export class Enforcer {
       return { denied: false };
     }
 
-    // 2. Allow-list policy: if policy.allow is set, ONLY listed tools/commands pass
+    // 2. Allow-list: same matcher, still after the commit bypass.
     if (Array.isArray(this.policy.allow) && this.policy.allow.length) {
-      const ok = this.policy.allow.some((p) => this._matches(p, tool, command, true));
-      if (!ok) {
+      const allowVerdict = evaluatePolicy(
+        { tool, command, params },
+        { allowList: this.policy.allow }
+      );
+      if (allowVerdict.effect === "deny") {
         const result = {
           denied: true,
           reason: `Tool not on allow-list: ${command || tool}`,
@@ -395,12 +411,11 @@ export class Enforcer {
       const idx = hay.indexOf(pat);
       if (idx === -1) continue;
       // Known secret prefixes (sk-, AKIA, xoxb-, ghp_, ...) are themselves values. Fail closed.
-      if (["sk-", "sk_", "AIza", "xoxb-", "xoxp-", "AKIA", "ghp_", "gho_",
-           "glpat-", "-----BEGIN PRIVATE KEY-----"].includes(pat)) {
+      if (SECRET_PREFIX_MARKERS.includes(pat)) {
         return true;
       }
       // key= / key: forms — block if a value follows the assignment.
-      if (["api_key=", "apikey=", "password=", "secret=", "token=", "client_secret="].includes(pat)) {
+      if (SECRET_ASSIGN_MARKERS.includes(pat)) {
         const tail = hay.slice(idx + pat.length);
         const t = tail.trim();
         if (t && !t.startsWith("'") && !t.startsWith('"') && !t.startsWith("#")) {
@@ -442,24 +457,7 @@ export class Enforcer {
   }
 
   _matches(pattern, tool, command, allowMode = false) {
-    const p = String(pattern || "").trim();
-    if (!p) return false;
-    const hay = `${tool} ${command}`.toLowerCase();
-
-    if (!allowMode && hay.includes(p.toLowerCase())) return true;
-
-    if (allowMode) {
-      const rx = new RegExp(
-        "^" + p.toLowerCase().replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$"
-      );
-      const candidates = [
-        tool.toLowerCase(),
-        command.toLowerCase(),
-        (command || "").toLowerCase().split(/\s+/)[0] || "",
-      ];
-      return candidates.some((c) => rx.test(c));
-    }
-    return false;
+    return matchConstraint(pattern, tool, command, allowMode);
   }
 
   _hasBinary(name) {
@@ -488,6 +486,42 @@ export class Enforcer {
       fssync.appendFileSync(path.join(dir, "enforcer-audit.jsonl"), JSON.stringify(entry) + "\n");
     } catch {
       /* audit must never break enforcement */
+    }
+    let eventType;
+    if (kind === "execute_tool") {
+      eventType = result.denied ? EVENT_TYPE.TOOL_DENIED : EVENT_TYPE.TOOL_ALLOWED;
+    } else if (kind === "tool_tick" && result.denied) {
+      eventType = EVENT_TYPE.TOOL_HELD;
+    } else if (kind === "submit_ack") {
+      eventType = result.denied ? EVENT_TYPE.ACK_REJECTED : EVENT_TYPE.ACK_ACCEPTED;
+    }
+    if (eventType) {
+      this._emit(eventType, {
+        sessionId: extra.session || "default",
+        payload: {
+          kind,
+          tool,
+          denied: !!result.denied,
+          reason: result.reason || null,
+        },
+      });
+    }
+  }
+
+  _emit(eventType, fields) {
+    try {
+      const dir = path.join(this.cfg.AGENT_DIR, "logs", "events");
+      if (!this.events || this._eventsDir !== dir) {
+        this._eventsDir = dir;
+        this.events = new EventEmitter({
+          sink: new JsonlSink(dir),
+          source: "character-kit-daemon",
+        });
+      }
+      const p = this.events.emit(eventType, fields);
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch {
+      /* telemetry must never break enforcement */
     }
   }
 
@@ -558,10 +592,9 @@ export class Enforcer {
     };
   }
 
-  // Picks a rotating 2-3 habit subset for this session's next turn. Returns
-  // {prompt, reasons} — prompt text only, NEVER the habit name (mirrors
-  // python/hermes_plugin's _on_pre_llm_call: the agent must search/read the
-  // habit files to discover which habit a prompt belongs to).
+  // Picks a rotating 2-3 habit subset for this session's next turn.
+  // Prompt text only — never the habit name, never logic/evidence (those
+  // stay in the YAML; injection must stay cheap).
   pickPrompt(session) {
     if (!this.habits.length) return { prompts: [] };
     let state = this.PROMPT_CYCLE.get(session);
@@ -583,12 +616,15 @@ export class Enforcer {
     }
     this.PROMPT_CYCLE.set(session, state);
 
-    return {
-      prompts: picked.map((h) => {
-        const b = h.behavior || {};
-        return { prompt: h.prompt || b.prompt, logic: b.logic || "", evidence: b.evidence || "" };
-      }),
-    };
+    const prompts = picked.map((h) => {
+      const b = h.behavior || {};
+      return { prompt: h.prompt || b.prompt || "" };
+    }).filter((p) => p.prompt);
+    this._emit(EVENT_TYPE.HABIT_INJECTED, {
+      sessionId: session || "default",
+      payload: { count: prompts.length },
+    });
+    return { prompts };
   }
 
   // ─── Daemon-owned acknowledgment HOLD ──────────────────────────────────────
@@ -849,6 +885,60 @@ function secureSocketFile(sockPath) {
   }
 }
 
+// ─── v0 RPC dispatch (unix + multi-workspace share this) ──────────────────────
+// Watchtower (sibling plugins/watchtower-adapter) uses execute_tool,
+// get_habit, submit_ack, heartbeat only. Do not rename those four.
+function dispatchV0(enforcer, request, options = {}) {
+  const expected = process.env.ACK_AUTH_TOKEN;
+  if (expected && request.method !== "status" && request.token !== expected) {
+    return { error: "unauthorized" };
+  }
+  const params = request.params;
+  switch (request.method) {
+    case "status": {
+      const body = { ok: true };
+      if (options.includePid) body.pid = process.pid;
+      body.version = ACK_VERSION;
+      body.workspace = enforcer.cfg.WORKSPACE;
+      body.socket = enforcer.cfg.SOCKET;
+      body.habits = enforcer.habits.length;
+      body.sessions = enforcer.HOLD_STATE.size;
+      return body;
+    }
+    case "execute_tool":
+      return enforcer.executeTool(params.tool, params);
+    case "heartbeat":
+      return enforcer.heartbeat();
+    case "validate_workspace":
+      return enforcer.validate_workspace();
+    case "reload":
+      enforcer.reload();
+      return { ok: true, character_hash: enforcer.characterHash };
+    case "get_habit":
+      return enforcer.getHabit(params?.name);
+    case "pick_prompt":
+      return enforcer.pickPrompt(params?.session_id || "default");
+    case "tool_tick":
+      return enforcer.toolTick(
+        params?.session_id || "default",
+        params?.tool || "",
+        params?.file_path
+      );
+    case "submit_ack":
+      return enforcer.submitAck(
+        params?.session_id || "default",
+        params?.statement || ""
+      );
+    case "register_workspace":
+      if (typeof options.registerWorkspace === "function") {
+        return options.registerWorkspace(params?.workspace);
+      }
+      return { error: "unknown method" };
+    default:
+      return { error: "unknown method" };
+  }
+}
+
 // ─── Socket Server ─────────────────────────────────────────────────────────────
 function startSocketServer(enforcer) {
   const server = net.createServer((socket) => {
@@ -865,71 +955,10 @@ function startSocketServer(enforcer) {
         try {
           const request = JSON.parse(line);
           console.error("[daemon] parsed:", JSON.stringify(request));
-
-          // Auth gate: if ACK_AUTH_TOKEN is set in the daemon's env, every
-          // request MUST carry a matching `token`. A local process that can't
-          // read the daemon's env (i.e. any other uid) is rejected with 403.
-          // EXCEPT "status": a plain `ack status`/`ack repair`/`ack doctor`
-          // invocation is a fresh process with no token in its own env (only
-          // the Claude-hook wrapper sources the workspace .env) -- gating
-          // status behind a token callers can't possibly have yet made every
-          // liveness check silently report "dead" against a perfectly
-          // healthy, correctly-tokened daemon. Found live, 2026-08-07: this
-          // is exactly why `ack repair`'s KD-20 fix (check other sockets
-          // before auto-activating) didn't work -- the check itself always
-          // failed auth and reported false negatives. `status`'s response
-          // carries no secret (no token, no content, nothing beyond what the
-          // caller already implied by knowing the socket path to connect to)
-          // -- safe to expose unauthenticated. Every OTHER method still
-          // requires the real token.
-          const expected = process.env.ACK_AUTH_TOKEN;
-          if (expected && request.method !== "status" && request.token !== expected) {
-            socket.write(JSON.stringify({ error: "unauthorized" }) + "\n");
-            continue;
-          }
-
-          let response;
-          switch (request.method) {
-          case "status":
-            response = { ok: true, pid: process.pid, version: ACK_VERSION, workspace: enforcer.cfg.WORKSPACE, socket: enforcer.cfg.SOCKET, habits: enforcer.habits.length, sessions: enforcer.HOLD_STATE.size };
-            break;
-          case "execute_tool":
-            response = enforcer.executeTool(request.params.tool, request.params);
-            break;
-          case "heartbeat":
-            response = enforcer.heartbeat();
-            break;
-          case "validate_workspace":
-            response = enforcer.validate_workspace();
-            break;
-          case "reload":
-            enforcer.reload();
-            response = { ok: true, character_hash: enforcer.characterHash };
-            break;
-          case "get_habit":
-            response = enforcer.getHabit(request.params?.name);
-            break;
-          case "pick_prompt":
-            response = enforcer.pickPrompt(request.params?.session_id || "default");
-            break;
-          case "tool_tick":
-            response = enforcer.toolTick(
-              request.params?.session_id || "default",
-              request.params?.tool || "",
-              request.params?.file_path
-            );
-            break;
-          case "submit_ack":
-            response = enforcer.submitAck(
-              request.params?.session_id || "default",
-              request.params?.statement || ""
-            );
-            break;
-          default:
-            response = { error: "unknown method" };
-        }
-
-        socket.write(JSON.stringify(response) + "\n");
+          // Auth: status is unauthenticated so ack status/repair/doctor work
+          // without ACK_AUTH_TOKEN in the caller's env (found live 2026-08-07).
+          const response = dispatchV0(enforcer, request, { includePid: true });
+          socket.write(JSON.stringify(response) + "\n");
       } catch (err) {
         socket.write(JSON.stringify({ error: "invalid request" }) + "\n");
       }
@@ -1167,61 +1196,9 @@ function startMultiWorkspaceDaemon(workspaces) {
           if (!line) continue;
           try {
             const request = JSON.parse(line);
-
-            // Auth gate. "status" exempt -- see the matching comment in
-            // startSocketServer() above (same fix, same duplicated logic,
-            // KD-16 applies here too).
-            const expected = process.env.ACK_AUTH_TOKEN;
-            if (expected && request.method !== "status" && request.token !== expected) {
-              socket.write(JSON.stringify({ error: "unauthorized" }) + "\n");
-              continue;
-            }
-
-            let response;
-            switch (request.method) {
-            case "status":
-              response = { ok: true, version: ACK_VERSION, workspace: ws, socket: sock, habits: enforcer.habits.length, sessions: enforcer.HOLD_STATE.size };
-              break;
-            case "execute_tool":
-              response = enforcer.executeTool(request.params.tool, request.params);
-              break;
-            case "heartbeat":
-              response = enforcer.heartbeat();
-              break;
-            case "validate_workspace":
-              response = enforcer.validate_workspace();
-              break;
-            case "reload":
-              enforcer.reload();
-              response = { ok: true, character_hash: enforcer.characterHash };
-              break;
-            case "get_habit":
-              response = enforcer.getHabit(request.params?.name);
-              break;
-            case "pick_prompt":
-              response = enforcer.pickPrompt(request.params?.session_id || "default");
-              break;
-            case "tool_tick":
-              response = enforcer.toolTick(
-                request.params?.session_id || "default",
-                request.params?.tool || "",
-                request.params?.file_path
-              );
-              break;
-            case "submit_ack":
-              response = enforcer.submitAck(
-                request.params?.session_id || "default",
-                request.params?.statement || ""
-              );
-              break;
-            case "register_workspace":
-              // Register a new workspace at runtime
-              response = _registerWorkspace(request.params?.workspace);
-              break;
-            default:
-              response = { error: "unknown method" };
-            }
-
+            const response = dispatchV0(enforcer, request, {
+              registerWorkspace: _registerWorkspace,
+            });
             socket.write(JSON.stringify(response) + "\n");
           } catch (err) {
             socket.write(JSON.stringify({ error: "invalid request" }) + "\n");
