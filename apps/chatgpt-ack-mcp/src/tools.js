@@ -1,6 +1,8 @@
 import { HOSTED_TOOLS } from "@drdeeks/character-kit-mcp-contract";
+import { EVENT_TYPE } from "@drdeeks/character-kit-events";
 import { ignoreModelIdentity } from "./auth.js";
 import { acknowledge, checkAction, unavailable } from "./enforcement.js";
+import { buildRlEvent, decisionEventType, emitRlEvent } from "./rl-events.js";
 
 export { HOSTED_TOOLS };
 
@@ -64,6 +66,17 @@ export async function runHostedTool(name, rawArgs, { identity, store }) {
           tool: args.tool,
           command: args.command,
         });
+        await emitRlEvent(store, identity, decisionEventType(result.decision), {
+          sessionId: args.conversation_id,
+          payload: {
+            decision: result.decision,
+            decisionId: result.decisionId,
+            profileId: profile.profileId,
+            profileVersion: profile.version,
+            tool: args.tool,
+            reasonCodes: result.reasonCodes,
+          },
+        });
         return result;
       }
       case "ack_acknowledge_hold": {
@@ -85,6 +98,19 @@ export async function runHostedTool(name, rawArgs, { identity, store }) {
           profileId: profile.profileId,
           profileVersion: profile.version,
         });
+        await emitRlEvent(
+          store,
+          identity,
+          result.decision === "acknowledge" ? EVENT_TYPE.ACK_ACCEPTED : EVENT_TYPE.ACK_REJECTED,
+          {
+            sessionId: args.conversation_id,
+            payload: {
+              habitName: args.habitName,
+              decisionId: args.decisionId,
+              reasonCodes: result.reasonCodes,
+            },
+          }
+        );
         return result;
       }
       case "ack_record_decision": {
@@ -106,6 +132,28 @@ export async function runHostedTool(name, rawArgs, { identity, store }) {
         });
         return result;
       }
+      case "ack_ingest_event":
+        return write(store, identity, async () => {
+          const event = buildRlEvent(identity, args.eventType, {
+            sessionId: args.sessionId || args.conversation_id,
+            episodeId: args.episodeId,
+            taskId: args.taskId,
+            runId: args.runId,
+            source: args.source || "external",
+            component: args.component || "ingest",
+            payload: args.payload || {},
+          });
+          await store.appendEvent(identity, event);
+          return { eventId: event.eventId, eventType: event.eventType };
+        });
+      case "ack_list_events":
+        return {
+          events: await store.listEvents(identity, {
+            limit: args.limit,
+            eventType: args.eventType,
+            mineOnly: args.mineOnly === true,
+          }),
+        };
       case "ack_report_watchdog_state":
         return store.reportWatchdog(identity, args.leaseVersion);
       case "ack_export_user_data":

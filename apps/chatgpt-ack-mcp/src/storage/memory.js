@@ -17,6 +17,7 @@ export class MemoryStore {
     this.acks = [];
     this.watchdog = new Map();
     this.audit = [];
+    this.events = [];
     this.writeCounts = new Map();
   }
 
@@ -266,6 +267,27 @@ export class MemoryStore {
     return n <= max;
   }
 
+  async appendEvent(identity, event) {
+    if (event.workspaceId !== identity.workspaceId || event.ownerUserId !== identity.userId) {
+      const err = new Error("event tenant mismatch");
+      err.code = "forbidden";
+      throw err;
+    }
+    if (this.events.some((e) => e.eventId === event.eventId)) return event;
+    this.events.push(event);
+    return event;
+  }
+
+  async listEvents(identity, { limit = 50, eventType, mineOnly = false } = {}) {
+    const cap = Math.max(1, Math.min(200, Number(limit) || 50));
+    return this.events
+      .filter((e) => e.workspaceId === identity.workspaceId)
+      .filter((e) => (mineOnly ? e.ownerUserId === identity.userId : true))
+      .filter((e) => (eventType ? e.eventType === eventType : true))
+      .slice(-cap)
+      .reverse();
+  }
+
   async exportUser(identity) {
     return {
       profiles: await this.listProfiles(identity),
@@ -273,6 +295,7 @@ export class MemoryStore {
       acknowledgments: this.acks.filter(
         (a) => a.workspaceId === identity.workspaceId && a.ownerUserId === identity.userId
       ),
+      events: await this.listEvents(identity, { limit: 100, mineOnly: true }),
     };
   }
 
@@ -288,6 +311,9 @@ export class MemoryStore {
     );
     this.acks = this.acks.filter(
       (a) => !(a.workspaceId === identity.workspaceId && a.ownerUserId === identity.userId)
+    );
+    this.events = this.events.filter(
+      (e) => !(e.workspaceId === identity.workspaceId && e.ownerUserId === identity.userId)
     );
     await this.auditEvent(identity, "user.delete", {});
   }

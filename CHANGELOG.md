@@ -4,6 +4,13 @@ Append-only, newest entry on top. Never rewrite a past entry.
 
 ## Unreleased
 
+**Added — telemetry / elementary RL events print to hosted D1
+(2026-09-13):**
+
+`enforcement_events` migration, `ack_ingest_event`, `ack_list_events`,
+and `POST /events`. Hosted check/ack already emit canonical facts.
+Workspace-scoped gather for RL datasets. No rewards in the writer.
+
 ## 1.9.0 — 2026-09-13
 
 npm: `@drdeeks/character-kit@1.9.0`. Same kit, not a 2.0.0 socket cutover.

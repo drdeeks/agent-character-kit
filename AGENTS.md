@@ -684,7 +684,7 @@ by a green JS test suite, only by an actual run against real system state.
 | `packages/core/` | Host-neutral PolicyEngine + CharacterKitCore |
 | `packages/config-schema/` | Versioned character profile JSON for local and hosted ACK |
 | `packages/mcp-contract/` | Hosted ChatGPT MCP tool names and schemas |
-| `apps/chatgpt-ack-mcp/` | Hosted ChatGPT Worker MCP (`POST /mcp`). D1 schema; MemoryStore in tests. Not `install.sh`. |
+| `apps/chatgpt-ack-mcp/` | Hosted ChatGPT Worker MCP (`POST /mcp`, `POST /events`). D1 schema + `enforcement_events` for telemetry/RL facts. MemoryStore in tests. Not `install.sh`. |
 | `GPT-INTEGRATION-SPEC.md` | ChatGPT hosted implementation target |
 | `packages/events/` | Canonical enforcement events + JSONL sink |
 | `packages/cli/` | `ack` command bodies (`hook`, `status`, `doctor`, `repair`, `manage`, `habit`, `reload`, `audit`, `constitution`, `policy`) |

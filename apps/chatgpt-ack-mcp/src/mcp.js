@@ -1,5 +1,6 @@
 import { HOSTED_TOOLS } from "@drdeeks/character-kit-mcp-contract";
 import { AuthError, resolveIdentity } from "./auth.js";
+import { buildRlEvent } from "./rl-events.js";
 import { runHostedTool } from "./tools.js";
 
 export const MCP_PROTOCOL_VERSION = "2025-03-26";
@@ -58,15 +59,37 @@ export async function handleFetch(request, env, store) {
   if (request.method === "GET" && url.pathname === "/health") {
     return json({ ok: true, service: "ack-chatgpt-mcp" });
   }
-  if (request.method !== "POST" || url.pathname !== "/mcp") {
-    return new Response("Not found", { status: 404 });
-  }
   let identity;
   try {
     identity = resolveIdentity(request, env);
   } catch (err) {
     const status = err instanceof AuthError ? 401 : 400;
     return json({ error: err.message }, status);
+  }
+  if (request.method === "POST" && url.pathname === "/events") {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: "parse error" }, 400);
+    }
+    const items = Array.isArray(body?.events) ? body.events : [body];
+    const accepted = [];
+    for (const item of items) {
+      if (!item || !item.eventType) continue;
+      try {
+        const event = buildRlEvent(identity, item.eventType, item);
+        await store.appendEvent(identity, event);
+        accepted.push(event.eventId);
+      } catch (err) {
+        if (err.code === "invalid") continue;
+        return json({ error: err.message }, 400);
+      }
+    }
+    return json({ ok: true, accepted: accepted.length, eventIds: accepted });
+  }
+  if (request.method !== "POST" || url.pathname !== "/mcp") {
+    return new Response("Not found", { status: 404 });
   }
   let body;
   try {

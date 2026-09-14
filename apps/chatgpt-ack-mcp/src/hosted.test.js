@@ -144,3 +144,57 @@ test("export and delete stay tenant-scoped", async () => {
   const stillB = await call(store, b, "ack_list_profiles");
   assert.equal(stillB.profiles.length, 1);
 });
+
+test("check_action prints canonical RL events to the workspace D1 store", async () => {
+  const store = new MemoryStore();
+  const id = identityHeader("user_a");
+  const status = await call(store, id, "ack_get_status");
+  await call(store, id, "ack_update_profile", {
+    profileId: status.profileId,
+    patch: { toolRules: [{ type: "hard", pattern: "rm -rf" }], habits: [] },
+  });
+  await call(store, id, "ack_check_action", { tool: "Bash", command: "rm -rf /" });
+  const listed = await call(store, id, "ack_list_events", { eventType: "tool.denied" });
+  assert.ok(listed.events.length >= 1);
+  assert.equal(listed.events[0].eventType, "tool.denied");
+  assert.equal(listed.events[0].workspaceId, "ws_a");
+  assert.equal(listed.events[0].payload.command, undefined);
+});
+
+test("ingest from another component is workspace-visible, not cross-tenant", async () => {
+  const store = new MemoryStore();
+  const a = identityHeader("user_a", "ws_a");
+  const b = identityHeader("user_b", "ws_a");
+  const otherWs = identityHeader("user_c", "ws_other");
+  await call(store, a, "ack_ingest_event", {
+    eventType: "habit.injected",
+    source: "character-kit",
+    payload: { habitId: "verify_functionality_not_syntax" },
+    user_id: "attacker",
+  });
+  const everyone = await call(store, b, "ack_list_events");
+  assert.equal(everyone.events.length, 1);
+  assert.equal(everyone.events[0].ownerUserId, "user_a");
+  const isolated = await call(store, otherWs, "ack_list_events");
+  assert.equal(isolated.events.length, 0);
+});
+
+test("POST /events accepts a local ACK/Gate batch", async () => {
+  const store = new MemoryStore();
+  const res = await worker.fetch(new Request("https://ack.example/events", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-ack-test-identity": identityHeader("user_a"),
+    },
+    body: JSON.stringify({
+      events: [
+        { eventType: "session.started", sessionId: "s1" },
+        { eventType: "not.a.real.type" },
+      ],
+    }),
+  }), { ...env, ACK_STORE: store });
+  const body = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(body.accepted, 1);
+});

@@ -32,3 +32,7 @@ node --test apps/chatgpt-ack-mcp/src/*.test.js packages/config-schema/src/*.test
 
 Do not put access tokens in D1. Do not present `install.sh` as a ChatGPT
 prerequisite.
+
+Telemetry: `ack_ingest_event` / `POST /events` print canonical facts into
+D1 (`enforcement_events`). `ack_list_events` lists the workspace. See
+`docs/chatgpt-hosted.md`.
