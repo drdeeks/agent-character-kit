@@ -1,0 +1,13 @@
+{
+  "name": "ack-chatgpt-mcp",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-13",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "ACK_DB",
+      "database_name": "ack-chatgpt",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+    }
+  ]
+}

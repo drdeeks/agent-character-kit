@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit-events",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Canonical Character Kit enforcement events and local JSONL sink",
   "type": "module",
   "main": "src/index.js",

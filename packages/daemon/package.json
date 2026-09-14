@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit-daemon",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Character Kit enforcer socket RPC (v0 dispatch)",
   "type": "module",
   "main": "src/index.js",

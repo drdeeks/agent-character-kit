@@ -4,6 +4,24 @@ Append-only, newest entry on top. Never rewrite a past entry.
 
 ## Unreleased
 
+## 1.9.0 — 2026-09-13
+
+npm: `@drdeeks/character-kit@1.9.0`. Same kit, not a 2.0.0 socket cutover.
+Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
+
+**Added — hosted ChatGPT MCP Worker (`apps/chatgpt-ack-mcp`)
+(2026-09-13):**
+
+Implements `GPT-INTEGRATION-SPEC.md` without replacing the local daemon.
+ChatGPT users do not need `install.sh` or localhost MCP. Identity comes
+from the authenticated connection, never from `user_id` args. D1 schema
+in `migrations/0001_init.sql`; tests use MemoryStore. Enforcement is
+`packages/core` `evaluatePolicy`. Fail-closed storage/worker failures
+return `unavailable`. Shared `packages/config-schema` and
+`packages/mcp-contract`. No `@modelcontextprotocol/sdk`, no Apps SDK
+widget, no nested `mcp-server/src`. OAuth/D1 deploy is not live until
+Worker secrets and a D1 database id exist.
+
 ## 1.8.0 — 2026-09-13
 
 npm: `@drdeeks/character-kit@1.8.0`. Same kit, not a 2.0.0 socket cutover.

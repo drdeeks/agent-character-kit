@@ -1,7 +1,7 @@
 {
-  "name": "@drdeeks/character-kit-cli",
+  "name": "@drdeeks/character-kit-mcp-contract",
   "version": "1.9.0",
-  "description": "ack command implementations for the Character Kit",
+  "description": "Hosted ChatGPT MCP tool names and JSON schemas for ACK",
   "type": "module",
   "main": "src/index.js",
   "exports": {

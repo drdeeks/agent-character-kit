@@ -73,6 +73,10 @@ Thumbs.db
 tmp/
 .trash/
 
+# ===== Cloudflare Wrangler =====
+.wrangler/
+.dev.vars
+
 # ===== Coverage =====
 coverage/
 .nyc_output/

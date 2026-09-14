@@ -1,14 +1,16 @@
 {
-  "name": "@drdeeks/character-kit-companion",
+  "name": "@drdeeks/character-kit-chatgpt-mcp",
   "version": "1.9.0",
-  "description": "Thin Character Kit factory. Forwards to options.core. Default CharacterKitCore is in-process for tests, not the live daemon.",
+  "description": "Hosted ChatGPT MCP Worker for Agent Character Kit. Not the local daemon.",
   "type": "module",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js"
   },
   "dependencies": {
+    "@drdeeks/character-kit-config-schema": "1.9.0",
     "@drdeeks/character-kit-core": "1.9.0",
+    "@drdeeks/character-kit-mcp-contract": "1.9.0",
     "@drdeeks/character-kit-protocol": "1.9.0"
   },
   "engines": {

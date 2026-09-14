@@ -127,7 +127,10 @@ ack configure          # interactive wizard
 ack configure --yes    # non-interactive, sane defaults
 ```
 
-npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.8.0**.
+npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.9.0**.
+
+ChatGPT custom app (no local daemon): `apps/chatgpt-ack-mcp/` and
+`GPT-INTEGRATION-SPEC.md`. Codex and local harnesses still use `ack configure`.
 After configure:
 
 ```bash
