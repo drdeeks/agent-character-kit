@@ -1,8 +1,8 @@
--- ACK ChatGPT hosted schema. No plaintext tokens.
+-- ACK provider-neutral hosted schema. No plaintext tokens.
 
 CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL DEFAULT 'chatgpt',
+  provider TEXT NOT NULL DEFAULT 'agnostic',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   version INTEGER NOT NULL DEFAULT 1,
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL DEFAULT 'chatgpt',
+  provider TEXT NOT NULL DEFAULT 'agnostic',
   external_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS installations (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
   owner_user_id TEXT NOT NULL,
-  provider TEXT NOT NULL DEFAULT 'chatgpt',
+  provider TEXT NOT NULL DEFAULT 'agnostic',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   version INTEGER NOT NULL DEFAULT 1,
