@@ -4,6 +4,16 @@ Append-only, newest entry on top. Never rewrite a past entry.
 
 ## Unreleased
 
+**Added — provider-neutral persistent service foundation (2026-09-14):**
+
+Added a production `D1Store` adapter with tenant-scoped parameterized queries,
+fail-closed storage errors, and Worker store selection (`ACK_DB` → D1,
+injected store → tests, otherwise MemoryStore). Provider and default agent
+identity are configurable through `ACK_PROVIDER` and `ACK_DEFAULT_AGENT`, while
+legacy ChatGPT defaults remain compatible. This is the first universal-service
+phase; OAuth, external identity adapters, and live Cloudflare deployment remain
+separate follow-up work.
+
 **Release alignment — 1.9.1 (2026-09-13):**
 
 Synchronized the root package, all workspace packages, runtime constants,

@@ -55,8 +55,8 @@ export async function runHostedTool(name, rawArgs, { identity, store }) {
           profile,
           tool: args.tool,
           command: args.command || "",
-          recentAcks: store.recentAcks(identity),
-          openHold: store.openHold(identity),
+          recentAcks: await store.recentAcks(identity),
+          openHold: await store.openHold(identity),
         });
         await store.recordDecision(identity, {
           ...result,
@@ -84,7 +84,7 @@ export async function runHostedTool(name, rawArgs, { identity, store }) {
           profile,
           habitName: args.habitName,
           reason: args.reason,
-          recentAcks: store.recentAcks(identity),
+          recentAcks: await store.recentAcks(identity),
         });
         if (result.decision === "acknowledge") {
           await store.addAck(identity, {

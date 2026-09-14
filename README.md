@@ -129,8 +129,10 @@ ack configure --yes    # non-interactive, sane defaults
 
 npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.9.1**. The package includes the local event sink, configurable remote event sink, and remote MCP service source.
 
-Remote MCP service integration (no local daemon): `apps/chatgpt-ack-mcp/` and
-`GPT-INTEGRATION-SPEC.md`. Codex and local harnesses still use `ack configure`.
+Remote service integration (no local daemon): `apps/chatgpt-ack-mcp/` and
+`GPT-INTEGRATION-SPEC.md`. The service is provider-neutral at its boundary;
+ChatGPT is only a compatibility default until an external identity adapter is
+configured. Codex and local harnesses still use `ack configure`.
 After configure:
 
 ```bash
@@ -229,7 +231,7 @@ Local services default to date-partitioned JSONL under the agent workspace;
 remote service deployments default to D1. Configure the route per service:
 
 ```text
-ACK_EVENT_SERVICE=daemon|codex|claude|hermes|gate|chatgpt
+ACK_EVENT_SERVICE=daemon|codex|claude|hermes|gate|remote
 ACK_EVENT_SINK=local|d1|both
 ACK_EVENT_URL=https://<service>/events
 ```

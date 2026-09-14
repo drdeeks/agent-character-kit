@@ -12,8 +12,11 @@
 > Live kit version is **1.9.1** (`npm i -g @drdeeks/character-kit`).
 > `packages/` are kit folders (CLI, daemon extract, protocol, core, events,
 > companion, config-schema, mcp-contract), not new products.
-> Remote MCP service deployment is `apps/chatgpt-ack-mcp` (Worker + D1), not
-> the local daemon. Do not bump to 2.0.0 until the socket is explicitly cut over.
+> Remote service deployment currently lives in `apps/chatgpt-ack-mcp` (Worker +
+> D1) as the first provider-neutral service implementation; its ChatGPT naming
+> is legacy compatibility, not an architectural dependency. Local daemon and
+> remote service remain separate. Do not bump to 2.0.0 until the socket is
+> explicitly cut over.
 
 ---
 
@@ -688,7 +691,7 @@ by a green JS test suite, only by an actual run against real system state.
 | `packages/core/` | Host-neutral PolicyEngine + CharacterKitCore |
 | `packages/config-schema/` | Versioned character profile JSON for local and hosted ACK |
 | `packages/mcp-contract/` | Remote MCP service tool names and schemas |
-| `apps/chatgpt-ack-mcp/` | Remote MCP service (`POST /mcp`, `POST /events`). D1 schema + `enforcement_events` for telemetry/RL facts. MemoryStore in tests. Not `install.sh`. |
+| `apps/chatgpt-ack-mcp/` | Provider-neutral remote service implementation (`POST /mcp`, `POST /events`) with configurable provider/agent identity, D1 adapter, and `enforcement_events` telemetry facts. MemoryStore remains the test/local fallback. Not `install.sh`. |
 | `GPT-INTEGRATION-SPEC.md` | Remote MCP service implementation target |
 | `packages/events/` | Canonical enforcement events + service-aware local/remote sink (`local`, `d1`, `both`) |
 | `packages/cli/` | `ack` command bodies (`hook`, `status`, `doctor`, `repair`, `manage`, `habit`, `reload`, `audit`, `constitution`, `policy`) |

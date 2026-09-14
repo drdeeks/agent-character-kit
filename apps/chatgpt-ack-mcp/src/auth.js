@@ -15,13 +15,15 @@ export class AuthError extends Error {
  * @param {object} [env]
  */
 export function resolveIdentity(request, env = {}) {
+  const provider = env.ACK_PROVIDER || "chatgpt";
+  const defaultAgent = env.ACK_DEFAULT_AGENT || "chatgpt";
   const url = new URL(request.url);
   const headers = request.headers;
   const bearer = bearerToken(headers.get("authorization"));
 
   if (env.ACK_ALLOW_TEST_IDENTITY === "1") {
     const test = headers.get("x-ack-test-identity");
-    if (test) return parseTestIdentity(test);
+    if (test) return parseTestIdentity(test, { provider, defaultAgent });
   }
 
   const accessEmail = headers.get("cf-access-authenticated-user-email");
@@ -29,10 +31,11 @@ export function resolveIdentity(request, env = {}) {
   if (accessEmail && workspace) {
     return identityFromParts({
       workspaceId: workspace,
-      userId: `user_chatgpt_${slug(accessEmail)}`,
+      userId: `user_${slug(provider)}_${slug(accessEmail)}`,
       installationId: headers.get("x-ack-installation-id") || `install_${slug(workspace)}_${slug(accessEmail)}`,
-      agentId: headers.get("x-ack-agent-id") || "chatgpt",
+      agentId: headers.get("x-ack-agent-id") || defaultAgent,
       conversationId: headers.get("x-ack-conversation-id") || null,
+      provider,
     });
   }
 
@@ -54,7 +57,7 @@ function slug(value) {
   return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
 }
 
-function parseTestIdentity(raw) {
+function parseTestIdentity(raw, defaults = {}) {
   const parts = Object.fromEntries(
     String(raw).split(",").map((kv) => {
       const i = kv.indexOf("=");
@@ -65,7 +68,8 @@ function parseTestIdentity(raw) {
     workspaceId: parts.workspace || parts.workspaceId,
     userId: parts.user || parts.userId,
     installationId: parts.installation || parts.installationId,
-    agentId: parts.agent || parts.agentId || "chatgpt",
+    agentId: parts.agent || parts.agentId || defaults.defaultAgent || "chatgpt",
+    provider: parts.provider || defaults.provider || "chatgpt",
     conversationId: parts.conversation || parts.conversationId || null,
   });
 }
@@ -74,12 +78,12 @@ export function identityFromParts(parts) {
   const workspaceId = String(parts.workspaceId || "").trim();
   const userId = String(parts.userId || "").trim();
   const installationId = String(parts.installationId || "").trim();
-  const agentId = String(parts.agentId || "chatgpt").trim();
+  const agentId = String(parts.agentId || parts.defaultAgent || "chatgpt").trim();
   if (!workspaceId || !userId || !installationId) {
     throw new AuthError("identity requires workspace, user, and installation");
   }
   return {
-    provider: "chatgpt",
+    provider: parts.provider || parts.defaultProvider || "chatgpt",
     workspaceId,
     userId,
     installationId,

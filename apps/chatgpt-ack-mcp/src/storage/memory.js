@@ -26,7 +26,7 @@ export class MemoryStore {
     if (!this.workspaces.has(identity.workspaceId)) {
       this.workspaces.set(identity.workspaceId, {
         id: identity.workspaceId,
-        provider: "chatgpt",
+        provider: identity.provider || "chatgpt",
         created_at: ts,
         status: "active",
       });
@@ -34,7 +34,7 @@ export class MemoryStore {
     if (!this.users.has(identity.userId)) {
       this.users.set(identity.userId, {
         id: identity.userId,
-        provider: "chatgpt",
+        provider: identity.provider || "chatgpt",
         external_id: identity.userId,
         created_at: ts,
         status: "active",
