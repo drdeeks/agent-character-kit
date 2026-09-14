@@ -34,7 +34,7 @@ export async function handleMcpJsonRpc(body, ctx) {
       result: {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "ack-chatgpt-mcp", version: ctx.version || "1.9.1" },
+        serverInfo: { name: "mcp-bridgelement", version: ctx.version || "1.9.1" },
       },
     };
   }
@@ -57,7 +57,7 @@ export async function handleMcpJsonRpc(body, ctx) {
 export async function handleFetch(request, env, store) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/health") {
-    return json({ ok: true, service: "ack-chatgpt-mcp" });
+    return json({ ok: true, service: "mcp-bridgelement" });
   }
   let identity;
   try {

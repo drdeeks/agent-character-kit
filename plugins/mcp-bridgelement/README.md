@@ -1,7 +1,9 @@
-# ACK ChatGPT hosted MCP
+# MCP Bridgelement
 
-Remote HTTPS MCP for ChatGPT custom apps. Users do **not** run `install.sh`
-or a localhost daemon. Codex and local harnesses still use the kit CLI.
+Global MCP Bridge for standalone applications and agent systems. It provides
+provider-neutral policy enforcement, identity, persistent storage, and
+telemetry collection for RL, evaluation, analytics, replay, and downstream
+dataset generation. ChatGPT is one adapter; it is not the service identity.
 
 Spec: [`../../GPT-INTEGRATION-SPEC.md`](../../GPT-INTEGRATION-SPEC.md)
 
@@ -19,21 +21,21 @@ Spec: [`../../GPT-INTEGRATION-SPEC.md`](../../GPT-INTEGRATION-SPEC.md)
 From the kit root after `npm install`:
 
 ```bash
-node --test apps/chatgpt-ack-mcp/src/*.test.js packages/config-schema/src/*.test.js
+node --test plugins/mcp-bridgelement/src/*.test.js packages/config-schema/src/*.test.js
 ```
 
 ## Deploy (not done until secrets exist)
 
 1. Create a D1 database; put its id in `wrangler.jsonc`.
-2. `npx wrangler d1 migrations apply ack-chatgpt`
+2. `npx wrangler d1 migrations apply ack-universal`
 3. Set Worker secrets (`ACK_BOOTSTRAP_TOKEN` is not a user identity).
 4. Deploy a stable HTTPS hostname.
-5. Point the ChatGPT app at `https://<host>/mcp`.
+5. Point any compatible MCP client, including ChatGPT, at `https://<host>/mcp`.
 
 Do not put access tokens in D1. Do not present `install.sh` as a ChatGPT
 prerequisite.
 
 Telemetry: `ack_ingest_event` / `POST /events` print canonical facts into
 D1 (`enforcement_events`). `ack_list_events` lists the workspace. Hosted
-ChatGPT defaults to D1; local services default to JSONL and may select
-`ACK_EVENT_SINK=local|d1|both`. See `docs/chatgpt-hosted.md`.
+The bridge defaults to D1; local services default to JSONL and may select
+`ACK_EVENT_SINK=local|d1|both`. See `docs/universal-service.md`.

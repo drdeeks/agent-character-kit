@@ -2,7 +2,7 @@
  * Where canonical events print. Defaults follow the service; env can override.
  *
  * ACK_EVENT_SINK=local|d1|both
- * ACK_EVENT_SERVICE=daemon|chatgpt|codex|claude|hermes|gate
+ * ACK_EVENT_SERVICE=agnostic|mcp-bridgelement|daemon|chatgpt|codex|claude|hermes|gate
  * ACK_EVENT_URL=https://<host>/events  (local process posting into hosted D1)
  */
 
@@ -15,6 +15,8 @@ export const SERVICE_DEFAULTS = Object.freeze({
   hosted: SINK_D1,
   "chatgpt-ack-mcp": SINK_D1,
   "plugin.chatgpt": SINK_D1,
+  agnostic: SINK_D1,
+  "mcp-bridgelement": SINK_D1,
   daemon: SINK_LOCAL,
   local: SINK_LOCAL,
   codex: SINK_LOCAL,

@@ -32,8 +32,8 @@ export function buildRlEvent(identity, eventType, fields = {}) {
     runId: fields.runId || identity.installationId,
     agentId: fields.agentId || identity.agentId,
     sequence: Number(fields.sequence) || 0,
-    source: fields.source || "chatgpt-ack-mcp",
-    component: fields.component || "hosted",
+    source: fields.source || "mcp-bridgelement",
+    component: fields.component || "mcp-bridgelement",
     parentEventId: fields.parentEventId || null,
     schemaVersion: "2",
     modelId: fields.modelId || null,
@@ -59,7 +59,7 @@ export async function emitRlEvent(store, identity, eventType, fields = {}, env =
   try {
     const event = buildRlEvent(identity, eventType, fields);
     const sink = createEventSink({
-      service: env.ACK_EVENT_SERVICE || "chatgpt",
+      service: env.ACK_EVENT_SERVICE || "agnostic",
       env,
       store,
       identity,

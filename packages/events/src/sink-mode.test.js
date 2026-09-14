@@ -12,7 +12,7 @@ test("daemon/codex/claude default to local JSONL", () => {
 });
 
 test("ChatGPT plugin defaults to D1", () => {
-  for (const service of ["chatgpt", "hosted", "chatgpt-ack-mcp", "plugin.chatgpt"]) {
+  for (const service of ["agnostic", "mcp-bridgelement", "chatgpt", "hosted", "chatgpt-ack-mcp", "plugin.chatgpt"]) {
     assert.equal(resolveEventSinkMode({ service, env: {} }), "d1", service);
   }
 });

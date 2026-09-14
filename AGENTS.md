@@ -12,9 +12,9 @@
 > Live kit version is **1.9.1** (`npm i -g @drdeeks/character-kit`).
 > `packages/` are kit folders (CLI, daemon extract, protocol, core, events,
 > companion, config-schema, mcp-contract), not new products.
-> Remote service deployment currently lives in `apps/chatgpt-ack-mcp` (Worker +
-> D1) as the first provider-neutral service implementation; its ChatGPT naming
-> is legacy compatibility, not an architectural dependency. Local daemon and
+> Remote service deployment lives in `plugins/mcp-bridgelement` (Worker + D1).
+> It is the standalone global MCP Bridge for provider-neutral applications and
+> telemetry collection; ChatGPT is one adapter. Local daemon and
 > remote service remain separate. Do not bump to 2.0.0 until the socket is
 > explicitly cut over.
 
@@ -526,7 +526,7 @@ Do not ship a package/plugin tree that this file map does not name.
 tarball (`!**/*.test.js`, `!**/tests/**`). `npm test` is the Node suite;
 `npm run test:python` is parity + Hermes plugin.
 
-Workspace packages (`packages/*/package.json`, `apps/chatgpt-ack-mcp`,
+Workspace packages (`packages/*/package.json`, `plugins/mcp-bridgelement`,
 `plugins/openai`, `plugins/claude`, `plugins/hermes`) stamp **1.9.1** with
 the live kit.
 Bump them with the six files above on each release. Do not bump to 2.0.0
@@ -691,7 +691,7 @@ by a green JS test suite, only by an actual run against real system state.
 | `packages/core/` | Host-neutral PolicyEngine + CharacterKitCore |
 | `packages/config-schema/` | Versioned character profile JSON for local and hosted ACK |
 | `packages/mcp-contract/` | Remote MCP service tool names and schemas |
-| `apps/chatgpt-ack-mcp/` | Provider-neutral remote service implementation (`POST /mcp`, `POST /events`) with configurable provider/agent identity, D1 adapter, and `enforcement_events` telemetry facts. MemoryStore remains the test/local fallback. Not `install.sh`. |
+| `plugins/mcp-bridgelement/` | Standalone provider-neutral global MCP Bridge (`POST /mcp`, `POST /events`) with configurable identity, D1 storage, and telemetry collection. ChatGPT is one adapter. MemoryStore remains the test/local fallback. Not `install.sh`. |
 | `GPT-INTEGRATION-SPEC.md` | Remote MCP service implementation target |
 | `packages/events/` | Canonical enforcement events + service-aware local/remote sink (`local`, `d1`, `both`) |
 | `packages/cli/` | `ack` command bodies (`hook`, `status`, `doctor`, `repair`, `manage`, `habit`, `reload`, `audit`, `constitution`, `policy`) |

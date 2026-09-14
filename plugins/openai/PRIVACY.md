@@ -14,5 +14,6 @@ Event and audit JSONL stay on disk:
 Auth is a local `ACK_AUTH_TOKEN` bearer, not OAuth. Do not put secrets in
 MCP results. The plugin is a deterrent, not a security boundary.
 
-The ChatGPT **hosted** app is a different path (`apps/chatgpt-ack-mcp`,
+The ChatGPT **hosted** adapter is provided by the standalone bridge
+(`plugins/mcp-bridgelement`,
 `docs/PRIVACY.md`): Cloudflare D1, not this loopback daemon.

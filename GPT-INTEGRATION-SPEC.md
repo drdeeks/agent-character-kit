@@ -238,7 +238,7 @@ Do not rely on a process-global timer or memory variable inside a Worker.
 
 ```text
 apps/
-  chatgpt-ack-mcp/
+  plugins/mcp-bridgelement/
     src/
       index.ts
       auth.ts
@@ -293,4 +293,3 @@ Before connecting ChatGPT:
 ## 14. Definition of done
 
 The integration is complete when a new ChatGPT user can connect the ACK app, configure a profile, and receive consistent enforcement without installing local software or knowing that MCP, Workers, D1, or Durable Objects exist; while the service can prove which authenticated user, profile, policy version, and decision produced every enforcement result.
-

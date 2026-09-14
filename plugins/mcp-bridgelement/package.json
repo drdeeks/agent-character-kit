@@ -1,7 +1,7 @@
 {
-  "name": "@drdeeks/character-kit-chatgpt-mcp",
+  "name": "@drdeeks/mcp-bridgelement",
   "version": "1.9.1",
-  "description": "Remote MCP service for Agent Character Kit. Not the local daemon.",
+  "description": "Global MCP Bridge for standalone applications and agent systems. Provides provider-neutral policy enforcement, identity, storage, and collection of telemetry data for RL, evaluation, analytics, replay, and downstream dataset generation. ChatGPT is one optional adapter, not the service identity.",
   "type": "module",
   "main": "src/index.js",
   "exports": {

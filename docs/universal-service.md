@@ -6,8 +6,10 @@ service's architectural owner.
 
 ## Current implementation
 
-The first service implementation remains in `apps/chatgpt-ack-mcp/` for package
-compatibility. Its legacy directory/name does not define the service identity.
+The standalone service implementation lives in `plugins/mcp-bridgelement/`.
+The package is the global MCP Bridge for standalone applications and agent
+systems. Character Kit, ChatGPT, Codex, Claude, Watchtower, CI systems, and
+custom agents consume it through adapters; none owns the service identity.
 The Worker selects storage in this order:
 
 1. `env.ACK_STORE` for tests or an injected implementation;
@@ -21,8 +23,8 @@ ACK_PROVIDER=your-provider
 ACK_DEFAULT_AGENT=your-agent
 ```
 
-The default values preserve existing 1.x compatibility and should not be used
-as the long-term universal identity model.
+The universal defaults are `agnostic` and `default-agent`. A ChatGPT adapter
+may explicitly set `ACK_PROVIDER=chatgpt` and its agent identity.
 
 ## Extension boundary
 
@@ -82,6 +84,5 @@ component, and scopes. No model-supplied identity fields are trusted.
 ## Deployment status
 
 The `ack-universal` D1 database and base migrations are live. The universal
-telemetry migration is committed locally and awaits the next authenticated
-Cloudflare MCP session before it is applied remotely. OAuth configuration and
-Worker deployment remain separate release steps.
+telemetry migration is committed locally and awaits application remotely.
+OAuth configuration and Worker deployment remain separate release steps.

@@ -48,7 +48,7 @@ Workspace-scoped gather for RL datasets. No rewards in the writer.
 npm: `@drdeeks/character-kit@1.9.0`. Same kit, not a 2.0.0 socket cutover.
 Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
 
-**Added — remote MCP service Worker (`apps/chatgpt-ack-mcp`)
+**Added — standalone MCP Bridge Worker (`plugins/mcp-bridgelement`)
 (2026-09-13):**
 
 Implements `GPT-INTEGRATION-SPEC.md` without replacing the local daemon.

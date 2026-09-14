@@ -8,7 +8,7 @@ import { handleFetch } from "./mcp.js";
  */
 export function createStore(env = {}) {
   if (env.ACK_STORE) return env.ACK_STORE;
-  if (env.ACK_DB) return new D1Store(env.ACK_DB, { provider: env.ACK_PROVIDER || "chatgpt" });
+  if (env.ACK_DB) return new D1Store(env.ACK_DB, { provider: env.ACK_PROVIDER || "agnostic" });
   return new MemoryStore();
 }
 

@@ -129,7 +129,7 @@ ack configure --yes    # non-interactive, sane defaults
 
 npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.9.1**. The package includes the local event sink, configurable remote event sink, and remote MCP service source.
 
-Remote service integration (no local daemon): `apps/chatgpt-ack-mcp/` and
+Remote service integration (no local daemon): `plugins/mcp-bridgelement/` and
 `GPT-INTEGRATION-SPEC.md`. The service is provider-neutral at its boundary;
 ChatGPT is only a compatibility default until an external identity adapter is
 configured. Codex and local harnesses still use `ack configure`.

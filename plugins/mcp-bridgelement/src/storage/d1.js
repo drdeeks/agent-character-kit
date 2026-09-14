@@ -3,10 +3,10 @@ import { newId, nowIso } from "../ids.js";
 
 /** Production D1 implementation of the store consumed by hosted tools. */
 export class D1Store {
-  constructor(db, { provider = "chatgpt" } = {}) {
+  constructor(db, { provider = "agnostic" } = {}) {
     if (!db || typeof db.prepare !== "function") throw new TypeError("ACK_DB must be a D1 binding");
     this.db = db;
-    this.provider = String(provider || "chatgpt");
+    this.provider = String(provider || "agnostic");
     this.writeCounts = new Map();
   }
 

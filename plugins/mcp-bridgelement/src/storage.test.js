@@ -13,7 +13,7 @@ test("store factory prefers injected store, then D1, with MemoryStore fallback",
   assert.ok(createStore({}) instanceof MemoryStore);
 });
 
-test("provider and default agent are configurable while legacy defaults remain", () => {
+test("provider and default agent are configurable with universal defaults", () => {
   const request = new Request("https://ack.example/mcp", {
     headers: { "cf-access-authenticated-user-email": "Person@example.com", "x-ack-workspace-id": "ws" },
   });
@@ -22,6 +22,6 @@ test("provider and default agent are configurable while legacy defaults remain",
   assert.equal(identity.agentId, "writer");
   assert.equal(identity.userId, "user_claude_person-example-com");
   const legacy = identityFromParts({ workspaceId: "w", userId: "u", installationId: "i" });
-  assert.equal(legacy.provider, "chatgpt");
-  assert.equal(legacy.agentId, "chatgpt");
+  assert.equal(legacy.provider, "agnostic");
+  assert.equal(legacy.agentId, "default-agent");
 });

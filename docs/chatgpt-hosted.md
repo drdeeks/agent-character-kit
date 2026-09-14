@@ -3,7 +3,7 @@
 ChatGPT users connect a remote HTTPS MCP app. They do not run `install.sh`,
 a local daemon, or `ACK_MCP_HTTP=8754`.
 
-Implementation: `apps/chatgpt-ack-mcp/`. Contract: `GPT-INTEGRATION-SPEC.md`.
+Implementation: `plugins/mcp-bridgelement/`. Contract: `GPT-INTEGRATION-SPEC.md`.
 
 Local Codex / Claude / Hermes still use `plugins/openai` + the kit daemon.
 That path is unchanged. No Apps SDK widget. No nested `mcp-server/src`.
@@ -27,7 +27,7 @@ other components can:
 The sink is selected by the service, then optionally overridden:
 
 ```text
-ACK_EVENT_SERVICE=daemon|codex|claude|hermes|gate|chatgpt
+ACK_EVENT_SERVICE=agnostic|mcp-bridgelement|daemon|codex|claude|hermes|gate|chatgpt
 ACK_EVENT_SINK=local|d1|both
 ACK_EVENT_URL=https://<host>/events
 ```
