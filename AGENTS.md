@@ -12,8 +12,8 @@
 > Live kit version is **1.9.0** (`npm i -g @drdeeks/character-kit`).
 > `packages/` are kit folders (CLI, daemon extract, protocol, core, events,
 > companion, config-schema, mcp-contract), not new products.
-> ChatGPT hosted MCP is `apps/chatgpt-ack-mcp` (Worker + D1), not the local
-> daemon. Do not bump to 2.0.0 until the socket is explicitly cut over.
+> Remote MCP service deployment is `apps/chatgpt-ack-mcp` (Worker + D1), not
+> the local daemon. Do not bump to 2.0.0 until the socket is explicitly cut over.
 
 ---
 
@@ -546,8 +546,12 @@ Daemon deny/allow matching goes through `packages/core` `evaluatePolicy`
 Hold/ack/habit guards still live in the daemon. Unix and multi-workspace
 sockets share `dispatchV0` (same method names). Daemon also appends
 `packages/events` JSONL under `.agent/logs/events/` (`habit.injected` on
-`pick_prompt`; tool/ack facts from `_audit`). `createCompanion` default
-core is in-process for tests, not the live enforcer.
+`pick_prompt`; tool/ack facts from `_audit`). Service-aware routing is
+`local` by default for local services and `d1` by default for the remote
+service path; `ACK_EVENT_SINK=local|d1|both` overrides it. `ACK_EVENT_URL`
+forwards events to `POST /events`, while a missing remote target retains
+local JSONL. `createCompanion` default core is in-process for tests, not the
+live enforcer.
 
 `ack` command bodies live under `packages/cli/src/` (commander +
 `configure` still in `node/bin/ack.js`). That includes `reload`, `audit`,
@@ -683,10 +687,10 @@ by a green JS test suite, only by an actual run against real system state.
 | `packages/protocol/` | v0/v1 envelope, ToolDecision, errors, capabilities |
 | `packages/core/` | Host-neutral PolicyEngine + CharacterKitCore |
 | `packages/config-schema/` | Versioned character profile JSON for local and hosted ACK |
-| `packages/mcp-contract/` | Hosted ChatGPT MCP tool names and schemas |
-| `apps/chatgpt-ack-mcp/` | Hosted ChatGPT Worker MCP (`POST /mcp`, `POST /events`). D1 schema + `enforcement_events` for telemetry/RL facts. MemoryStore in tests. Not `install.sh`. |
-| `GPT-INTEGRATION-SPEC.md` | ChatGPT hosted implementation target |
-| `packages/events/` | Canonical enforcement events + JSONL sink |
+| `packages/mcp-contract/` | Remote MCP service tool names and schemas |
+| `apps/chatgpt-ack-mcp/` | Remote MCP service (`POST /mcp`, `POST /events`). D1 schema + `enforcement_events` for telemetry/RL facts. MemoryStore in tests. Not `install.sh`. |
+| `GPT-INTEGRATION-SPEC.md` | Remote MCP service implementation target |
+| `packages/events/` | Canonical enforcement events + service-aware local/remote sink (`local`, `d1`, `both`) |
 | `packages/cli/` | `ack` command bodies (`hook`, `status`, `doctor`, `repair`, `manage`, `habit`, `reload`, `audit`, `constitution`, `policy`) |
 | `packages/companion/` | Thin client factory (no policy) |
 | `packages/daemon/` | Enforcer class, v0 dispatch, JSONL listen, registry, opt-in MCP HTTP + `/config` menu |

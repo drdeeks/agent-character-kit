@@ -6,11 +6,11 @@ Append-only, newest entry on top. Never rewrite a past entry.
 
 **Added — service-aware event sinks (2026-09-13):**
 
-Local daemon/Codex/Claude/Hermes/Gate services default to JSONL. ChatGPT
-hosted defaults to D1. `ACK_EVENT_SINK=local|d1|both` overrides the default;
+Local daemon/Codex/Claude/Hermes/Gate services default to JSONL. The remote
+service path defaults to D1. `ACK_EVENT_SINK=local|d1|both` overrides the default;
 D1 can use the in-process store or `ACK_EVENT_URL`. `both` fans out. If a
 requested D1 target is unavailable locally, JSONL is retained. Root npm
-package files now include the hosted Worker and D1 migration.
+package files now include the remote service Worker and D1 migration.
 
 **Added — telemetry / elementary RL events print to hosted D1
 (2026-09-13):**
@@ -24,18 +24,18 @@ Workspace-scoped gather for RL datasets. No rewards in the writer.
 npm: `@drdeeks/character-kit@1.9.0`. Same kit, not a 2.0.0 socket cutover.
 Watchtower adapter still uses the four frozen v0 NDJSON RPCs.
 
-**Added — hosted ChatGPT MCP Worker (`apps/chatgpt-ack-mcp`)
+**Added — remote MCP service Worker (`apps/chatgpt-ack-mcp`)
 (2026-09-13):**
 
 Implements `GPT-INTEGRATION-SPEC.md` without replacing the local daemon.
-ChatGPT users do not need `install.sh` or localhost MCP. Identity comes
-from the authenticated connection, never from `user_id` args. D1 schema
-in `migrations/0001_init.sql`; tests use MemoryStore. Enforcement is
+Remote users do not need `install.sh` or localhost MCP. Identity comes from
+the authenticated connection, never from `user_id` args. D1 schema in
+`migrations/0001_init.sql`; tests use MemoryStore. Enforcement is
 `packages/core` `evaluatePolicy`. Fail-closed storage/worker failures
 return `unavailable`. Shared `packages/config-schema` and
 `packages/mcp-contract`. No `@modelcontextprotocol/sdk`, no Apps SDK
-widget, no nested `mcp-server/src`. OAuth/D1 deploy is not live until
-Worker secrets and a D1 database id exist.
+widget, no nested `mcp-server/src`. Deployment is not live until runtime
+secrets and a D1 database id exist.
 
 ## 1.8.0 — 2026-09-13
 

@@ -127,9 +127,9 @@ ack configure          # interactive wizard
 ack configure --yes    # non-interactive, sane defaults
 ```
 
-npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.9.0**.
+npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.9.0**. The package includes the local event sink, configurable remote event sink, and remote MCP service source.
 
-ChatGPT custom app (no local daemon): `apps/chatgpt-ack-mcp/` and
+Remote MCP service integration (no local daemon): `apps/chatgpt-ack-mcp/` and
 `GPT-INTEGRATION-SPEC.md`. Codex and local harnesses still use `ack configure`.
 After configure:
 
@@ -221,6 +221,23 @@ node node/bin/ack.js hook claude --config   # prints the hook JSON
 ```
 
 ---
+
+## Event output routing
+
+Canonical enforcement facts are emitted through `packages/events`.
+Local services default to date-partitioned JSONL under the agent workspace;
+remote service deployments default to D1. Configure the route per service:
+
+```text
+ACK_EVENT_SERVICE=daemon|codex|claude|hermes|gate|chatgpt
+ACK_EVENT_SINK=local|d1|both
+ACK_EVENT_URL=https://<service>/events
+```
+
+`both` preserves local JSONL while forwarding to the remote event endpoint.
+If a remote target is unavailable, local JSONL is retained. Inject any
+authorization value at runtime only; never commit it. The writer stores
+canonical facts, not RL rewards.
 
 ## ✅ Sanity check — is it actually enforcing? (run this after install)
 

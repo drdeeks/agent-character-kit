@@ -1,7 +1,7 @@
 {
   "name": "@drdeeks/character-kit-chatgpt-mcp",
   "version": "1.9.0",
-  "description": "Hosted ChatGPT MCP Worker for Agent Character Kit. Not the local daemon.",
+  "description": "Remote MCP service for Agent Character Kit. Not the local daemon.",
   "type": "module",
   "main": "src/index.js",
   "exports": {
