@@ -1,6 +1,6 @@
 {
   "name": "agent-character-kit",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Codex compatibility fallback for Agent Character Kit. Prefer root plugin.json (Agent Plugins 1.0.0).",
   "author": {
     "name": "drdeeks",

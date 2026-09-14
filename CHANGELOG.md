@@ -4,6 +4,12 @@ Append-only, newest entry on top. Never rewrite a past entry.
 
 ## Unreleased
 
+**Release alignment — 1.9.1 (2026-09-13):**
+
+Synchronized the root package, all workspace packages, runtime constants,
+plugin manifests, Python companion, remote service package, lockfiles, and
+published-package documentation with the service-aware event sink release.
+
 **Added — service-aware event sinks (2026-09-13):**
 
 Local daemon/Codex/Claude/Hermes/Gate services default to JSONL. The remote

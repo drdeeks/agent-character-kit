@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit-companion",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Thin Character Kit factory. Forwards to options.core. Default CharacterKitCore is in-process for tests, not the live daemon.",
   "type": "module",
   "main": "src/index.js",
@@ -8,8 +8,8 @@
     ".": "./src/index.js"
   },
   "dependencies": {
-    "@drdeeks/character-kit-core": "1.9.0",
-    "@drdeeks/character-kit-protocol": "1.9.0"
+    "@drdeeks/character-kit-core": "1.9.1",
+    "@drdeeks/character-kit-protocol": "1.9.1"
   },
   "engines": {
     "node": ">=18.0.0"

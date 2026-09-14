@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Agent character enforcement. Host-neutral core plus OpenAI, Claude, and Hermes companions. Fail-closed. Not a security boundary.",
   "main": "node/src/index.js",
   "exports": {

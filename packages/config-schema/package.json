@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit-config-schema",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Versioned ACK character-profile schema for local YAML and hosted ChatGPT D1",
   "type": "module",
   "main": "src/index.js",

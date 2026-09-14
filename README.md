@@ -127,7 +127,7 @@ ack configure          # interactive wizard
 ack configure --yes    # non-interactive, sane defaults
 ```
 
-npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.9.0**. The package includes the local event sink, configurable remote event sink, and remote MCP service source.
+npm package: [`@drdeeks/character-kit`](https://www.npmjs.com/package/@drdeeks/character-kit) **1.9.1**. The package includes the local event sink, configurable remote event sink, and remote MCP service source.
 
 Remote MCP service integration (no local daemon): `apps/chatgpt-ack-mcp/` and
 `GPT-INTEGRATION-SPEC.md`. Codex and local harnesses still use `ack configure`.

@@ -1,7 +1,7 @@
 # Loop Enforcement Telemetry & RL Data Architecture — Implementation Plan
 
 **Spec**: Grounded Refinement Directive v2 (task brief)
-**Version**: 1.6.0 (written against; live kit is 1.9.0)
+**Version**: 1.6.0 (written against; live kit is 1.9.1)
 **Date**: 2026-09-05
 
 ---

@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit-cli",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "ack command implementations for the Character Kit",
   "type": "module",
   "main": "src/index.js",

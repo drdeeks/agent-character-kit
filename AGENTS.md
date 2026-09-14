@@ -1,4 +1,4 @@
-# AGENTS.md — Agent Character Kit (ACK) v1.9.0
+# AGENTS.md — Agent Character Kit (ACK) v1.9.1
 
 > **This is the single source of truth for ACK.** README.md is a short overview
 > that points here. There is no other install/customize doc — if you're reading
@@ -9,7 +9,7 @@
 > names). Never `rm`. Never leave a stub beside the new SoT.
 >
 > v2 refactor: `docs/refactor-plan.md`. Change log: `CHANGELOG.md`.
-> Live kit version is **1.9.0** (`npm i -g @drdeeks/character-kit`).
+> Live kit version is **1.9.1** (`npm i -g @drdeeks/character-kit`).
 > `packages/` are kit folders (CLI, daemon extract, protocol, core, events,
 > companion, config-schema, mcp-contract), not new products.
 > Remote MCP service deployment is `apps/chatgpt-ack-mcp` (Worker + D1), not
@@ -524,7 +524,7 @@ tarball (`!**/*.test.js`, `!**/tests/**`). `npm test` is the Node suite;
 `npm run test:python` is parity + Hermes plugin.
 
 Workspace packages (`packages/*/package.json`, `apps/chatgpt-ack-mcp`,
-`plugins/openai`, `plugins/claude`, `plugins/hermes`) stamp **1.9.0** with
+`plugins/openai`, `plugins/claude`, `plugins/hermes`) stamp **1.9.1** with
 the live kit.
 Bump them with the six files above on each release. Do not bump to 2.0.0
 until the socket is explicitly cut over (refactor-plan Phase 8).
@@ -698,7 +698,7 @@ by a green JS test suite, only by an actual run against real system state.
 | `.agents/plugins/marketplace.json` | Local ChatGPT/Codex marketplace entry for `plugins/openai` |
 | `plugins/claude/` | Claude Code plugin (hooks, skills, `.mcp.json`) |
 | `plugins/hermes/` | Hermes-shaped Node adapter |
-| `node/enforcer/agent_enforcer_daemon.js` | **CORE bootstrap (1.9.0)** — env-load + unix/tcp listen; class lives in `packages/daemon` |
+| `node/enforcer/agent_enforcer_daemon.js` | **CORE bootstrap (1.9.1)** — env-load + unix/tcp listen; class lives in `packages/daemon` |
 | `node/src/enforcer/client.js` | Node thin client |
 | `node/bin/ack.js` | CLI commander shell + `ack configure` |
 | `node/src/manage-menu.js` | Pure, unit-tested menu logic for `ack manage` (agent-list building, choice parsing) |
@@ -710,7 +710,7 @@ by a green JS test suite, only by an actual run against real system state.
 | `docs/adapters/` | OpenAI, Claude, Hermes adapter notes |
 | `CHANGELOG.md` | Append-only change tracking |
 | `deploy/` | Linux systemd unit + installer |
-| `VERSION` | version stamp (1.9.0 until 2.0.0 cut) |
+| `VERSION` | version stamp (1.9.1 until 2.0.0 cut) |
 
 ---
 

@@ -21,7 +21,7 @@ OpenAI's current plugin guide is MCP-first (`skills/` + MCP server +
 `README.md`; UI optional). ACK maps that onto **one daemon**, not a nested
 `mcp-server/src` package:
 
-- `plugin.json` — portable Agent Plugins manifest (stable name + 1.9.0)
+- `plugin.json` — portable Agent Plugins manifest (stable name + 1.9.1)
 - `mcp.json` — streamable HTTP to the ACK daemon (`ACK_MCP_HTTP`)
 - `mcp-server/README.md` — pointer only; live server is `packages/daemon`
 - `.mcp.json` — Codex fallback copy of that MCP pointer

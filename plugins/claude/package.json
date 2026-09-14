@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit-claude",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Claude Code plugin for Agent Character Kit. Hooks call the ACK daemon. No policy in this package.",
   "type": "module",
   "license": "MIT"

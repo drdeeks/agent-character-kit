@@ -5,7 +5,7 @@ import { MemoryStore } from "./storage/memory.js";
 import { handleMcpJsonRpc } from "./mcp.js";
 import { HOSTED_TOOLS } from "@drdeeks/character-kit-mcp-contract";
 
-const env = { ACK_ALLOW_TEST_IDENTITY: "1", ACK_VERSION: "1.9.0" };
+const env = { ACK_ALLOW_TEST_IDENTITY: "1", ACK_VERSION: "1.9.1" };
 
 function identityHeader(user, ws = "ws_a") {
   return `workspace=${ws},user=${user},installation=inst_${user}`;

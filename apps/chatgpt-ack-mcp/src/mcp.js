@@ -34,7 +34,7 @@ export async function handleMcpJsonRpc(body, ctx) {
       result: {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "ack-chatgpt-mcp", version: ctx.version || "1.9.0" },
+        serverInfo: { name: "ack-chatgpt-mcp", version: ctx.version || "1.9.1" },
       },
     };
   }

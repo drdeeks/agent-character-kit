@@ -1,6 +1,6 @@
 {
   "name": "@drdeeks/character-kit-openai",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Agent Plugins 1.0.0 package plus Chat Completions mapper for Agent Character Kit. No policy in this package.",
   "type": "module",
   "main": "src/index.js",
@@ -8,8 +8,8 @@
     ".": "./src/index.js"
   },
   "dependencies": {
-    "@drdeeks/character-kit-companion": "1.9.0",
-    "@drdeeks/character-kit-protocol": "1.9.0"
+    "@drdeeks/character-kit-companion": "1.9.1",
+    "@drdeeks/character-kit-protocol": "1.9.1"
   },
   "engines": {
     "node": ">=18.0.0"

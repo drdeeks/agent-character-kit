@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agent-character-kit",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Character-enforcement companion for ChatGPT and Codex. Thin client to the ACK daemon: habit skills plus fail-closed tool hooks. Deterrent, not a security boundary.",
   "author": {
     "name": "drdeeks",
