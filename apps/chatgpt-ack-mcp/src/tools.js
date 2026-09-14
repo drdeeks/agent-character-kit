@@ -154,6 +154,14 @@ export async function runHostedTool(name, rawArgs, { identity, store }) {
             mineOnly: args.mineOnly === true,
           }),
         };
+      case "ack_register_component": return write(store, identity, () => store.registerComponent(identity, args));
+      case "ack_list_components": return { components: await store.listComponents(identity) };
+      case "ack_register_attribute": return write(store, identity, () => store.registerAttribute(identity, args));
+      case "ack_list_attributes": return { attributes: await store.listAttributes(identity, args.namespace) };
+      case "ack_register_event_schema": return write(store, identity, () => store.registerEventSchema(identity, args));
+      case "ack_list_event_schemas": return { schemas: await store.listEventSchemas(identity, args.eventType) };
+      case "ack_record_intervention": return write(store, identity, () => store.recordIntervention(identity, args));
+      case "ack_list_interventions": return { interventions: await store.listInterventions(identity, args.limit) };
       case "ack_report_watchdog_state":
         return store.reportWatchdog(identity, args.leaseVersion);
       case "ack_export_user_data":

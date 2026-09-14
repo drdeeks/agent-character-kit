@@ -18,6 +18,10 @@ export class MemoryStore {
     this.watchdog = new Map();
     this.audit = [];
     this.events = [];
+    this.components = new Map();
+    this.attributes = new Map();
+    this.eventSchemas = new Map();
+    this.interventions = new Map();
     this.writeCounts = new Map();
   }
 
@@ -287,6 +291,38 @@ export class MemoryStore {
       .slice(-cap)
       .reverse();
   }
+
+  async registerComponent(identity, input) {
+    const rec = { workspaceId: identity.workspaceId, componentId: input.componentId, version: input.version, displayName: input.displayName || input.componentId, capabilities: input.capabilities || [], eventTypes: input.eventTypes || [], attributeNamespaces: input.attributeNamespaces || [], status: input.status || "active", createdAt: nowIso(), updatedAt: nowIso() };
+    this.components.set(`${identity.workspaceId}:${rec.componentId}:${rec.version}`, rec);
+    return rec;
+  }
+
+  async listComponents(identity) { return [...this.components.values()].filter((v) => v.workspaceId === identity.workspaceId && v.status === "active"); }
+
+  async registerAttribute(identity, input) {
+    const rec = { workspaceId: identity.workspaceId, namespace: input.namespace, name: input.name, version: input.version, dataType: input.dataType, schema: input.schema || {}, sensitivity: input.sensitivity || "metadata", required: input.required === true, status: input.status || "active", createdAt: nowIso(), updatedAt: nowIso() };
+    this.attributes.set(`${identity.workspaceId}:${rec.namespace}:${rec.name}:${rec.version}`, rec);
+    return rec;
+  }
+
+  async listAttributes(identity, namespace) { return [...this.attributes.values()].filter((v) => v.workspaceId === identity.workspaceId && v.status === "active" && (!namespace || v.namespace === namespace)); }
+
+  async registerEventSchema(identity, input) {
+    const rec = { workspaceId: identity.workspaceId, eventType: input.eventType, version: input.version, schema: input.schema || {}, status: input.status || "active", createdAt: nowIso(), updatedAt: nowIso() };
+    this.eventSchemas.set(`${identity.workspaceId}:${rec.eventType}:${rec.version}`, rec);
+    return rec;
+  }
+
+  async listEventSchemas(identity, eventType) { return [...this.eventSchemas.values()].filter((v) => v.workspaceId === identity.workspaceId && v.status === "active" && (!eventType || v.eventType === eventType)); }
+
+  async recordIntervention(identity, input) {
+    const rec = { interventionId: input.interventionId || newId("int"), workspaceId: identity.workspaceId, eventId: input.eventId, componentId: input.componentId, componentVersion: input.componentVersion || null, policyId: input.policyId || null, policyVersion: input.policyVersion || null, decision: input.decision, requirements: input.requirements || [], resolvedBy: input.resolvedBy || null, resolutionEventId: input.resolutionEventId || null, createdAt: nowIso() };
+    this.interventions.set(rec.interventionId, rec);
+    return rec;
+  }
+
+  async listInterventions(identity, limit = 100) { return [...this.interventions.values()].filter((v) => v.workspaceId === identity.workspaceId).slice(-Math.min(200, Number(limit) || 100)).reverse(); }
 
   async exportUser(identity) {
     return {

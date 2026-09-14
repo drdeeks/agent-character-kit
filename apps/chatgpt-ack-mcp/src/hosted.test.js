@@ -179,6 +179,20 @@ test("ingest from another component is workspace-visible, not cross-tenant", asy
   assert.equal(isolated.events.length, 0);
 });
 
+test("telemetry registry stores versioned components, attributes, schemas, and interventions", async () => {
+  const store = new MemoryStore();
+  const identity = "workspace=w,user=u,installation=i,agent=agent";
+  await call(store, identity, "ack_register_component", { componentId: "the-gate", version: "1.0.0", capabilities: ["policy.evaluate"] });
+  await call(store, identity, "ack_register_attribute", { namespace: "gate", name: "policy.version", version: "1", dataType: "string" });
+  await call(store, identity, "ack_register_event_schema", { eventType: "policy.evaluated", version: "2", schema: { type: "object" } });
+  const intervention = await call(store, identity, "ack_record_intervention", { eventId: "evt-1", componentId: "the-gate", decision: "hold" });
+  assert.equal(intervention.decision, "hold");
+  assert.equal((await call(store, identity, "ack_list_components", {})).components.length, 1);
+  assert.equal((await call(store, identity, "ack_list_attributes", {})).attributes.length, 1);
+  assert.equal((await call(store, identity, "ack_list_event_schemas", {})).schemas.length, 1);
+  assert.equal((await call(store, identity, "ack_list_interventions", {})).interventions.length, 1);
+});
+
 test("POST /events accepts a local ACK/Gate batch", async () => {
   const store = new MemoryStore();
   const res = await worker.fetch(new Request("https://ack.example/events", {

@@ -1,1 +1,1 @@
-export { HOSTED_TOOLS, HOSTED_TOOL_NAMES, DECISION_OUTPUT } from "./hosted-tools.js";
+export { HOSTED_TOOLS, HOSTED_TOOL_NAMES, DECISION_OUTPUT, TELEMETRY_REGISTRY_TOOLS } from "./hosted-tools.js";

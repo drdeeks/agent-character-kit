@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "character-kit://protocol/enforcement-event/v2",
+  "title": "Universal loop-enforcement event v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["eventId", "eventType", "timestamp", "sessionId", "runId", "sequence", "schemaVersion", "source", "component"],
+  "properties": {
+    "eventId": { "type": "string" },
+    "eventType": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "episodeId": { "type": ["string", "null"] },
+    "taskId": { "type": ["string", "null"] },
+    "runId": { "type": "string", "minLength": 1 },
+    "agentId": { "type": ["string", "null"] },
+    "modelId": { "type": ["string", "null"] },
+    "modelVersion": { "type": ["string", "null"] },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "source": { "type": "string", "minLength": 1 },
+    "component": { "type": "string", "minLength": 1 },
+    "componentVersion": { "type": ["string", "null"] },
+    "parentEventId": { "type": ["string", "null"] },
+    "action": { "type": ["object", "null"] },
+    "observation": { "type": ["object", "null"] },
+    "decision": { "type": ["object", "null"] },
+    "outcome": { "type": ["object", "null"] },
+    "metadata": { "type": "object" },
+    "payload": { "type": "object" },
+    "schemaVersion": { "const": "2" }
+  }
+}

@@ -8,6 +8,26 @@ export const EVENT_TYPE = Object.freeze({
   TOOL_HELD: "tool.held",
   TOOL_DENIED: "tool.denied",
   TOOL_COMPLETED: "tool.completed",
+  TOOL_STARTED: "tool.started",
+  TOOL_FAILED: "tool.failed",
+  ACTION_PROPOSED: "action.proposed",
+  MODEL_RESPONDED: "model.responded",
+  MODEL_ERROR: "model.error",
+  EPISODE_STARTED: "episode.started",
+  EPISODE_ENDED: "episode.ended",
+  TASK_STARTED: "task.started",
+  TASK_COMPLETED: "task.completed",
+  TASK_FAILED: "task.failed",
+  ACK_REUSED: "acknowledgment.reused",
+  CONSTRAINT_VIOLATED: "constraint.violated",
+  CONSTRAINT_SATISFIED: "constraint.satisfied",
+  VALIDATION_STARTED: "validation.started",
+  VALIDATION_COMPLETED: "validation.completed",
+  VALIDATION_FAILED: "validation.failed",
+  FILE_CHANGED: "file.changed",
+  COMMIT_CREATED: "commit.created",
+  CONFIGURATION_CHANGED: "configuration.changed",
+  STATE_RECOVERED: "state.recovered",
   ACK_REQUESTED: "acknowledgment.requested",
   ACK_SUBMITTED: "acknowledgment.submitted",
   ACK_ACCEPTED: "acknowledgment.accepted",
@@ -22,4 +42,4 @@ export const EVENT_TYPE = Object.freeze({
   PROTOCOL_ERROR: "protocol.error",
 });
 
-export const EVENT_SCHEMA_VERSION = "1";
+export const EVENT_SCHEMA_VERSION = "2";

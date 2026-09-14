@@ -35,12 +35,24 @@ export function buildRlEvent(identity, eventType, fields = {}) {
     source: fields.source || "chatgpt-ack-mcp",
     component: fields.component || "hosted",
     parentEventId: fields.parentEventId || null,
-    schemaVersion: "1",
+    schemaVersion: "2",
+    modelId: fields.modelId || null,
+    modelVersion: fields.modelVersion || null,
+    componentVersion: fields.componentVersion || null,
+    action: redactObject(fields.action),
+    observation: redactObject(fields.observation),
+    decision: redactObject(fields.decision),
+    outcome: redactObject(fields.outcome),
+    metadata: redactObject(fields.metadata) || {},
     payload: redact(fields.payload || {}),
     workspaceId: identity.workspaceId,
     ownerUserId: identity.userId,
     installationId: identity.installationId,
   };
+}
+
+function redactObject(value) {
+  return value == null ? null : redact(value);
 }
 
 export async function emitRlEvent(store, identity, eventType, fields = {}, env = {}) {

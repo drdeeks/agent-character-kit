@@ -4,6 +4,14 @@ Append-only, newest entry on top. Never rewrite a past entry.
 
 ## Unreleased
 
+**Added — universal telemetry contract (2026-09-14):**
+
+Added version 2 canonical event metadata, expanded lifecycle/action/validation
+event vocabulary, versioned component and attribute registries, event-schema
+registries, intervention records, and MCP registry tools. Rewards and dataset
+construction remain downstream of the immutable event stream. Migration
+`0003_universal_telemetry.sql` is ready for the live `ack-universal` D1 database.
+
 **Added — provider-neutral persistent service foundation (2026-09-14):**
 
 Added a production `D1Store` adapter with tenant-scoped parameterized queries,

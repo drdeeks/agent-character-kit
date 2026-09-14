@@ -44,7 +44,15 @@ export class EventEmitter {
       schemaVersion: EVENT_SCHEMA_VERSION,
       source: this.source,
       component: fields.component || this.source,
+      componentVersion: fields.componentVersion,
+      modelId: fields.modelId,
+      modelVersion: fields.modelVersion,
       parentEventId: fields.parentEventId,
+      action: redact(fields.action || null),
+      observation: redact(fields.observation || null),
+      decision: redact(fields.decision || null),
+      outcome: redact(fields.outcome || null),
+      metadata: redact(fields.metadata || {}),
       payload: redact(fields.payload || {}),
     };
     const list = this.handlers.get(eventType) || [];
