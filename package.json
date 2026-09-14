@@ -28,7 +28,7 @@
     "plugins/hermes"
   ],
   "scripts": {
-    "test": "node --test node/tests/*.test.js packages/core/src/policy/engine.test.js packages/protocol/src/envelope.test.js packages/config-schema/src/*.test.js packages/daemon/src/*.test.js apps/chatgpt-ack-mcp/src/*.test.js plugins/openai/src/plugin-manifest.test.js plugins/claude/plugin-manifest.test.js",
+    "test": "node --test node/tests/*.test.js packages/core/src/policy/engine.test.js packages/protocol/src/envelope.test.js packages/config-schema/src/*.test.js packages/events/src/*.test.js packages/daemon/src/*.test.js apps/chatgpt-ack-mcp/src/*.test.js plugins/openai/src/plugin-manifest.test.js plugins/claude/plugin-manifest.test.js",
     "test:python": "python3 python/tests/python_parity_test.py && python3 python/tests/ack_monitor_multi_agent_test.py && python3 python/hermes_plugin/test_plugin.py",
     "start": "node node/bin/ack.js",
     "ack-install": "node node/bin/install.js",

@@ -8,7 +8,7 @@ import path from "path";
 import { execSync } from "child_process";
 import yaml from "js-yaml";
 import { evaluatePolicy, matchConstraint } from "../../core/src/policy/engine.js";
-import { EventEmitter, JsonlSink, EVENT_TYPE } from "../../events/src/index.js";
+import { EventEmitter, EVENT_TYPE, createEventSink, resolveEventSinkMode } from "../../events/src/index.js";
 import { VERSION as ACK_VERSION } from "../../../node/src/version.js";
 
 export function resolveConfig() {
@@ -450,10 +450,23 @@ export class Enforcer {
   _emit(eventType, fields) {
     try {
       const dir = path.join(this.cfg.AGENT_DIR, "logs", "events");
-      if (!this.events || this._eventsDir !== dir) {
-        this._eventsDir = dir;
+      const env = process.env;
+      const service = env.ACK_EVENT_SERVICE || "daemon";
+      const mode = resolveEventSinkMode({ service, env });
+      const remote = env.ACK_EVENT_URL || "";
+      const key = `${dir}|${service}|${mode}|${remote}`;
+      if (!this.events || this._eventsKey !== key) {
+        this._eventsKey = key;
         this.events = new EventEmitter({
-          sink: new JsonlSink(dir),
+          sink: createEventSink({
+            service,
+            env,
+            localDir: dir,
+            remoteUrl: remote,
+            headers: env.ACK_EVENT_AUTHORIZATION
+              ? { authorization: env.ACK_EVENT_AUTHORIZATION }
+              : undefined,
+          }),
           source: "character-kit-daemon",
         });
       }

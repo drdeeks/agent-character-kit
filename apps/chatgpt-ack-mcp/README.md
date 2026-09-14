@@ -34,5 +34,6 @@ Do not put access tokens in D1. Do not present `install.sh` as a ChatGPT
 prerequisite.
 
 Telemetry: `ack_ingest_event` / `POST /events` print canonical facts into
-D1 (`enforcement_events`). `ack_list_events` lists the workspace. See
-`docs/chatgpt-hosted.md`.
+D1 (`enforcement_events`). `ack_list_events` lists the workspace. Hosted
+ChatGPT defaults to D1; local services default to JSONL and may select
+`ACK_EVENT_SINK=local|d1|both`. See `docs/chatgpt-hosted.md`.

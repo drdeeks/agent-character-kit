@@ -1,4 +1,4 @@
-import { EVENT_TYPE, redact } from "@drdeeks/character-kit-events";
+import { EVENT_TYPE, createEventSink, redact } from "@drdeeks/character-kit-events";
 import { newId, nowIso } from "./ids.js";
 
 export const KNOWN_EVENT_TYPES = new Set(Object.values(EVENT_TYPE));
@@ -43,10 +43,16 @@ export function buildRlEvent(identity, eventType, fields = {}) {
   };
 }
 
-export async function emitRlEvent(store, identity, eventType, fields = {}) {
+export async function emitRlEvent(store, identity, eventType, fields = {}, env = {}) {
   try {
     const event = buildRlEvent(identity, eventType, fields);
-    await store.appendEvent(identity, event);
+    const sink = createEventSink({
+      service: env.ACK_EVENT_SERVICE || "chatgpt",
+      env,
+      store,
+      identity,
+    });
+    await sink.append(event);
     return event;
   } catch {
     return null;

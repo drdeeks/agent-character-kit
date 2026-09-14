@@ -22,6 +22,27 @@ other components can:
 
 `user_id` in the payload is ignored. Commands/tokens are redacted.
 
+## Sink configuration
+
+The sink is selected by the service, then optionally overridden:
+
+```text
+ACK_EVENT_SERVICE=daemon|codex|claude|hermes|gate|chatgpt
+ACK_EVENT_SINK=local|d1|both
+ACK_EVENT_URL=https://<host>/events
+```
+
+Defaults:
+
+- `daemon`, Codex, Claude, Hermes, Gate → local JSONL
+- `chatgpt` hosted Worker → D1
+- `both` → local JSONL plus D1
+
+For a local service posting remotely, inject the authorization header at
+runtime as `ACK_EVENT_AUTHORIZATION`; never commit it. If D1 is selected but
+no URL/store is available, local JSONL is retained rather than silently
+dropping facts.
+
 ### Other methods (not implemented here)
 
 - **Cloudflare Queues** — buffer bursts, then a consumer writes D1
