@@ -9,7 +9,8 @@ Append-only, newest entry on top. Never rewrite a past entry.
 Local daemon/Codex/Claude/Hermes/Gate services default to JSONL. ChatGPT
 hosted defaults to D1. `ACK_EVENT_SINK=local|d1|both` overrides the default;
 D1 can use the in-process store or `ACK_EVENT_URL`. `both` fans out. If a
-requested D1 target is unavailable locally, JSONL is retained.
+requested D1 target is unavailable locally, JSONL is retained. Root npm
+package files now include the hosted Worker and D1 migration.
 
 **Added — telemetry / elementary RL events print to hosted D1
 (2026-09-13):**
