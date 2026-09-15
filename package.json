@@ -1,5 +1,5 @@
 {
-  "name": "@drdeeks/character-kit",
+  "name": "@the-federation/agent-character-kit",
   "version": "1.9.1",
   "description": "Agent character enforcement. Host-neutral core plus OpenAI, Claude, and Hermes companions. Fail-closed. Not a security boundary.",
   "main": "node/src/index.js",
