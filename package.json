@@ -94,7 +94,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/drdeeks/agent-character-kit.git"
+    "url": "https://github.com/drdeeks/agent-character-kit.git"
   },
   "homepage": "https://github.com/drdeeks/agent-character-kit#readme",
   "bugs": {
