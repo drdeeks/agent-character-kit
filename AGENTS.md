@@ -692,7 +692,7 @@ by a green JS test suite, only by an actual run against real system state.
 | `packages/config-schema/` | Versioned character profile JSON for local and hosted ACK |
 | `packages/mcp-contract/` | Remote MCP service tool names and schemas |
 | `plugins/mcp-bridgelement/` | Standalone provider-neutral global MCP Bridge (`POST /mcp`, `POST /events`) with configurable identity, D1 storage, and telemetry collection. ChatGPT is one adapter. MemoryStore remains the test/local fallback. Not `install.sh`. |
-| `GPT-INTEGRATION-SPEC.md` | Remote MCP service implementation target |
+| `plugins/mcp-bridgelement/docs/GPT-INTEGRATION-SPEC.md` | Remote MCP service implementation target |
 | `packages/events/` | Canonical enforcement events + service-aware local/remote sink (`local`, `d1`, `both`) |
 | `packages/cli/` | `ack` command bodies (`hook`, `status`, `doctor`, `repair`, `manage`, `habit`, `reload`, `audit`, `constitution`, `policy`) |
 | `packages/companion/` | Thin client factory (no policy) |

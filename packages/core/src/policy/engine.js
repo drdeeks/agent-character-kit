@@ -59,6 +59,14 @@ export function evaluatePolicy(request, policy = {}) {
   const command = String(request.command || request.params?.command || "");
   const results = [];
 
+  // Counterfactual Boundary: Record the Proposed Action
+  const proposedAction = {
+    tool,
+    command,
+    params: request.params,
+    proposedAt: new Date().toISOString()
+  };
+
   for (const pattern of policy.hardConstraints || []) {
     if (matchConstraint(pattern, tool, command, false)) {
       results.push({
@@ -66,6 +74,7 @@ export function evaluatePolicy(request, policy = {}) {
         reason: "hard constraint",
         code: "CK_POLICY_DENIED",
         matched_by: pattern,
+        proposedAction
       });
     }
   }
@@ -77,6 +86,7 @@ export function evaluatePolicy(request, policy = {}) {
         reason: "deny list",
         code: "CK_POLICY_DENIED",
         matched_by: pattern,
+        proposedAction
       });
     }
   }
@@ -89,12 +99,16 @@ export function evaluatePolicy(request, policy = {}) {
         effect: EFFECTS.deny,
         reason: "not on allow list",
         code: "CK_POLICY_DENIED",
+        proposedAction
       });
     }
   }
 
   if (results.length === 0) {
-    results.push({ effect: EFFECTS.allow });
+    results.push({ 
+      effect: EFFECTS.allow,
+      proposedAction
+    });
   }
   return aggregateEffects(results);
 }

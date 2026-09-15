@@ -2,9 +2,9 @@
   "name": "@drdeeks/character-kit",
   "version": "1.9.1",
   "description": "Agent character enforcement. Host-neutral core plus OpenAI, Claude, and Hermes companions. Fail-closed. Not a security boundary.",
-  "main": "node/src/index.js",
+  "main": "packages/core/src/index.js",
   "exports": {
-    ".": "./node/src/index.js",
+    ".": "./packages/core/src/index.js",
     "./protocol": "./packages/protocol/src/index.js",
     "./core": "./packages/core/src/index.js",
     "./companion": "./packages/companion/src/index.js",
@@ -20,15 +20,8 @@
     "character-kit": "node/bin/ack.js"
   },
   "type": "module",
-  "workspaces": [
-    "packages/*",
-    "plugins/mcp-bridgelement",
-    "plugins/openai",
-    "plugins/claude",
-    "plugins/hermes"
-  ],
   "scripts": {
-    "test": "node --test node/tests/*.test.js packages/core/src/policy/engine.test.js packages/protocol/src/envelope.test.js packages/config-schema/src/*.test.js packages/events/src/*.test.js packages/daemon/src/*.test.js plugins/mcp-bridgelement/src/*.test.js plugins/openai/src/plugin-manifest.test.js plugins/claude/plugin-manifest.test.js",
+    "test": "node --test packages/core/src/policy/engine.test.js packages/protocol/src/envelope.test.js packages/config-schema/src/*.test.js packages/events/src/*.test.js packages/daemon/src/*.test.js node/tests/*.test.js",
     "test:python": "python3 python/tests/python_parity_test.py && python3 python/tests/ack_monitor_multi_agent_test.py && python3 python/hermes_plugin/test_plugin.py",
     "start": "node node/bin/ack.js",
     "ack-install": "node node/bin/install.js",
@@ -65,7 +58,6 @@
     "node/enforcer/",
     "node/examples/",
     "packages/",
-    "plugins/mcp-bridgelement/",
     "plugins/",
     "python/agent_character_kit/",
     "python/hermes_plugin/",
@@ -82,15 +74,7 @@
     "README.md",
     "AGENTS.md",
     "CHANGELOG.md",
-    "LICENSE",
-    "!**/*.test.js",
-    "!**/test_*.py",
-    "!**/tests/**",
-    "!**/__pycache__/**",
-    "!**/*.pyc",
-    "!**/*.pyo",
-    "!**/*.audit.jsonl",
-    "!node/examples/.agent/logs/**"
+    "LICENSE"
   ],
   "repository": {
     "type": "git",

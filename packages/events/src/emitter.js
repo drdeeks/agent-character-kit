@@ -29,17 +29,22 @@ export class EventEmitter {
    */
   async emit(eventType, fields = {}) {
     const sessionId = fields.sessionId || "session-unknown";
+    const episodeId = fields.episodeId || "episode-unknown";
+    const taskId = fields.taskId || "task-unknown";
+    const runId = fields.runId || "run-unknown";
+    
     const seq = (this.sequences.get(sessionId) || 0) + 1;
     this.sequences.set(sessionId, seq);
+    
     const event = {
       eventId: fields.eventId || randomUUID(),
       eventType,
       timestamp: fields.timestamp || new Date().toISOString(),
       sessionId,
-      runId: fields.runId || sessionId,
-      episodeId: fields.episodeId,
-      taskId: fields.taskId,
-      agentId: fields.agentId,
+      episodeId,
+      taskId,
+      runId,
+      agentId: fields.agentId || "agent-unknown",
       sequence: seq,
       schemaVersion: EVENT_SCHEMA_VERSION,
       source: this.source,
